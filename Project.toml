@@ -3,6 +3,11 @@ uuid = "c2c8e14b-f5fd-423d-9666-1dd9ad120af9"
 authors = ["Alberto F. Martin <alberto.martin@monash.edu>"]
 version = "0.1.0"
 
+[deps]
+Gridap = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
+GridapDistributed = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
+P4est_wrapper = "3743d7c0-8adf-11ea-380b-7d33b0ecc1da"
+
 [compat]
 julia = "1.6"
 
