@@ -1,0 +1,13 @@
+name = "GridapP4est"
+uuid = "c2c8e14b-f5fd-423d-9666-1dd9ad120af9"
+authors = ["Alberto F. Martin <alberto.martin@monash.edu>"]
+version = "0.1.0"
+
+[compat]
+julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
