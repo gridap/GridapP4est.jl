@@ -12,6 +12,7 @@ P4est_wrapper = "3743d7c0-8adf-11ea-380b-7d33b0ecc1da"
 PartitionedArrays = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
 
 [compat]
+PartitionedArrays = "0.2"
 julia = "1.6"
 
 [extras]
