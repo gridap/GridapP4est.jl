@@ -24,7 +24,7 @@ nprocs_str = get(ENV, "JULIA_GRIDAP_P4EST_TEST_NPROCS","")
 nprocs = nprocs_str == "" ? clamp(Sys.CPU_THREADS, 2, 4) : parse(Int, nprocs_str)
 #mpiexec_args = Base.shell_split("--allow-run-as-root --tag-output") #Base.shell_split(get(ENV, "JULIA_MPIEXEC_TEST_ARGS", ""))
 testdir = @__DIR__
-istest(f) = endswith(f, ".jl")
+istest(f) = endswith(f, ".jl") && !(f=="runtests.jl")
 testfiles = sort(filter(istest, readdir(testdir)))
 @time @testset "$f" for f in testfiles
   MPI.mpiexec() do cmd
@@ -33,6 +33,7 @@ testfiles = sort(filter(istest, readdir(testdir)))
        extra_args = "-s 2 2 -r 2"
      else
        np = nprocs
+       extra_args = ""
      end
      if ! image_file_exists
        cmd = `$cmd -n $(np) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=. $(joinpath(testdir, f)) $(split(extra_args))`
