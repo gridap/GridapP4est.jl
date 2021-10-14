@@ -264,15 +264,15 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
       end
       k=k+nvertices
     end
-    Table(data,ptrs)
+    PArrays.Table(data,ptrs)
   end
   t=async_exchange!(PArrays._replace,cell_vertex_gids,cell_prange.exchanger)
   map_parts(wait∘schedule,t)
-  map_parts(get_part_ids(cell_vertex_gids)) do part
-    if (part==2)
-      println(cell_vertex_gids.part)
-    end
-  end
+  # map_parts(get_part_ids(cell_vertex_gids)) do part
+  #   if (part==2)
+  #     println(cell_vertex_gids.part)
+  #   end
+  # end
   cell_vertex_gids
 end
 
@@ -290,7 +290,7 @@ function generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
         current=current+1
       end
     end
-    (Table(data,cell_vertex_gids.ptrs), current-1)
+    (PArrays.Table(data,cell_vertex_gids.ptrs), current-1)
   end
 end
 
@@ -799,7 +799,7 @@ function init_cell_to_face_entity(num_faces_x_cell,
       k=_fill_data!(data,cell_to_face_entity[i][j],k)
     end
   end
-  return Table(data, ptrs)
+  return PArrays.Table(data, ptrs)
 end
 
 function update_face_to_entity!(face_to_entity, cell_to_faces, cell_to_face_entity)

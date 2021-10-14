@@ -59,21 +59,29 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
     end
     dv = get_fe_basis(V)
     du = get_trial_fe_basis(U)
+    assem = SparseMatrixAssembler(U,V)
 
-    data = collect_cell_matrix_and_vector(U,V,a(du,dv),l(dv))
+    dof_values = allocate_vector(PVector{Float64,MPIData{Vector{Float64},1}},V.gids)
+    uh = FEFunction(U,dof_values)
+    data = collect_cell_matrix_and_vector(U,V,a(du,dv),l(dv),uh)
     A,b = assemble_matrix_and_vector(assem,data)
+
     x = A\b
     r = A*x -b
     uh = FEFunction(U,x)
 
     # Error norms and print solution
-    trian=Triangulation(OwnedCells,model)
+    trian=Triangulation(model)
     dΩ=Measure(trian,2*order)
     e = u-uh
     e_l2 = sum(∫(e*e)dΩ)
     tol = 1.0e-9
     @test e_l2 < tol
-    if (i_am_master(comm)) println("$(e_l2) < $(tol)\n") end
+    map_parts(parts) do part
+     if (part==1)
+       println("$(e_l2) < $(tol)\n")
+     end
+    end
   end
   if !MPI.Initialized()
     MPI.Init()
@@ -81,7 +89,7 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
   parsed_args = parse_commandline()
   subdomains = Tuple(parsed_args["subdomains"])
   num_uniform_refinements = parsed_args["num-uniform-refinements"]
-  parts = get_part_ids(mpi,prod(subdomains))
+  parts = get_part_ids(mpi,(prod(subdomains)))
   run(parts,subdomains,num_uniform_refinements)
   MPI.Finalize()
 end # module

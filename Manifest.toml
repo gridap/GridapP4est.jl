@@ -151,7 +151,7 @@ version = "0.10.20"
 
 [[Gridap]]
 deps = ["AbstractTrees", "BSON", "BlockArrays", "Combinatorics", "DocStringExtensions", "FastGaussQuadrature", "FileIO", "FillArrays", "ForwardDiff", "JLD2", "JSON", "LineSearches", "LinearAlgebra", "NLsolve", "NearestNeighbors", "QuadGK", "Random", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "Test", "WriteVTK"]
-git-tree-sha1 = "43d1f2459fcaa8bcdc8f3863591fb8cd96e1c9ac"
+git-tree-sha1 = "3e61d32f4967c1430948eaf2f6a7cfb31deaccc1"
 repo-rev = "gridap_distributed"
 repo-url = "https://github.com/gridap/Gridap.jl"
 uuid = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
@@ -243,9 +243,9 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[MPI]]
 deps = ["Distributed", "DocStringExtensions", "Libdl", "MPICH_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "Pkg", "Random", "Requires", "Serialization", "Sockets"]
-git-tree-sha1 = "e4549a5ced642a73bd8ba2dd1d3b1d30b3530d94"
+git-tree-sha1 = "340d8dc89e1c85a846d3f38ee294bfdd1684055a"
 uuid = "da04e1cc-30fd-572f-bb4f-1f8673147195"
-version = "0.19.0"
+version = "0.19.1"
 
 [[MPICH_jll]]
 deps = ["CompilerSupportLibraries_jll", "Libdl", "Pkg"]
@@ -344,13 +344,15 @@ version = "0.12.3"
 
 [[Parsers]]
 deps = ["Dates"]
-git-tree-sha1 = "a8709b968a1ea6abc2dc1967cb1db6ac9a00dfb6"
+git-tree-sha1 = "98f59ff3639b3d9485a03a72f3ab35bab9465720"
 uuid = "69de0a69-1ddd-5017-9359-2bf0b02dc9f0"
-version = "2.0.5"
+version = "2.0.6"
 
 [[PartitionedArrays]]
 deps = ["IterativeSolvers", "LinearAlgebra", "MPI", "Printf", "SparseArrays", "SparseMatricesCSR"]
-git-tree-sha1 = "726770afbd95eef41451b41a70d273dd6c45a6ee"
+git-tree-sha1 = "790264c2a81791cd97ddfa37273d2c70541690c5"
+repo-rev = "master"
+repo-url = "https://github.com/fverdugo/PartitionedArrays.jl"
 uuid = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
 version = "0.2.2"
 
