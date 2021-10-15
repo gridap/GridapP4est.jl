@@ -61,7 +61,7 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
     du = get_trial_fe_basis(U)
     assem = SparseMatrixAssembler(U,V)
 
-    dof_values = allocate_vector(PVector{Float64,MPIData{Vector{Float64},1}},V.gids)
+    dof_values = PVector(0.0,V.gids)
     uh = FEFunction(U,dof_values)
     data = collect_cell_matrix_and_vector(U,V,a(du,dv),l(dv),uh)
     A,b = assemble_matrix_and_vector(assem,data)
