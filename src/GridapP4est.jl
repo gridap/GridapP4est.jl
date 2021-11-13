@@ -8,4 +8,5 @@ module GridapP4est
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("CubedSphereDistributedDiscreteModels.jl")
   export UniformlyRefinedForestOfOctreesDiscreteModel
+  export CubedSphereDiscreteModel
 end

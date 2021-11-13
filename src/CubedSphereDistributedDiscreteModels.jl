@@ -1,12 +1,6 @@
-using Gridap
-using GridapDistributed
-using MPI
-using p4est_wrapper
-using FillArrays
-
 const ref_panel_coordinates = [ -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0 ]
 
-function set_panel_vertices_αβ_coordinates!( pconn :: Ptr{p4est_wrapper.p4est_connectivity_t},
+function set_panel_vertices_coordinates!( pconn :: Ptr{P4est_wrapper.p4est_connectivity_t},
                                              coarse_discrete_model :: DiscreteModel{2,2},
                                              panel )
   @assert num_cells(coarse_discrete_model) == 6
@@ -71,7 +65,7 @@ function generate_cell_coordinates_and_panels(comm,
   pXest = ptr_pXest[]
 
   # Obtain ghost quadrants
-  ptr_ghost_quadrants = Ptr{p4est_wrapper.p4est_quadrant_t}(pXest_ghost.ghosts.array)
+  ptr_ghost_quadrants = Ptr{P4est_wrapper.p4est_quadrant_t}(pXest_ghost.ghosts.array)
 
   tree_offsets = unsafe_wrap(Array, pXest_ghost.tree_offsets, pXest_ghost.num_trees+1)
   dcell_coordinates_and_panels=DistributedData(comm) do part
@@ -86,7 +80,7 @@ function generate_cell_coordinates_and_panels(comm,
      for itree=1:pXest_ghost.num_trees
        tree = p4est_tree_array_index(pXest.trees, itree-1)[]
        if tree.quadrants.elem_count > 0
-          set_panel_vertices_αβ_coordinates!( ptr_pXest_connectivity, coarse_discrete_model, itree)
+          set_panel_vertices_coordinates!( ptr_pXest_connectivity, coarse_discrete_model, itree)
        end
        for cell=1:tree.quadrants.elem_count
           panels[current_cell]=itree
@@ -109,7 +103,7 @@ function generate_cell_coordinates_and_panels(comm,
      # Go over ghost cells
      for i=1:pXest_ghost.num_trees
       if tree_offsets[i+1]-tree_offsets[i] > 0
-        set_panel_vertices_αβ_coordinates!( ptr_pXest_connectivity, coarse_discrete_model, i)
+        set_panel_vertices_coordinates!( ptr_pXest_connectivity, coarse_discrete_model, i)
       end
       for j=tree_offsets[i]:tree_offsets[i+1]-1
           panels[current_cell]=i
@@ -136,21 +130,21 @@ function generate_cell_coordinates_and_panels(comm,
   end
 end
 
-function generate_αβgrid_geo(cell_coordinates_and_panels)
-  function map_panel_αβ_2_xyz(αβ,panel)
-    α,β=αβ
+function generate_cube_grid_geo(cell_coordinates_and_panels)
+  function map_panel_xy_2_xyz(xy,panel)
+    a,b=xy
     if panel==1
-      x=Point(1.0,α,β)
+      x=Point(1.0,a,b)
     elseif panel==2
-      x=Point(-α,1.0,β)
+      x=Point(-a,1.0,b)
     elseif panel==3
-      x=Point(-1.0,β,α)
+      x=Point(-1.0,b,a)
     elseif panel==4
-      x=Point(-β,-1.0,α)
+      x=Point(-b,-1.0,a)
     elseif panel==5
-      x=Point(-β,α,1.0)
+      x=Point(-b,a,1.0)
     elseif panel==6
-      x=Point(-α,β,-1.0)
+      x=Point(-a,b,-1.0)
     end
     x
   end
@@ -166,7 +160,7 @@ function generate_αβgrid_geo(cell_coordinates_and_panels)
      for cell=1:length(cell_coordinates)
         current_cell_coordinates=getindex!(cache,cell_coordinates,cell)
         for i=1:length(current_cell_coordinates)
-          node_coordinates[current]=map_panel_αβ_2_xyz(current_cell_coordinates[i],panels[cell])
+          node_coordinates[current]=map_panel_xy_2_xyz(current_cell_coordinates[i],panels[cell])
           current=current+1
         end
      end
@@ -184,7 +178,7 @@ function generate_αβgrid_geo(cell_coordinates_and_panels)
   end
 end
 
-function generate_αβgrid_top(cell_vertex_lids_nlvertices)
+function generate_cube_grid_top(cell_vertex_lids_nlvertices)
   DistributedData(cell_vertex_lids_nlvertices) do part, (cell_vertex_lids,nlvector)
      node_coordinates=Vector{Point{2,Float64}}(undef,nlvector)
      polytope=QUAD
@@ -203,7 +197,7 @@ function generate_αβgrid_top(cell_vertex_lids_nlvertices)
   end
 end
 
-function CubedSphereDiscreteModel(comm::Communicator,num_uniform_refinements::Int)
+function CubedSphereDiscreteModel(parts::MPIData,num_uniform_refinements::Int)
 
   Dc=2
 
@@ -231,8 +225,8 @@ function CubedSphereDiscreteModel(comm::Communicator,num_uniform_refinements::In
                                              ptr_pXest,
                                              ptr_pXest_ghost)
 
-  αβgrid_geo=generate_αβgrid_geo(cell_coordinates_and_panels)
-  αβgrid_top=generate_αβgrid_top(cell_vertex_lids_nlvertices)
+  cube_grid_geo=generate_cube_grid_geo(cell_coordinates_and_panels)
+  cube_grid_top=generate_cube_grid_top(cell_vertex_lids_nlvertices)
 
   # do_on_parts(comm, cell_coordinates) do part, cell_coords
   #   if part==1
@@ -241,8 +235,8 @@ function CubedSphereDiscreteModel(comm::Communicator,num_uniform_refinements::In
   # end
 
   ddiscretemodel=
-  DistributedData(comm,αβgrid_geo,αβgrid_top) do part, αβgrid_geo, αβgrid_top
-    AnalyticalEquiAngularMapCubedSphereDiscreteModel(αβgrid_geo, αβgrid_top)
+  DistributedData(comm,cube_grid_geo,cube_grid_top) do part, cube_grid_geo, cube_grid_top
+    AnalyticalMapCubedSphereDiscreteModel(cube_grid_geo, cube_grid_top)
   end
 
   # Write forest to VTK file
@@ -273,75 +267,75 @@ end
 
 
 
-struct AnalyticalEquiAngularMapCubedSphereTriangulation{T} <: Triangulation{2,3}
+struct AnalyticalMapCubedSphereTriangulation{T} <: Triangulation{2,3}
   cell_map::T
-  αβgrid::Gridap.Geometry.UnstructuredGrid{2,3}
+  cube_grid::Gridap.Geometry.UnstructuredGrid{2,3}
 end
 
 # Triangulation API
 
 # Delegating to the underlying face Triangulation
 
-Gridap.Geometry.get_cell_coordinates(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = Gridap.Geometry.get_cell_coordinates(trian.αβgrid)
+Gridap.Geometry.get_cell_coordinates(trian::AnalyticalMapCubedSphereTriangulation) = Gridap.Geometry.get_cell_coordinates(trian.cube_grid)
 
-Gridap.Geometry.get_reffes(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = Gridap.Geometry.get_reffes(trian.αβgrid)
+Gridap.Geometry.get_reffes(trian::AnalyticalMapCubedSphereTriangulation) = Gridap.Geometry.get_reffes(trian.cube_grid)
 
-Gridap.Geometry.get_cell_type(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = Gridap.Geometry.get_cell_type(trian.αβgrid)
+Gridap.Geometry.get_cell_type(trian::AnalyticalMapCubedSphereTriangulation) = Gridap.Geometry.get_cell_type(trian.cube_grid)
 
-Gridap.Geometry.get_node_coordinates(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = Gridap.Helpers.get_node_coordinates(trian.αβgrid)
+Gridap.Geometry.get_node_coordinates(trian::AnalyticalMapCubedSphereTriangulation) = Gridap.Helpers.get_node_coordinates(trian.cube_grid)
 
-Gridap.Geometry.get_cell_node_ids(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = Gridap.Helpers.get_cell_node_ids(trian.αβgrid)
+Gridap.Geometry.get_cell_node_ids(trian::AnalyticalMapCubedSphereTriangulation) = Gridap.Helpers.get_cell_node_ids(trian.cube_grid)
 
-Gridap.Geometry.get_cell_map(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = trian.cell_map
+Gridap.Geometry.get_cell_map(trian::AnalyticalMapCubedSphereTriangulation) = trian.cell_map
 
 # Genuine methods
 
-Gridap.Geometry.TriangulationStyle(::Type{<:AnalyticalEquiAngularMapCubedSphereTriangulation}) = SubTriangulation()
+# Gridap.Geometry.TriangulationStyle(::Type{<:AnalyticalMapCubedSphereTriangulation}) = SubTriangulation()
 
-Gridap.Geometry.get_background_triangulation(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) =
-      Gridap.Geometry.get_background_triangulation(trian.αβgrid)
+# Gridap.Geometry.get_background_triangulation(trian::AnalyticalMapCubedSphereTriangulation) =
+#       Gridap.Geometry.get_background_triangulation(trian.cube_grid)
 
-Gridap.Geometry.get_cell_to_bgcell(trian::AnalyticalEquiAngularMapCubedSphereTriangulation) = get_cell_to_bgcell(trian.αβgrid)
+# Gridap.Geometry.get_cell_to_bgcell(trian::AnalyticalMapCubedSphereTriangulation) = get_cell_to_bgcell(trian.cube_grid)
 
-function Gridap.Geometry.get_cell_to_bgcell(
-  trian_in::AnalyticalEquiAngularMapCubedSphereTriangulation,
-  trian_out::AnalyticalEquiAngularMapCubedSphereTriangulation)
-  Gridap.Helpers.@notimplemented
-end
+# function Gridap.Geometry.get_cell_to_bgcell(
+#   trian_in::AnalyticalMapCubedSphereTriangulation,
+#   trian_out::AnalyticalMapCubedSphereTriangulation)
+#   Gridap.Helpers.@notimplemented
+# end
 
-function Gridap.Geometry.is_included(
-  trian_in::AnalyticalEquiAngularMapCubedSphereTriangulation,
-  trian_out::AnalyticalEquiAngularMapCubedSphereTriangulation)
-  Gridap.Helpers.@notimplemented
-end
+# function Gridap.Geometry.is_included(
+#   trian_in::AnalyticalMapCubedSphereTriangulation,
+#   trian_out::AnalyticalMapCubedSphereTriangulation)
+#   Gridap.Helpers.@notimplemented
+# end
 
-function Gridap.Geometry.get_cell_ref_map(trian::AnalyticalEquiAngularMapCubedSphereTriangulation)
-  get_cell_ref_map(trian.btrian)
-end
+# function Gridap.Geometry.get_cell_ref_map(trian::AnalyticalMapCubedSphereTriangulation)
+#   get_cell_ref_map(trian.btrian)
+# end
 
-function Gridap.Geometry.get_cell_ref_map(
-  trian_in::AnalyticalEquiAngularMapCubedSphereTriangulation,
-  trian_out::AnalyticalEquiAngularMapCubedSphereTriangulation)
-  Gridap.Helpers.@notimplemented
-end
+# function Gridap.Geometry.get_cell_ref_map(
+#   trian_in::AnalyticalMapCubedSphereTriangulation,
+#   trian_out::AnalyticalMapCubedSphereTriangulation)
+#   Gridap.Helpers.@notimplemented
+# end
 
 
-struct AnalyticalEquiAngularMapCubedSphereDiscreteModel{T,B,C} <: Gridap.Geometry.DiscreteModel{2,3}
+struct AnalyticalMapCubedSphereDiscreteModel{T,B,C} <: Gridap.Geometry.DiscreteModel{2,3}
   cell_map::T
   cubed_sphere_model::B
   trian::C
-  function AnalyticalEquiAngularMapCubedSphereDiscreteModel(
-      αβgrid_geo::Gridap.Geometry.UnstructuredGrid{2,3},
-      αβgrid_top::Gridap.Geometry.UnstructuredGrid{2,2};
+  function AnalyticalMapCubedSphereDiscreteModel(
+      cube_grid_geo::Gridap.Geometry.UnstructuredGrid{2,3},
+      cube_grid_top::Gridap.Geometry.UnstructuredGrid{2,2};
       radius=1)
-    m1=Fill(Gridap.Fields.GenericField(MapCubeToSphere(radius)),num_cells(αβgrid_geo))
-    m2=get_cell_map(αβgrid_geo)
+    m1=Fill(Gridap.Fields.GenericField(MapCubeToSphere(radius)),num_cells(cube_grid_geo))
+    m2=get_cell_map(cube_grid_geo)
     m=lazy_map(∘,m1,m2)
 
-    cubed_mesh_model=Gridap.Geometry.UnstructuredDiscreteModel(αβgrid_top)
+    cubed_mesh_model=Gridap.Geometry.UnstructuredDiscreteModel(cube_grid_top)
 
     # Wrap up BoundaryTriangulation
-    trian=AnalyticalEquiAngularMapCubedSphereTriangulation(m,αβgrid_geo)
+    trian=AnalyticalMapCubedSphereTriangulation(m,cube_grid_geo)
 
     # Build output object
     T=typeof(m)
@@ -352,14 +346,14 @@ struct AnalyticalEquiAngularMapCubedSphereDiscreteModel{T,B,C} <: Gridap.Geometr
   end
 end
 
-Gridap.Geometry.get_cell_map(model::AnalyticalEquiAngularMapCubedSphereDiscreteModel) = model.cell_map
-Gridap.Geometry.get_grid(model::AnalyticalEquiAngularMapCubedSphereDiscreteModel) = Gridap.Geometry.get_grid(model.cubed_sphere_model)
-Gridap.Geometry.get_grid_topology(model::AnalyticalEquiAngularMapCubedSphereDiscreteModel) = Gridap.Geometry.get_grid_topology(model.cubed_sphere_model)
-Gridap.Geometry.get_face_labeling(model::AnalyticalEquiAngularMapCubedSphereDiscreteModel) = Gridap.Geometry.get_face_labeling(model.cubed_sphere_model)
-Gridap.Geometry.get_triangulation(a::AnalyticalEquiAngularMapCubedSphereDiscreteModel) = a.trian
-Gridap.Geometry.Triangulation(a::AnalyticalEquiAngularMapCubedSphereDiscreteModel) = a.trian
+Gridap.Geometry.get_cell_map(model::AnalyticalMapCubedSphereDiscreteModel) = model.cell_map
+Gridap.Geometry.get_grid(model::AnalyticalMapCubedSphereDiscreteModel) = Gridap.Geometry.get_grid(model.cubed_sphere_model)
+Gridap.Geometry.get_grid_topology(model::AnalyticalMapCubedSphereDiscreteModel) = Gridap.Geometry.get_grid_topology(model.cubed_sphere_model)
+Gridap.Geometry.get_face_labeling(model::AnalyticalMapCubedSphereDiscreteModel) = Gridap.Geometry.get_face_labeling(model.cubed_sphere_model)
+Gridap.Geometry.get_triangulation(a::AnalyticalMapCubedSphereDiscreteModel) = a.trian
+Gridap.Geometry.Triangulation(a::AnalyticalMapCubedSphereDiscreteModel) = a.trian
 
-function Gridap.CellData.get_normal_vector(model::AnalyticalEquiAngularMapCubedSphereDiscreteModel)
+function Gridap.CellData.get_normal_vector(model::AnalyticalMapCubedSphereDiscreteModel)
     cell_normal = Gridap.Geometry.get_facet_normal(model)
     Gridap.CellData.GenericCellField(cell_normal,Triangulation(model),ReferenceDomain())
 end
@@ -373,7 +367,7 @@ function _unit_outward_normal(v::Gridap.Fields.MultiValue{Tuple{2,3}})
 end
 
 
-function Gridap.Geometry.get_facet_normal(model::AnalyticalEquiAngularMapCubedSphereDiscreteModel)
+function Gridap.Geometry.get_facet_normal(model::AnalyticalMapCubedSphereDiscreteModel)
   # Get the Jacobian of the cubed sphere mesh
   map   = get_cell_map(model)
   Jt    = lazy_map(∇,map)
@@ -381,17 +375,4 @@ function Gridap.Geometry.get_facet_normal(model::AnalyticalEquiAngularMapCubedSp
   p
 end
 
-function run(comm)
-  num_uniform_refinements=4
-  model=CubedSphereDiscreteModel(comm,num_uniform_refinements)
-  do_on_parts(model) do part, (model,gids)
-    writevtk(Triangulation(model),
-             "part_$(part)",
-             cellfields=["n"=>Gridap.CellData.get_normal_vector(model),
-                         "lid_to_owner"=>gids.lid_to_owner])
-  end
-end
 
-MPIPETScCommunicator() do comm
-  run(comm)
-end
