@@ -8,6 +8,7 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
   using GridapP4est
   using Test
   using ArgParse
+  using P4est_wrapper
 
   function parse_commandline()
     s = ArgParseSettings()
