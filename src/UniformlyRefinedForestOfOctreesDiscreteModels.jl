@@ -832,10 +832,18 @@ function update_face_to_entity_with_ghost_data!(
              part_to_cell_to_entity)
 end
 
+"""
+  See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
+  argument values for the p4est_verbosity_level parameter
+"""
+function UniformlyRefinedForestOfOctreesDiscreteModel(
+    parts::MPIData{<:Integer},
+    coarse_discrete_model::DiscreteModel{Dc,Dp},
+    num_uniform_refinements::Int;
+    p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
 
-function UniformlyRefinedForestOfOctreesDiscreteModel(parts::MPIData{<:Integer},
-                                                      coarse_discrete_model::DiscreteModel{Dc,Dp},
-                                                      num_uniform_refinements::Int) where {Dc,Dp}
+  sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
+  p4est_init(C_NULL, p4est_verbosity_level)
 
   comm = parts.comm
   ptr_pXest_connectivity=setup_pXest_connectivity(coarse_discrete_model)
@@ -901,6 +909,7 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(parts::MPIData{<:Integer},
     # Destroy the connectivity
     p8est_connectivity_destroy(ptr_pXest_connectivity)
   end
+  sc_finalize()
 
   GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange)
 end
