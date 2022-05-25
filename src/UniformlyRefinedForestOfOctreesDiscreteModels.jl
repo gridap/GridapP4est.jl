@@ -484,7 +484,7 @@ function generate_face_labeling(parts,
         # if (MPI.Comm_rank(comm.comm)==0)
         #   println("XXX ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides, " ", corner)
         # end
-        if (info.tree_boundary!=0 && nsides==1)
+        if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P4EST_CONNECT_CORNER)
               # The current corner is also a corner of the coarse mesh
               coarse_cornergid=coarse_cell_vertices[tree][corner]
               vertex_to_entity[ref_cornergid]=
@@ -538,7 +538,7 @@ function generate_face_labeling(parts,
         #    coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
         #    println("PPP ", ref_cell, " ", edge, " TB ", info.tree_boundary, " ", nsides, " ",coarse_edgetgid, " ",  coarse_edgetgid_entity)
         #  end
-         if (info.tree_boundary!=0 && nsides==1)
+         if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P8EST_CONNECT_EDGE)
           coarse_edgetgid=coarse_cell_edgets[tree][edge]
           coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
           # We are on the boundary of coarse mesh or inter-octree boundary
@@ -613,7 +613,7 @@ function generate_face_labeling(parts,
         #   coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
         #   println("PPP ", ref_cell, " ", gridap_facet, " ", info.tree_boundary, " ", nsides, " ",coarse_facetgid, " ",  coarse_facetgid_entity)
         # end
-        if (info.tree_boundary!=0 && nsides==1)
+        if (info.tree_boundary!=0)
           coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
           coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
           # We are on the boundary of coarse mesh or inter-octree boundary
