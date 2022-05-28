@@ -31,6 +31,9 @@ testfiles = sort(filter(istest, readdir(testdir)))
      if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl"]
        np = 4
        extra_args = "-s 2 2 -r 2"
+     elseif f in ["OctreeDistributedDiscreteModelsTests.jl"]
+       np = 1
+       extra_args = ""
      else
        np = nprocs
        extra_args = ""
