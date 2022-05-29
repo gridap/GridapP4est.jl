@@ -10,5 +10,6 @@ module GridapP4est
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
   export refine
+  export FineToCoarseModelGlue
   export octree_distributed_discrete_model_free
 end
