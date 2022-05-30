@@ -21,6 +21,7 @@ module InterGridTransferOperatorsTests
     Gridap.Helpers.@check length(fcell_to_child_id)==num_cells(ftrian)
     Gridap.Helpers.@check DomainStyle(c_cell_field)==ReferenceDomain()
 
+    # TO-DO: can we pre-compute this?
     rrule_reffe=Gridap.ReferenceFEs.LagrangianRefFE(Float64,QUAD,1)
     rrule_grid=Gridap.Geometry.UnstructuredGrid(
                   Gridap.Visualization.compute_reference_grid(rrule_reffe,2))
@@ -34,6 +35,98 @@ module InterGridTransferOperatorsTests
     Gridap.CellData.GenericCellField(cfield_to_ffield,ftrian,ReferenceDomain())
   end
 
+  function change_domain_fine_to_coarse(f_cell_field,
+                                        ctrian::Triangulation{Dc,Dp},
+                                        glue::FineToCoarseModelGlue) where {Dc,Dp}
+    Gridap.Helpers.@check DomainStyle(f_cell_field)==ReferenceDomain()
+    # BEG TO-DO: can we pre-compute something of the following?
+    rrule_reffe=Gridap.ReferenceFEs.LagrangianRefFE(Float64,QUAD,1)
+    rrule_grid=Gridap.Geometry.UnstructuredGrid(
+                  Gridap.Visualization.compute_reference_grid(rrule_reffe,2))
+    rrule_f_to_c_ref_map=get_cell_map(rrule_grid)
+    rrule_c_to_f_ref_map=lazy_map(Gridap.Fields.inverse_map,rrule_f_to_c_ref_map)
+    model=Gridap.Geometry.UnstructuredDiscreteModel(rrule_grid)
+    Ω=Triangulation(model)
+    cache1 = Gridap.CellData._point_to_cell_cache(Gridap.CellData.KDTreeSearch(),Ω)
+    x_to_cell(x) = Gridap.CellData._point_to_cell!(cache1, x)
+    ffield=Gridap.CellData.get_data(f_cell_field)
+    A=typeof(ffield)
+    B=typeof(x_to_cell)
+    C=typeof(rrule_c_to_f_ref_map)
+    m=TransformFineFieldsToCoarseFieldMap{Dc,A,B,C}(ffield,x_to_cell,rrule_c_to_f_ref_map)
+    c_cell_field=lazy_map(m,Gridap.Arrays.IdentityVector(num_cells(ctrian)))
+    Gridap.CellData.GenericCellField(c_cell_field,ctrian,ReferenceDomain())
+    # END TO-DO: can we pre-compute something of the following?
+  end
+
+  struct TransformFineFieldsToCoarseFieldMap{Dc,A,B,C} <: Gridap.Fields.Map
+    ffield               :: A
+    x_to_cell            :: B
+    rrule_c_to_f_ref_map :: C
+  end
+
+  struct FineFieldsToCoarseField{Dc,A,B,C,D} <: Gridap.Fields.Field
+    ccell                :: A
+    ffield               :: B
+    x_to_cell            :: C
+    rrule_c_to_f_ref_map :: D
+  end
+
+
+  function Gridap.Arrays.return_cache(m::TransformFineFieldsToCoarseFieldMap,ccell::Integer)
+    nothing
+  end
+
+  function Gridap.Arrays.evaluate!(cache,
+                     m::TransformFineFieldsToCoarseFieldMap{Dc,A,B,C},
+                     ccell::Integer) where {Dc,A,B,C}
+    FineFieldsToCoarseField{Dc,typeof(ccell),A,B,C}(ccell,
+                                                 m.ffield,
+                                                 m.x_to_cell,
+                                                 m.rrule_c_to_f_ref_map)
+  end
+
+  function Gridap.Arrays.return_cache(m::FineFieldsToCoarseField{Dc},
+                        x::AbstractVector{<:Point}) where Dc
+
+    cffield=array_cache(m.ffield)
+    cx=array_cache(x)
+    xi=getindex!(cx,x,1)
+    fi=getindex!(cffield,m.ffield,1)
+    ti=Gridap.Arrays.return_type(fi,xi)
+    cfx=Gridap.Arrays.CachedArray(ti,1)
+    cf=Gridap.Arrays.return_cache(fi,xi)
+    crrule_map=array_cache(m.rrule_c_to_f_ref_map)
+    crrule_map_i=getindex!(crrule_map,m.rrule_c_to_f_ref_map,1)
+    crrule_map_i_cache=Gridap.Arrays.return_cache(crrule_map_i,xi)
+    x_to_f=collect(x)
+    x_to_child=Vector{UInt8}(undef,length(x))
+    for i in eachindex(x)
+      xi=getindex!(cx,x,i)
+      child_id=m.x_to_cell(xi)
+      x_to_child[i]=child_id
+      crrule_map_i=getindex!(crrule_map,m.rrule_c_to_f_ref_map,child_id)
+      x_to_f[i]=evaluate!(crrule_map_i_cache,crrule_map_i,xi)
+    end
+    cffield, cx, cf, cfx, x, x_to_f, x_to_child
+  end
+
+  function Gridap.Arrays.evaluate!(cache,
+                     m::FineFieldsToCoarseField{Dc},
+                     x::AbstractVector{<:Point}) where Dc
+    cffield, cx, cf, cfx, xc, x_to_f, x_to_child=cache
+    Gridap.Helpers.@notimplementedif !(xc === x)
+    Gridap.Arrays.setsize!(cfx, size(x))
+    num_children=2^Dc
+    base = (m.ccell-1)*num_children
+    for i in eachindex(x)
+      xi=x_to_f[i]
+      f=getindex!(cffield,m.ffield,base+x_to_child[i])
+      cfx.array[i]=evaluate!(cf,f,xi)
+    end
+    cfx.array
+  end
+
   function change_domain_coarse_to_fine(c_cell_field::GridapDistributed.DistributedCellField,
                                         ftrian::GridapDistributed.DistributedTriangulation{Dc,Dp},
                                         glue::MPIData{<:FineToCoarseModelGlue}) where {Dc,Dp}
@@ -45,8 +138,6 @@ module InterGridTransferOperatorsTests
     GridapDistributed.DistributedCellField(dfield)
   end
 
-
-
   function ProlongationOperator(uH,Uh,Vh,ftrian,glue,dΩ)
     uH_h = change_domain_coarse_to_fine(uH,ftrian,glue)
     a(u,v) = ∫(v*u)dΩ
@@ -55,6 +146,24 @@ module InterGridTransferOperatorsTests
     solve(op)
   end
 
+  function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.DistributedCellField,
+                                        ctrian::GridapDistributed.DistributedTriangulation{Dc,Dp},
+                                        glue::MPIData{<:FineToCoarseModelGlue}) where {Dc,Dp}
+
+    dfield=map_parts(change_domain_fine_to_coarse,
+                     GridapDistributed.local_views(f_cell_field),
+                     GridapDistributed.local_views(ctrian),
+                     glue)
+    GridapDistributed.DistributedCellField(dfield)
+  end
+
+  function RestrictionOperator(uh,UH,VH,ctrian,glue,dΩ)
+    uh_H = change_domain_fine_to_coarse(uh,ctrian,glue)
+    a(u,v) = ∫(v*u)dΩ
+    l(v)   = ∫(v*uh_H)dΩ
+    op=AffineFEOperator(a,l,UH,VH)
+    solve(op)
+  end
 
   function run(parts,subdomains)
     if length(subdomains)==2
@@ -82,13 +191,16 @@ module InterGridTransferOperatorsTests
     ctrian = get_triangulation(cmodel.dmodel)
     uH_h   = change_domain_coarse_to_fine(uH,ftrian,glue)
 
-    trian=Triangulation(fmodel.dmodel)
-    dΩ=Measure(trian,2*(order+1))
+    dΩh=Measure(ftrian,2*(order+1))
+    dΩH=Measure(ctrian,2*(order+1))
 
-    uh=ProlongationOperator(uH,Uh,Vh,trian,glue,dΩ)
+    uh=ProlongationOperator(uH,Uh,Vh,ftrian,glue,dΩh)
+
+    uh_H=change_domain_fine_to_coarse(uh,ftrian,glue)
+    uH_from_uh=RestrictionOperator(uh,UH,VH,ctrian,glue,dΩH)
 
     e = uH_h-uh
-    e_l2 = sum(∫(e*e)dΩ)
+    e_l2 = sum(∫(e*e)dΩh)
     tol = 1.0e-9
     @test e_l2 < tol
     map_parts(parts) do part
@@ -96,6 +208,17 @@ module InterGridTransferOperatorsTests
        println("$(e_l2) < $(tol)\n")
      end
     end
+
+    e = uH_from_uh-uH
+    e_l2 = sum(∫(e*e)dΩH)
+    tol = 1.0e-9
+    @test e_l2 < tol
+    map_parts(parts) do part
+     if (part==1)
+       println("$(e_l2) < $(tol)\n")
+     end
+    end
+
 
     octree_distributed_discrete_model_free(cmodel)
     octree_distributed_discrete_model_free(fmodel)
