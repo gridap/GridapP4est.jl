@@ -18,6 +18,10 @@ module GridapP4est
   include("OctreeDistributedDiscreteModels.jl")
   include("InterGridTransferOperators.jl")
   include("PETSCextensions.jl")
+
+  export change_domain_fine_to_coarse
+  export change_domain_coarse_to_fine
+
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
   export refine
@@ -25,4 +29,5 @@ module GridapP4est
   export octree_distributed_discrete_model_free
   export ProlongationOperator
   export RestrictionOperator
+
 end

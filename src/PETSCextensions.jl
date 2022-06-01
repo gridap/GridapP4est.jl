@@ -169,7 +169,6 @@ macro wrapper_bis(fn,rt,argts,args,url)
   expr = quote
     const $hn = Ref(C_NULL)
     push!(GridapPETSc._PRELOADS,($hn,$fn))
-    println(last(GridapPETSc._PRELOADS))
     @doc $str
     function $(fn.value)($(args.args...))
       _handle = Libdl.dlsym(GridapPETSc.PETSC.libpetsc_handle[],$fn;throw_error=false)
@@ -181,7 +180,13 @@ macro wrapper_bis(fn,rt,argts,args,url)
   esc(expr)
 end
 
-
+# MatShell
 @wrapper_bis(:MatCreateShell,PetscErrorCode,(MPI.Comm,PetscInt,PetscInt,PetscInt,PetscInt,Ptr{Cvoid},Ptr{Mat}),(comm,m,n,M,N,ctx,mat),"https://petsc.org/main/docs/manualpages/Mat/MatCreateShell/")
 @wrapper_bis(:MatShellSetOperation,PetscErrorCode,(Mat,MatOperation,Ptr{Cvoid}),(mat,matop,g),"https://petsc.org/release/docs/manualpages/Mat/MatShellSetOperation.html")
+@wrapper_bis(:MatShellGetContext,PetscErrorCode,(Mat,Ptr{Ptr{Cvoid}}),(mat,ctx),"https://petsc.org/release/docs/manualpages/Mat/MatShellGetContext.html")
+# PCMG
 @wrapper_bis(:PCMGSetLevels,PetscErrorCode,(PC,PetscInt,Ptr{MPI.Comm}),(pc,levels,comms),"https://petsc.org/main/docs/manualpages/PC/PCMGSetLevels/")
+@wrapper_bis(:PCMGSetInterpolation,PetscErrorCode,(PC,PetscInt,Mat),(pc,l,mat),"https://petsc.org/release/docs/manualpages/PC/PCMGSetInterpolation.html")
+@wrapper_bis(:PCMGSetRestriction,PetscErrorCode,(PC,PetscInt,Mat),(pc,l,mat),"https://petsc.org/release/docs/manualpages/PC/PCMGSetRestriction.html")
+@wrapper_bis(:PCMGGetSmoother, PetscErrorCode, (PC,PetscInt,Ptr{KSP}), (pc,l,ksp), "https://petsc.org/release/docs/manualpages/PC/PCMGGetSmoother.html")
+@wrapper_bis(:PCMGGetCoarseSolve, PetscErrorCode, (PC,Ptr{KSP}), (pc,ksp), "https://petsc.org/release/docs/manualpages/PC/PCMGGetCoarseSolve.html")
