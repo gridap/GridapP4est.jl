@@ -88,13 +88,18 @@ module PCMGTests
 
   mutable struct InterpolationMatCache
     Ωh
+    ΩH
     dΩh
     UH
+    VH
+    Uh
     Vh
     glue
+    uH_zero_dirichlet_values
     dof_values_H_fe_space_layout
     dof_values_H_sys_layout
-    dof_values_h_sys_layout
+    dof_values_h_sys_layout_b
+    dof_values_h_sys_layout_x
     ns
   end
 
@@ -103,15 +108,59 @@ module PCMGTests
     @check_error_code GridapP4est.MatShellGetContext(A,ctx)
     cache  = unsafe_pointer_to_objref(ctx[])
 
+    # @check_error_code GridapPETSc.PETSC.VecView(Vec(x),C_NULL)
+
     GridapPETSc._copy!(cache.dof_values_H_sys_layout, Vec(x))
+
+    # map_parts(cache.dof_values_H_sys_layout.values) do u
+    #   println(u)
+    # end
+
     GridapPETSc.copy!(cache.dof_values_H_fe_space_layout,cache.dof_values_H_sys_layout)
-    uH = FEFunction(cache.UH,cache.dof_values_H_fe_space_layout)
+
+    # map_parts(cache.dof_values_H_sys_layout.values) do u
+    #   println(u)
+    # end
+
+    uH = FEFunction(cache.UH,
+                    cache.dof_values_H_fe_space_layout,
+                    cache.uH_zero_dirichlet_values)
+
     uH_h = change_domain_coarse_to_fine(uH,cache.Ωh,cache.glue)
+
+    #writevtk(cache.ΩH,"uH",nsubcells=2,cellfields=["uH"=>uH])
+    #writevtk(cache.Ωh,"uH_h",cellfields=["uH_h"=>uH_h])
+
     l(v) = ∫(v*uH_h)cache.dΩh
-    Gridap.FESpaces.assemble_vector!(l,cache.dof_values_h_sys_layout,cache.Vh)
-    solve!(cache.dof_values_h_sys_layout,cache.ns,cache.dof_values_h_sys_layout)
-    GridapPETSc._copy!(Vec(y),cache.dof_values_h_sys_layout)
+    Gridap.FESpaces.assemble_vector!(l,cache.dof_values_h_sys_layout_b,cache.Vh)
+
+    # map_parts(cache.dof_values_h_sys_layout_b.values) do u
+    #   println(u)
+    # end
+
+    fill!(cache.dof_values_h_sys_layout_x,0.0)
+    solve!(cache.dof_values_h_sys_layout_x,cache.ns,cache.dof_values_h_sys_layout_b)
+
+    # map_parts(cache.ns.A.values,cache.dof_values_h_sys_layout_b.values) do A,b
+    #  println(A)
+    #  println(b)
+    #  println(A\b)
+    # end
+
+    # uh = FEFunction(cache.Uh,cache.dof_values_h_sys_layout_x)
+    # writevtk(cache.Ωh,"uh",cellfields=["uh"=>uh])
+
+    GridapPETSc._copy!(Vec(y),cache.dof_values_h_sys_layout_x)
+    # println("MatMult Interp")
+    # @check_error_code GridapPETSc.PETSC.VecView(Vec(y),C_NULL)
+
     GridapPETSc.PETSC.PetscErrorCode(0)
+  end
+
+  function set_ksp_mm(ksp)
+    @check_error_code GridapPETSc.PETSC.KSPSetOptionsPrefix(ksp[],"intergrid_mm_")
+    @check_error_code GridapPETSc.PETSC.KSPSetFromOptions(ksp[])
+    #@check_error_code GridapPETSc.PETSC.KSPView(ksp[],C_NULL)
   end
 
   function setup_interpolation_mat(parts,meshes,glues,fespaces,mmatrices,level)
@@ -120,10 +169,12 @@ module PCMGTests
     tests,trials=fespaces
     order=1
     Ωh = Triangulation(meshes[level].dmodel)
+    ΩH = Triangulation(meshes[level+1].dmodel)
     dΩh=Measure(Ωh,2*(order+1))
 
     # Extract Vh/VH and mass matrices
     Vh=tests[level]
+    Uh=trials[level]
     VH=tests[level+1]
     UH=trials[level+1]
     Mh=mmatrices[level]
@@ -133,22 +184,35 @@ module PCMGTests
     dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
     dof_values_h_fe_space_layout = PVector(0.0,Vh.gids)
     dof_values_H_sys_layout = similar(dof_values_H_fe_space_layout,(axes(MH)[2],))
-    dof_values_h_sys_layout = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
+    dof_values_h_sys_layout_b = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
+    dof_values_h_sys_layout_x = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
+
+    uH_zero_dirichlet_values=
+      map_parts(GridapDistributed.local_views(UH.spaces)) do space
+           zeros(num_dirichlet_dofs(space))
+      end
 
     # To-think: perhaps we may pre-compute this
-    solver=PETScLinearSolver()
+    solver=PETScLinearSolver(set_ksp_mm)
     ss=symbolic_setup(solver,Mh)
     ns=numerical_setup(ss,Mh)
 
     cache=InterpolationMatCache(Ωh,
+                                ΩH,
                                 dΩh,
                                 UH,
+                                VH,
+                                Uh,
                                 Vh,
                                 glues[level],
+                                uH_zero_dirichlet_values,
                                 dof_values_H_fe_space_layout,
                                 dof_values_H_sys_layout,
-                                dof_values_h_sys_layout,
+                                dof_values_h_sys_layout_b,
+                                dof_values_h_sys_layout_x,
                                 ns)
+
+
     ctx = pointer_from_objref(cache)
     fptr = @cfunction(matmult_interpolation,
                       GridapPETSc.PETSC.PetscErrorCode,
@@ -166,13 +230,17 @@ module PCMGTests
   end
 
   mutable struct RestrictionMatCache
+    Ωh
     ΩH
     dΩH
     Uh
+    UH
     VH
     glue
+    uh_zero_dirichlet_values
     dof_values_h_fe_space_layout
-    dof_values_H_sys_layout
+    dof_values_H_sys_layout_b
+    dof_values_H_sys_layout_x
     dof_values_h_sys_layout
     ns
   end
@@ -181,14 +249,54 @@ module PCMGTests
     ctx = Ref{Ptr{Cvoid}}()
     @check_error_code GridapP4est.MatShellGetContext(A,ctx)
     cache  = unsafe_pointer_to_objref(ctx[])
+    # @check_error_code GridapPETSc.PETSC.VecView(Vec(x),C_NULL)
     GridapPETSc._copy!(cache.dof_values_h_sys_layout, Vec(x))
+
+    # map_parts(cache.dof_values_h_sys_layout.values) do u
+    #   println(u)
+    # end
+
     GridapPETSc.copy!(cache.dof_values_h_fe_space_layout,cache.dof_values_h_sys_layout)
-    uh = FEFunction(cache.Uh,cache.dof_values_h_fe_space_layout)
+
+    # map_parts(cache.dof_values_h_fe_space_layout.values) do u
+    #   println(u)
+    # end
+
+    uh = FEFunction(cache.Uh,
+                    cache.dof_values_h_fe_space_layout,
+                    cache.uh_zero_dirichlet_values)
+
     uh_H = change_domain_fine_to_coarse(uh,cache.ΩH,cache.glue)
+
+    #writevtk(cache.Ωh,"uh",cellfields=["uh"=>uh])
+    #writevtk(cache.ΩH,"uh_H",nsubcells=2,cellfields=["uh_H"=>uh_H])
+
     l(v) = ∫(v*uh_H)cache.dΩH
-    Gridap.FESpaces.assemble_vector!(l,cache.dof_values_H_sys_layout,cache.VH)
-    solve!(cache.dof_values_H_sys_layout,cache.ns,cache.dof_values_H_sys_layout)
-    GridapPETSc._copy!(Vec(y),cache.dof_values_H_sys_layout)
+    Gridap.FESpaces.assemble_vector!(l,cache.dof_values_H_sys_layout_b,cache.VH)
+
+    # map_parts(cache.dof_values_H_sys_layout_b.values) do u
+    #   println(u)
+    # end
+
+    fill!(cache.dof_values_H_sys_layout_x,0.0)
+    solve!(cache.dof_values_H_sys_layout_x,cache.ns,cache.dof_values_H_sys_layout_b)
+
+    # map_parts(cache.ns.A.values,cache.dof_values_H_sys_layout_b.values) do A,b
+    #   println(A)
+    #   println(b)
+    #   println(A\b)
+    #  end
+
+    # map_parts(cache.dof_values_H_sys_layout_x.values) do u
+    #   println(u)
+    # end
+
+    # uH = FEFunction(cache.UH,cache.dof_values_H_sys_layout_x)
+    #writevtk(cache.ΩH,"uH",cellfields=["uH"=>uH])
+
+    GridapPETSc._copy!(Vec(y),cache.dof_values_H_sys_layout_x)
+    # @check_error_code GridapPETSc.PETSC.VecView(Vec(y),C_NULL)
+
     GridapPETSc.PETSC.PetscErrorCode(0)
   end
 
@@ -196,6 +304,7 @@ module PCMGTests
     Gridap.Helpers.@check 1 <= level <= length(meshes)-1
     tests,trials=fespaces
     order=1
+    Ωh  = Triangulation(meshes[level].dmodel)
     ΩH  = Triangulation(meshes[level+1].dmodel)
     dΩH = Measure(ΩH,2*(order+1))
 
@@ -203,6 +312,7 @@ module PCMGTests
     Vh=tests[level]
     VH=tests[level+1]
     Uh=trials[level]
+    UH=trials[level+1]
     Mh=mmatrices[level]
     MH=mmatrices[level+1]
 
@@ -210,20 +320,31 @@ module PCMGTests
     dof_values_h_fe_space_layout = PVector(0.0,Vh.gids)
     dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
     dof_values_h_sys_layout = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
-    dof_values_H_sys_layout = similar(dof_values_H_fe_space_layout,(axes(MH)[2],))
+    dof_values_H_sys_layout_b = similar(dof_values_H_fe_space_layout,(axes(MH)[2],))
+    dof_values_H_sys_layout_x = similar(dof_values_H_fe_space_layout,(axes(MH)[2],))
+
+
+    uh_zero_dirichlet_values=
+      map_parts(GridapDistributed.local_views(Uh.spaces)) do space
+           zeros(num_dirichlet_dofs(space))
+      end
 
     # To-think: perhaps we may pre-compute this
-    solver=PETScLinearSolver()
+    solver=PETScLinearSolver(set_ksp_mm)
     ss=symbolic_setup(solver,MH)
     ns=numerical_setup(ss,MH)
 
-    cache=RestrictionMatCache(ΩH,
+    cache=RestrictionMatCache(Ωh,
+                              ΩH,
                               dΩH,
                               Uh,
+                              UH,
                               VH,
                               glues[level],
+                              uh_zero_dirichlet_values,
                               dof_values_h_fe_space_layout,
-                              dof_values_H_sys_layout,
+                              dof_values_H_sys_layout_b,
+                              dof_values_H_sys_layout_x,
                               dof_values_h_sys_layout,
                               ns)
     ctx = pointer_from_objref(cache)
@@ -266,30 +387,38 @@ module PCMGTests
     comm = parts.comm
     pc=Ref{PC}()
     ksp_smoother=Ref{KSP}()
-    @check_error_code GridapPETSc.PETSC.KSPCreate(comm,ksp)
     @check_error_code GridapPETSc.PETSC.KSPSetFromOptions(ksp[])
     @check_error_code GridapPETSc.PETSC.KSPGetPC(ksp[],pc)
     @check_error_code GridapPETSc.PETSC.PCSetType(pc[],GridapPETSc.PETSC.PCMG)
     @check_error_code GridapP4est.PCMGSetLevels(pc[],PetscInt(num_levels),C_NULL)
+
     for l=1:num_levels-1
-      @check_error_code GridapP4est.PCMGSetInterpolation(pc[],PetscInt(l),interpolations[l].mat[])
-      @check_error_code GridapP4est.PCMGSetRestriction(pc[],PetscInt(l),restrictions[l].mat[])
-      @check_error_code GridapP4est.PCMGGetSmoother(pc[],PetscInt(l),ksp_smoother)
+      petsc_level=num_levels-l
+      @check_error_code GridapP4est.PCMGSetInterpolation(pc[],
+                                           PetscInt(petsc_level),
+                                           interpolations[l].mat[])
+      @check_error_code GridapP4est.PCMGSetRestriction(pc[],
+                                          PetscInt(petsc_level),
+                                          restrictions[l].mat[])
+      @check_error_code GridapP4est.PCMGGetSmoother(pc[],
+                                      PetscInt(petsc_level),
+                                      ksp_smoother)
+
       if l==1
         @check_error_code GridapPETSc.PETSC.KSPSetOperators(ksp[],
                              smatrices[l].mat[],
                              smatrices[l].mat[])
       end
       @check_error_code GridapPETSc.PETSC.KSPSetOperators(ksp_smoother[],
-                                                          smatrices[l].mat[],
-                                                          smatrices[l].mat[])
+                                                            smatrices[l].mat[],
+                                                            smatrices[l].mat[])
     end
     @check_error_code GridapP4est.PCMGGetCoarseSolve(pc[],ksp_smoother);
     @check_error_code GridapPETSc.PETSC.KSPSetOperators(ksp_smoother[],
                                                         smatrices[num_levels].mat[],
                                                         smatrices[num_levels].mat[])
     @check_error_code GridapPETSc.PETSC.KSPSetUp(ksp[])
-    @check_error_code GridapPETSc.PETSC.KSPView(ksp[],C_NULL)
+    #@check_error_code GridapPETSc.PETSC.KSPView(ksp[],C_NULL)
   end
 
   # Manufactured solution
@@ -304,11 +433,11 @@ module PCMGTests
       domain=(0,1,0,1,0,1)
     end
 
-    options = "-ksp_type gmres -ksp_monitor -ksp_converged_reason -ksp_rtol 1.0e-14 -pc_type mg -pc_mg_type multiplicative -pc_mg_multiplicative_cycles 1  -mg_coarse_pc_type cholesky -mg_coarse_ksp_type preonly -mg_levels_pc_type jacobi -mg_levels_ksp_type richardson"
+    options = "-ksp_type cg -ksp_monitor -ksp_converged_reason -ksp_rtol 1.0e-8 -pc_type mg -pc_mg_type multiplicative -pc_mg_multiplicative_cycles 1  -mg_coarse_pc_type cholesky -mg_coarse_ksp_type preonly -mg_levels_pc_type jacobi -mg_levels_ksp_type richardson -intergrid_mm_ksp_type preonly -intergrid_mm_pc_type cholesky"
 
     num_levels=2
     GridapPETSc.with(args=split(options)) do
-       coarse_discrete_model=CartesianDiscreteModel(domain,(2,2))
+       coarse_discrete_model=CartesianDiscreteModel(domain,(64,64))
        meshes,glues=generate_meshes(parts,coarse_discrete_model,num_levels)
        fespaces=generate_fe_spaces(meshes)
        mmatrices=generate_mass_matrices(meshes,fespaces)

@@ -186,6 +186,7 @@ end
 @wrapper_bis(:MatShellGetContext,PetscErrorCode,(Mat,Ptr{Ptr{Cvoid}}),(mat,ctx),"https://petsc.org/release/docs/manualpages/Mat/MatShellGetContext.html")
 # PCMG
 @wrapper_bis(:PCMGSetLevels,PetscErrorCode,(PC,PetscInt,Ptr{MPI.Comm}),(pc,levels,comms),"https://petsc.org/main/docs/manualpages/PC/PCMGSetLevels/")
+@wrapper_bis(:PCMGSetResidual,PetscErrorCode,(PC,PetscInt,Ptr{Cvoid},Mat),(pc,l,residual,mat),"https://petsc.org/main/docs/manualpages/PC/PCMGSetResidual/")
 @wrapper_bis(:PCMGSetInterpolation,PetscErrorCode,(PC,PetscInt,Mat),(pc,l,mat),"https://petsc.org/release/docs/manualpages/PC/PCMGSetInterpolation.html")
 @wrapper_bis(:PCMGSetRestriction,PetscErrorCode,(PC,PetscInt,Mat),(pc,l,mat),"https://petsc.org/release/docs/manualpages/PC/PCMGSetRestriction.html")
 @wrapper_bis(:PCMGGetSmoother, PetscErrorCode, (PC,PetscInt,Ptr{KSP}), (pc,l,ksp), "https://petsc.org/release/docs/manualpages/PC/PCMGGetSmoother.html")
