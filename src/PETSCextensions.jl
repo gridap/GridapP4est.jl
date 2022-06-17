@@ -191,3 +191,88 @@ end
 @wrapper_bis(:PCMGSetRestriction,PetscErrorCode,(PC,PetscInt,Mat),(pc,l,mat),"https://petsc.org/release/docs/manualpages/PC/PCMGSetRestriction.html")
 @wrapper_bis(:PCMGGetSmoother, PetscErrorCode, (PC,PetscInt,Ptr{KSP}), (pc,l,ksp), "https://petsc.org/release/docs/manualpages/PC/PCMGGetSmoother.html")
 @wrapper_bis(:PCMGGetCoarseSolve, PetscErrorCode, (PC,Ptr{KSP}), (pc,ksp), "https://petsc.org/release/docs/manualpages/PC/PCMGGetCoarseSolve.html")
+
+
+# DMPlex
+
+"""
+Julia alias for the `DM` C type.
+
+See [PETSc manual](https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/DM/DM.html).
+"""
+struct DM
+  ptr::Ptr{Cvoid}
+end
+DM() = Vec(Ptr{Cvoid}())
+Base.convert(::Type{DM},p::Ptr{Cvoid}) = DM(p)
+Base.unsafe_convert(::Type{Ptr{Cvoid}},v::DM) = v.ptr
+
+# PetscErrorCode DMPlexCreate(MPI_Comm comm, DM *mesh)
+@wrapper_bis(:DMPlexCreate, PetscErrorCode, (MPI.Comm,Ptr{DM}), (comm,mesh), "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexCreate.html")
+
+# PetscErrorCode  DMDestroy(DM *dm)
+@wrapper_bis(:DMDestroy, PetscErrorCode, (Ptr{DM},), (dm,), "https://petsc.org/release/docs/manualpages/DM/DMDestroy.html")
+
+@wrapper_bis(:DMView,PetscErrorCode,(DM,GridapPETSc.PETSC.PetscViewer),(dm,viewer),"https://petsc.org/release/docs/manualpages/DM/DMView.html")
+
+# PetscErrorCode DMPlexSetChart(DM dm, PetscInt pStart, PetscInt pEnd)
+@wrapper_bis(:DMPlexSetChart, PetscErrorCode, (DM,PetscInt,PetscInt), (dm,pStart,pEnd), "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexSetChart.html")
+
+@wrapper_bis(:DMPlexGetChart,PetscErrorCode,(DM,Ptr{PetscInt},Ptr{PetscInt}),(dm,pStart,pEnd),"https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexGetChart.html")
+
+# PetscErrorCode DMPlexGetHeightStratum(DM dm, PetscInt stratumValue, PetscInt *start, PetscInt *end)
+@wrapper_bis(:DMPlexGetHeightStratum,PetscErrorCode,(DM,PetscInt,Ptr{PetscInt},Ptr{PetscInt}),(dm,stratumValue,s,e),"https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexGetHeightStratum.html")
+
+# PetscErrorCode DMPlexSetConeSize(DM dm, PetscInt p, PetscInt size)
+@wrapper_bis(:DMPlexSetConeSize, PetscErrorCode, (DM,PetscInt,PetscInt), (dm,p,size),  "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexSetConeSize.html")
+
+# PetscErrorCode DMSetUp(DM dm)
+@wrapper_bis(:DMSetUp, PetscErrorCode, (DM,), (dm,), "https://petsc.org/release/docs/manualpages/DM/DMSetUp.html")
+
+# PetscErrorCode DMPlexSetCone(DM dm, PetscInt p, const PetscInt cone[])
+@wrapper_bis(:DMPlexSetCone, PetscErrorCode, (DM,PetscInt,Ptr{PetscInt}), (dm,p,cone), "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexSetCone.html")
+
+# PetscErrorCode DMPlexSymmetrize(DM dm)
+@wrapper_bis(:DMPlexSymmetrize, PetscErrorCode, (DM,), (dm,), "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexSymmetrize.html")
+
+# PetscErrorCode DMPlexStratify(DM dm)
+@wrapper_bis(:DMPlexStratify, PetscErrorCode, (DM,), (dm,), "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexStratify.html")
+
+@wrapper_bis(:DMPlexCheck, PetscErrorCode, (DM,), (dm,), "https://petsc.org/release/docs/manualpages/DMPLEX/DMPlexCheck.html")
+
+
+"""
+Julia alias for the `PetscSection` C type.
+
+See [PETSc manual](https://petsc.org/release/docs/manualpages/PetscSection/PetscSection.html).
+"""
+struct PetscSection
+  ptr::Ptr{Cvoid}
+end
+PetscSection() = Vec(Ptr{Cvoid}())
+Base.convert(::Type{PetscSection},p::Ptr{Cvoid}) = PetscSection(p)
+Base.unsafe_convert(::Type{Ptr{Cvoid}},v::PetscSection) = v.ptr
+
+# PetscSectionCreate(MPI_Comm,PetscSection *);
+@wrapper_bis(:PetscSectionCreate, PetscErrorCode, (MPI.Comm,Ptr{PetscSection}), (comm,sec), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionCreate.html")
+
+# PetscSectionSetChart(PetscSection,low,high);
+@wrapper_bis(:PetscSectionSetChart, PetscErrorCode, (PetscSection,PetscInt,PetscInt), (sec,low,high), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionSetChart.html")
+
+# PetscSectionSetDof(PetscSection,point,numdof);
+@wrapper_bis(:PetscSectionSetDof, PetscErrorCode, (PetscSection,PetscInt,PetscInt), (sec,point,numdof), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionSetDof.html")
+
+# PetscSectionSetUp(PetscSection);
+@wrapper_bis(:PetscSectionSetUp, PetscErrorCode, (PetscSection,), (sec,), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionSetUp.html")
+
+# PetscSectionSetNumFields(PetscSection, numFields);
+@wrapper_bis(:PetscSectionSetNumFields, PetscErrorCode, (PetscSection,PetscInt), (sec,numFields), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionSetNumFields.html")
+
+# PetscSectionGetOffset(PetscSection,point,PetscInt *);
+@wrapper_bis(:PetscSectionGetOffset, PetscErrorCode, (PetscSection,PetscInt,Ptr{PetscInt}), (sec,point,off), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionGetOffset.html")
+
+# PetscErrorCode PetscSectionSetConstraintDof(PetscSection s, PetscInt point, PetscInt numDof)
+@wrapper_bis(:PetscSectionSetConstraintDof, PetscErrorCode, (PetscSection,PetscInt,PetscInt), (s,point,numDof), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionSetConstraintDof.html")
+
+# PetscSectionDestroy(PetscSection);
+@wrapper_bis(:PetscSectionDestroy, PetscErrorCode, (Ptr{PetscSection},), (sec,), "https://petsc.org/release/docs/manualpages/PetscSection/PetscSectionDestroy.html")
