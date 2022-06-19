@@ -34,6 +34,9 @@ testfiles = sort(filter(istest, readdir(testdir)))
      elseif f in ["OctreeDistributedDiscreteModelsTests.jl","InterGridTransferOperatorsTests.jl"]
        np = 1
        extra_args = ""
+     elseif f in ["RedistributeTests.jl"]
+       np = 2
+       extra_args = ""
      else
        np = nprocs
        extra_args = ""

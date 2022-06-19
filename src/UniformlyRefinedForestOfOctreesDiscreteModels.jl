@@ -1,3 +1,39 @@
+
+function pXest_lnodes_destroy(::Type{Val{Dc}}, ptr_pXest_lnodes) where Dc
+  if (Dc==2)
+    p4est_lnodes_destroy(ptr_pXest_lnodes)
+  else
+    p8est_lnodes_destroy(ptr_pXest_lnodes)
+  end
+end
+
+function pXest_ghost_destroy(::Type{Val{Dc}}, ptr_pXest_ghost) where Dc
+  if (Dc==2)
+    p4est_ghost_destroy(ptr_pXest_ghost)
+  else
+    p8est_ghost_destroy(ptr_pXest_ghost)
+  end
+end
+
+function pXest_destroy(::Type{Val{Dc}}, ptr_pXest) where Dc
+  if (Dc==2)
+    p4est_destroy(ptr_pXest)
+  else
+    p8est_destroy(ptr_pXest)
+  end
+end
+
+function pXest_connectivity_destroy(::Type{Val{Dc}}, ptr_pXest_connectivity) where Dc
+  if (Dc==2)
+    p4est_connectivity_destroy(ptr_pXest_connectivity)
+  else
+    p8est_connectivity_destroy(ptr_pXest_connectivity)
+  end
+end
+
+
+p4est_connectivity_destroy
+
 const P4EST_2_GRIDAP_FACET_2D  = [ 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_2D  = [ 3, 4, 1, 2 ]
 
@@ -916,25 +952,12 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
                                           ptr_pXest,
                                           ptr_pXest_ghost,
                                           ptr_pXest_lnodes)
-  if (Dc==2)
-    # Destroy lnodes
-    p4est_lnodes_destroy(ptr_pXest_lnodes)
-    # Destroy ghost
-    p4est_ghost_destroy(ptr_pXest_ghost)
-    # Destroy the forest
-    p4est_destroy(ptr_pXest)
-    # Destroy the connectivity
-    p4est_connectivity_destroy(ptr_pXest_connectivity)
-  else
-    # Destroy lnodes
-    p8est_lnodes_destroy(ptr_pXest_lnodes)
-    # Destroy ghost
-    p8est_ghost_destroy(ptr_pXest_ghost)
-    # Destroy the forest
-    p8est_destroy(ptr_pXest)
-    # Destroy the connectivity
-    p8est_connectivity_destroy(ptr_pXest_connectivity)
-  end
+
+  pXest_lnodes_destroy(ptr_pXest_lnodes)
+  pXest_ghost_destroy(ptr_pXest_ghost)
+  pXest_destroy(ptr_pXest)
+  pXest_connectivity_destroy(ptr_pXest_connectivity)
+
   sc_finalize()
   dmodel
 end
