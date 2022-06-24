@@ -19,6 +19,7 @@ module GridapP4est
   include("InterGridTransferOperators.jl")
   include("PETSCextensions.jl")
   include("PartitionedArraysExtensions.jl")
+  include("ModelHierarchies.jl")
 
   export change_domain_fine_to_coarse
   export change_domain_coarse_to_fine
@@ -31,5 +32,8 @@ module GridapP4est
   export octree_distributed_discrete_model_free
   export ProlongationOperator
   export RestrictionOperator
+  export ModelHierarchy
+  export ModelHierarchyLevel
+  export model_hierarchy_free!
 
 end

@@ -58,7 +58,9 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
   end
 
 function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscreteModel{Dc}) where Dc
-  pXest_destroy(Val{Dc},model.ptr_pXest)
+  if i_am_in(model.parts.comm)
+    pXest_destroy(Val{Dc},model.ptr_pXest)
+  end
 end
 
 function pXest_copy(::Type{Val{Dc}}, ptr_pXest) where Dc
@@ -238,6 +240,7 @@ function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   if (GridapP4est.i_am_in(new_comm))
     new_comm_num_parts = GridapP4est.num_parts(new_comm)
     global_first_quadrant=Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
+
     pXest_conn = ptr_pXest_conn[]
     pertree=Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
     if (GridapP4est.i_am_in(old_comm))
@@ -249,6 +252,7 @@ function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
       old_global_first_quadrant = unsafe_wrap(Array,
                                               pXest.global_first_quadrant,
                                               old_comm_num_parts+1)
+
       for i=1:length(old_global_first_quadrant)
         global_first_quadrant[i]=old_global_first_quadrant[i]
       end
@@ -322,12 +326,9 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
   for itree=0:num_trees-1
     tree=_p4est_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
     num_quads=Cint(tree.quadrants.elem_count)
-    println("XXX $(num_quads) $(0:(num_quads-1))")
     for iquad=0:num_quads-1
-      println("YYY $(iquad)")
       q = _p4est_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
       new_rank = _p4est_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
-      println("$(itree) $(iquad) $(new_rank)")
       if (new_rank!=my_rank)
         if (!(new_rank in keys(ranks_count)))
           push!(lst_ranks,new_rank)
@@ -429,126 +430,7 @@ function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts) where
                                      ptr_pXest), glue
 
     else
-      _create_void_octree_model(model)
+      _create_void_octree_model(model), nothing
     end
   end
 end
-
-
-
-
-
-# void F90_p4est_compute_migration_control_data (p4est_t   * p4est_old,
-#                                                p4est_t   * p4est_new,
-#                                                int             * num_ranks, // How many processors involved?
-#                                                p4est_locidx_t ** lst_ranks, // Identifiers of processors involved from 1..P
-#                                                int            ** ptr_ranks, // Pointers to [start,end] of local_ids for each P in num_ranks
-#                                                p4est_locidx_t ** local_ids,
-#                                                p4est_locidx_t ** old2new)
-# {
-#     p4est_tree_t       *tree_old, *tree_new;
-#     p4est_quadrant_t   *q_old, *q_new;
-#     sc_array_t         *quadrants_old, *quadrants_new;
-#     int                old_quadrant_index,
-#                        new_quadrant_index;
-
-#     p4est_locidx_t     my_rank;
-#     p4est_locidx_t     new_rank;
-
-#     p4est_locidx_t   * ranks_visited;
-#     p4est_locidx_t   * ranks_count;
-#     p4est_locidx_t   * ranks_lids;
-
-
-#     // Extract references to the first (and uniquely allowed) trees
-#     tree_old = p4est_tree_array_index (p4est_old->trees,0);
-#     tree_new = p4est_tree_array_index (p4est_new->trees,0);
-#     quadrants_old = &(tree_old->quadrants);
-#     quadrants_new = &(tree_new->quadrants);
-
-#     ranks_count   = (p4est_locidx_t *) malloc( (size_t) p4est_old->mpisize*sizeof(p4est_locidx_t) ); P4EST_ASSERT(ranks_count != NULL);
-#     ranks_visited = (p4est_locidx_t *) malloc( (size_t) p4est_old->mpisize*sizeof(p4est_locidx_t) ); P4EST_ASSERT(ranks_visited != NULL);
-#     ranks_lids    = (p4est_locidx_t *) malloc( (size_t) p4est_old->mpisize*sizeof(p4est_locidx_t) ); P4EST_ASSERT(ranks_lids != NULL);
-#     for (my_rank=0; my_rank < p4est_old->mpisize; my_rank++)
-#     {
-#       ranks_count[my_rank] = 0;
-#     }
-
-#     if ( *old2new ) free(*old2new);
-#     *old2new = (p4est_locidx_t *) malloc( (size_t) quadrants_old->elem_count*sizeof(p4est_locidx_t) ); P4EST_ASSERT((*old2new) != NULL);
-#     old_quadrant_index=0;
-#     while (old_quadrant_index < quadrants_old->elem_count)
-#     {
-#        (*old2new)[old_quadrant_index] = -1;
-#        old_quadrant_index++;
-#     }
-
-#     // Calculate num_ranks
-#     *num_ranks = 0;
-#     my_rank    = p4est_old->mpirank;
-#     new_quadrant_index = 0;
-#     for (old_quadrant_index=0; old_quadrant_index < quadrants_old->elem_count;old_quadrant_index++)
-#     {
-#         q_old    = p4est_quadrant_array_index(quadrants_old, old_quadrant_index);
-#         new_rank = p4est_comm_find_owner (p4est_new,0,q_old,0);
-#         if ( new_rank != my_rank )
-#         {
-#             if (ranks_count[new_rank] == 0)
-#             {
-#               ranks_visited[*num_ranks] = new_rank;
-#               ranks_lids[new_rank]   = *num_ranks;
-#               (*num_ranks)++;
-#             }
-#             ranks_count[new_rank]++;
-#             (*old2new)[old_quadrant_index]=0;
-#         }
-#         else {
-#             q_new    = p4est_quadrant_array_index(quadrants_new, new_quadrant_index);
-#             while ( ! p4est_quadrant_is_equal(q_old,q_new) ) {
-#                new_quadrant_index++;
-#                q_new    = p4est_quadrant_array_index(quadrants_new, new_quadrant_index);
-#             }
-#             (*old2new)[old_quadrant_index]=new_quadrant_index+1;
-#             new_quadrant_index++;
-#         }
-#     }
-
-#     if ( *lst_ranks ) free(*lst_ranks);
-#     *lst_ranks = (p4est_locidx_t *) malloc( (size_t) (*num_ranks)*sizeof(p4est_locidx_t) ); P4EST_ASSERT((*lst_ranks) != NULL);
-
-#     if ( *ptr_ranks ) free(*ptr_ranks);
-#     *ptr_ranks = (p4est_locidx_t *) malloc( (size_t) (*num_ranks+1)*sizeof(p4est_locidx_t) ); P4EST_ASSERT((*ptr_ranks) != NULL);
-
-
-#     (*ptr_ranks)[0]=1;
-#     for (my_rank=0; my_rank < *num_ranks; my_rank++)
-#     {
-#         (*lst_ranks)[my_rank]   = ranks_visited[my_rank]+1;
-#         (*ptr_ranks)[my_rank+1] = (*ptr_ranks)[my_rank] + ranks_count[ranks_visited[my_rank]] ;
-#     }
-
-#     free(ranks_count);
-#     free(ranks_visited);
-
-#     if ( *local_ids ) free(*local_ids);
-#     *local_ids = (p4est_locidx_t *) malloc( (size_t) ((*ptr_ranks)[(*num_ranks)]-1)*sizeof(p4est_locidx_t) );
-
-#     my_rank = p4est_old->mpirank;
-#     for (old_quadrant_index=0; old_quadrant_index < quadrants_old->elem_count; old_quadrant_index++)
-#     {
-#         q_old = p4est_quadrant_array_index(quadrants_old, old_quadrant_index);
-#         new_rank = p4est_comm_find_owner(p4est_new,0,q_old,0);
-#         if ( new_rank != my_rank )
-#         {
-#             (*local_ids)[(*ptr_ranks)[ranks_lids[new_rank]]-1] = old_quadrant_index+1;
-#             (*ptr_ranks)[ranks_lids[new_rank]] = (*ptr_ranks)[ranks_lids[new_rank]] + 1;
-#         }
-#     }
-#     free(ranks_lids);
-
-#     for (my_rank=*num_ranks; my_rank >= 1; my_rank--)
-#     {
-#         (*ptr_ranks)[my_rank] = (*ptr_ranks)[my_rank-1];
-#     }
-#     (*ptr_ranks)[0] = 1;
-# }

@@ -31,9 +31,6 @@ function pXest_connectivity_destroy(::Type{Val{Dc}}, ptr_pXest_connectivity) whe
   end
 end
 
-
-p4est_connectivity_destroy
-
 const P4EST_2_GRIDAP_FACET_2D  = [ 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_2D  = [ 3, 4, 1, 2 ]
 

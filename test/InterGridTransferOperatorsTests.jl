@@ -1,4 +1,4 @@
-#module InterGridTransferOperatorsTests
+module InterGridTransferOperatorsTests
   using MPI
   using Gridap
   using PartitionedArrays
@@ -102,4 +102,4 @@
   parts = get_part_ids(mpi,1)
   run(parts,(2,2))
   MPI.Finalize()
-# end
+end
