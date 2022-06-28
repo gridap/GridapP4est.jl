@@ -114,32 +114,120 @@ struct FineToCoarseModelGlue{A,B,C}
 end
 
 
-function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
-  A=typeof(model.parts)
+function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+  A=typeof(parts)
   B=typeof(nothing)
   C=typeof(model.coarse_model)
   D=typeof(model.ptr_pXest_connectivity)
   E=typeof(nothing)
-  OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(model.parts,
+  OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
                                                   nothing,
                                                   model.coarse_model,
                                                   model.ptr_pXest_connectivity,
                                                   nothing)
 end
 
-function refine(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
+function _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel)
+  fine_to_coarse_faces_map=Vector{Vector{Int}}(undef,Dc+1)
+  fine_to_coarse_faces_dim=Vector{Vector{Int}}(undef,Dc)
+
+  num_c_cells=num_cells(cmodel)
+  num_f_cells=num_cells(fmodel)
+
+  # Allocate local vector size # local cells
+  fine_to_coarse_faces_map[Dc+1]=Vector{Int}(undef,num_f_cells)
+  fcell_to_child_id=Vector{Int}(undef,num_f_cells)
+
+  # Go over all cells of coarse grid portion
+  num_children=get_num_children(Val{Dc})
+  c=1
+  for cell=1:num_c_cells
+    for child=1:num_children
+      fine_to_coarse_faces_map[Dc+1][c+child-1]=cell
+      fcell_to_child_id[c+child-1]=child
+    end
+    c=c+num_children
+  end
+  ctopology=Gridap.Geometry.get_grid_topology(cmodel)
+  ftopology=Gridap.Geometry.get_grid_topology(fmodel)
+  for d=1:Dc
+    fine_to_coarse_faces_map[d] = Vector{Int}(undef,
+                                              Gridap.Geometry.num_faces(ftopology,d-1))
+    fine_to_coarse_faces_dim[d] = Vector{Int}(undef,
+                                              Gridap.Geometry.num_faces(ftopology,d-1))
+  end
+
+  c_cell_faces=[]
+  cache_c_cell_faces=[]
+  f_cell_faces=[]
+  cache_f_cell_faces=[]
+  for d=1:Dc
+    push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
+    push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
+    push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
+    push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
+  end
+  parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
+  for cell=1:num_f_cells
+    parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
+    child=fcell_to_child_id[cell]
+    for d=1:Dc
+      parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
+                                    c_cell_faces[d],
+                                    parent_cell)
+    end
+    for d=1:Dc
+      cell_f_faces=getindex!(cache_f_cell_faces[d],
+                              f_cell_faces[d],
+                              cell)
+      for (lf,f) in enumerate(cell_f_faces)
+        c     = rrule_f_to_c_lid_2D[d][child][lf]
+        dim_c = rrule_f_to_c_dim_2D[d][child][lf]
+        if (dim_c == Dc)
+          fine_to_coarse_faces_map[d][f]=parent_cell
+        else
+          fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
+        end
+        fine_to_coarse_faces_dim[d][f]=dim_c
+      end
+    end
+  end
+  FineToCoarseModelGlue(fine_to_coarse_faces_map,
+                        fine_to_coarse_faces_dim,
+                        fcell_to_child_id)
+end
+
+function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
+                parts=nothing) where {Dc,Dp}
+
    comm = model.parts.comm
    if (i_am_in(comm))
-      # Copy and refine input p4est
-      ptr_new_pXest=pXest_copy(Val{Dc}, model.ptr_pXest)
-      pXest_refine!(Val{Dc}, ptr_new_pXest)
+     # Copy and refine input p4est
+     ptr_new_pXest=pXest_copy(Val{Dc}, model.ptr_pXest)
+     pXest_refine!(Val{Dc}, ptr_new_pXest)
+   else
+     ptr_new_pXest=nothing
+   end
+
+   comm = parts==nothing ? model.parts.comm : parts.comm
+   if (i_am_in(comm))
+      if (parts!=nothing)
+        aux=ptr_new_pXest
+        ptr_new_pXest = _p4est_to_new_comm(ptr_new_pXest,
+                                           model.ptr_pXest_connectivity,
+                                           model.parts.comm,
+                                           parts.comm)
+        if (i_am_in(model.parts.comm))
+          pXest_destroy(Val{Dc},aux)
+        end
+      end
 
       # Extract ghost and lnodes
       ptr_pXest_ghost=setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
       ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
 
       # Build fine-grid mesh
-      parts = get_part_ids(model.dmodel.models)
+      parts = parts==nothing ? model.parts : parts
       fmodel=setup_distributed_discrete_model(Val{Dc},
                                               parts,
                                               model.coarse_model,
@@ -151,91 +239,33 @@ function refine(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
       pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
       pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-      dglue=map_parts(model.dmodel.models,fmodel.models) do cmodel, fmodel
-        fine_to_coarse_faces_map=Vector{Vector{Int}}(undef,Dc+1)
-        fine_to_coarse_faces_dim=Vector{Vector{Int}}(undef,Dc)
-
-        num_c_cells=num_cells(cmodel)
-        num_f_cells=num_cells(fmodel)
-
-        # Allocate local vector size # local cells
-        fine_to_coarse_faces_map[Dc+1]=Vector{Int}(undef,num_f_cells)
-        fcell_to_child_id=Vector{Int}(undef,num_f_cells)
-
-        # Go over all cells of coarse grid portion
-        num_children=get_num_children(Val{Dc})
-        c=1
-        for cell=1:num_c_cells
-          for child=1:num_children
-            fine_to_coarse_faces_map[Dc+1][c+child-1]=cell
-            fcell_to_child_id[c+child-1]=child
-          end
-          c=c+num_children
+      dglue=map_parts(fmodel.models) do fmodel
+        if (num_cells(fmodel)==0)
+          nothing
+        else
+          cmodel = model.dmodel.models.part
+          _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel)
         end
-        ctopology=Gridap.Geometry.get_grid_topology(cmodel)
-        ftopology=Gridap.Geometry.get_grid_topology(fmodel)
-        for d=1:Dc
-          fine_to_coarse_faces_map[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
-          fine_to_coarse_faces_dim[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
-        end
-
-        c_cell_faces=[]
-        cache_c_cell_faces=[]
-        f_cell_faces=[]
-        cache_f_cell_faces=[]
-        for d=1:Dc
-          push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
-          push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
-          push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
-          push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
-        end
-        parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
-        for cell=1:num_f_cells
-          parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
-          child=fcell_to_child_id[cell]
-          for d=1:Dc
-            parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
-                                          c_cell_faces[d],
-                                          parent_cell)
-          end
-          for d=1:Dc
-            cell_f_faces=getindex!(cache_f_cell_faces[d],
-                                    f_cell_faces[d],
-                                    cell)
-            for (lf,f) in enumerate(cell_f_faces)
-              c     = rrule_f_to_c_lid_2D[d][child][lf]
-              dim_c = rrule_f_to_c_dim_2D[d][child][lf]
-              if (dim_c == Dc)
-                fine_to_coarse_faces_map[d][f]=parent_cell
-              else
-                fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
-              end
-              fine_to_coarse_faces_dim[d][f]=dim_c
-            end
-          end
-        end
-        FineToCoarseModelGlue(fine_to_coarse_faces_map,
-                              fine_to_coarse_faces_dim,
-                              fcell_to_child_id)
       end
-      A=typeof(model.parts)
+      A=typeof(parts)
       B=typeof(fmodel)
       C=typeof(model.coarse_model)
       D=typeof(model.ptr_pXest_connectivity)
       E=typeof(ptr_new_pXest)
-      OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(model.parts,
+      OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
                                       fmodel,
                                       model.coarse_model,
                                       model.ptr_pXest_connectivity,
                                       ptr_new_pXest), dglue
    else
-    _create_void_octree_model(model), nothing
+    parts = parts==nothing ? model.parts : parts
+    _create_void_octree_model(model,parts), nothing
    end
 end
 
 
-# We have a p4est distributed among P processors, I want to
-# instantiate the same among Q processors. How do we do that?
+# We have a p4est distributed among P processors. This function
+# instantiates the same among Q processors.
 function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   if (GridapP4est.i_am_in(new_comm))
     new_comm_num_parts = GridapP4est.num_parts(new_comm)
@@ -330,11 +360,11 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
       q = _p4est_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
       new_rank = _p4est_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
       if (new_rank!=my_rank)
-        if (!(new_rank in keys(ranks_count)))
-          push!(lst_ranks,new_rank)
-          ranks_count[new_rank]=0
+        if (!(new_rank+1 in keys(ranks_count)))
+          push!(lst_ranks,new_rank+1)
+          ranks_count[new_rank+1]=0
         end
-        ranks_count[new_rank]+=1
+        ranks_count[new_rank+1]+=1
         old2new[current_old_quad_index]=0
       else
         current_new_quad_index=1
@@ -362,7 +392,7 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
     end
   end
 
-  local_ids    = [i for i=1:length(old2new) if old2new[i]!=0]
+  local_ids    = [i for i=1:length(old2new) if old2new[i]==0]
   ptr_ranks    = Vector{Int32}(undef,length(ranks_count)+1)
   ptr_ranks[1] = 1
   for (i,rank) in enumerate(lst_ranks)
@@ -372,65 +402,64 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
 end
 
 struct RedistributeGlue
-  data_rcv::MPIData{<:Table}
-  data_snd::MPIData{<:Table}
-  parts_rcv::MPIData
-  parts_snd::MPIData
+  lids_rcv::MPIData{<:Table}
+  lids_snd::MPIData{<:Table}
+  parts_rcv::MPIData{<:Vector}
+  parts_snd::MPIData{<:Vector}
+  old2new::MPIData{<:Vector}
+  new2old::MPIData{<:Vector}
 end
 
-function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts) where {Dc,Dp}
-  if model.parts===parts
-    model
-  else
-    ptr_pXest = _p4est_to_new_comm(model.ptr_pXest,
-                                   model.ptr_pXest_connectivity,
-                                   model.parts.comm,
-                                   parts.comm)
-    if (GridapP4est.i_am_in(parts.comm))
-      ptr_pXest_old=pXest_copy(Val{Dc}, ptr_pXest)
-      p4est_partition(ptr_pXest, 0, C_NULL)
 
-      # Compute RedistributeGlue
-      parts_snd,data_snd,old2new=_p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,ptr_pXest)
-      parts_rcv,data_rcv,new2old=_p4est_compute_migration_control_data(Val{Dc},ptr_pXest,ptr_pXest_old)
-      data_rcv,parts_rcv=map_parts(parts) do _
-        data_rcv,parts_rcv
-      end
-      data_snd,parts_snd=map_parts(parts) do _
-        data_snd,parts_snd
-      end
-      pXest_destroy(Val{Dc},ptr_pXest_old)
-      glue=RedistributeGlue(data_rcv,data_snd,parts_rcv,parts_snd)
+function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
+  parts=model.parts
+  if (i_am_in(parts.comm))
+    ptr_pXest_old=model.ptr_pXest
+    ptr_pXest=pXest_copy(Val{Dc}, model.ptr_pXest)
+    p4est_partition(ptr_pXest, 0, C_NULL)
 
-      # Extract ghost and lnodes
-      ptr_pXest_ghost=setup_pXest_ghost(Val{Dc}, ptr_pXest)
-      ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
-
-      # Build fine-grid mesh
-      fmodel=setup_distributed_discrete_model(Val{Dc},
-                                              parts,
-                                              model.coarse_model,
-                                              model.ptr_pXest_connectivity,
-                                              ptr_pXest,
-                                              ptr_pXest_ghost,
-                                              ptr_pXest_lnodes)
-
-     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
-     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
-
-     A=typeof(parts)
-     B=typeof(fmodel)
-     C=typeof(model.coarse_model)
-     D=typeof(model.ptr_pXest_connectivity)
-     E=typeof(ptr_pXest)
-     OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                     fmodel,
-                                     model.coarse_model,
-                                     model.ptr_pXest_connectivity,
-                                     ptr_pXest), glue
-
-    else
-      _create_void_octree_model(model), nothing
+    # Compute RedistributeGlue
+    parts_snd,lids_snd,old2new=_p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,ptr_pXest)
+    parts_rcv,lids_rcv,new2old=_p4est_compute_migration_control_data(Val{Dc},ptr_pXest,ptr_pXest_old)
+    lids_rcv,parts_rcv=map_parts(parts) do _
+      lids_rcv,parts_rcv
     end
+    lids_snd,parts_snd=map_parts(parts) do _
+      lids_snd,parts_snd
+    end
+    old2new,new2old=map_parts(parts) do _
+      old2new,new2old
+    end
+    glue=RedistributeGlue(lids_rcv,lids_snd,parts_rcv,parts_snd,old2new,new2old)
+
+    # Extract ghost and lnodes
+    ptr_pXest_ghost=setup_pXest_ghost(Val{Dc}, ptr_pXest)
+    ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
+
+    # Build fine-grid mesh
+    fmodel=setup_distributed_discrete_model(Val{Dc},
+                                            model.parts,
+                                            model.coarse_model,
+                                            model.ptr_pXest_connectivity,
+                                            ptr_pXest,
+                                            ptr_pXest_ghost,
+                                            ptr_pXest_lnodes)
+
+    pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
+    pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
+
+    A=typeof(parts)
+    B=typeof(fmodel)
+    C=typeof(model.coarse_model)
+    D=typeof(model.ptr_pXest_connectivity)
+    E=typeof(ptr_pXest)
+    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
+                                    fmodel,
+                                    model.coarse_model,
+                                    model.ptr_pXest_connectivity,
+                                    ptr_pXest), glue
+
+  else
+    _create_void_octree_model(model,model.parts), nothing
   end
 end

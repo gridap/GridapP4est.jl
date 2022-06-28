@@ -20,6 +20,7 @@ module GridapP4est
   include("PETSCextensions.jl")
   include("PartitionedArraysExtensions.jl")
   include("ModelHierarchies.jl")
+  include("RedistributeTools.jl")
 
   export change_domain_fine_to_coarse
   export change_domain_coarse_to_fine
@@ -35,5 +36,6 @@ module GridapP4est
   export ModelHierarchy
   export ModelHierarchyLevel
   export model_hierarchy_free!
+  export redistribute_fe_function
 
 end

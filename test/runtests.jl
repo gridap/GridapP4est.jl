@@ -28,7 +28,7 @@ istest(f) = endswith(f, ".jl") && !(f=="runtests.jl")
 testfiles = sort(filter(istest, readdir(testdir)))
 @time @testset "$f" for f in testfiles
   MPI.mpiexec() do cmd
-     if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl","MeshHierarchiesTests.jl"]
+     if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl","MeshHierarchiesTests.jl", "RedistributeToolsTests.jl"]
        np = 4
        extra_args = "-s 2 2 -r 2"
      elseif f in ["OctreeDistributedDiscreteModelsTests.jl","InterGridTransferOperatorsTests.jl"]
