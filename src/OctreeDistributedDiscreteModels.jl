@@ -347,18 +347,27 @@ end
 function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr_pXest_new) where Dc
   pXest_old=ptr_pXest_old[]
   pXest_new=ptr_pXest_new[]
-  num_trees=Cint(pXest_old.connectivity[].num_trees)
-  my_rank = pXest_old.mpirank
+  num_trees= Cint(pXest_old.connectivity[].num_trees)
+  my_rank  = pXest_old.mpirank
   ranks_count=Dict{Int,Int}()
   lst_ranks=Int[]
   old2new=Vector{Int}(undef,pXest_old.local_num_quadrants)
   current_old_quad_index=1
+  # if (my_rank==1)
+  #   println("???? $(pXest_old.local_num_quadrants) $(num_trees)" )
+  # end
   for itree=0:num_trees-1
     tree=_p4est_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
     num_quads=Cint(tree.quadrants.elem_count)
+    # if (my_rank==1)
+    #   println(">>> $(num_quads)" )
+    # end
     for iquad=0:num_quads-1
       q = _p4est_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
       new_rank = _p4est_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
+      # if (my_rank==1)
+      #   println("???? $(my_rank) $(new_rank) $(iquad) $(pXest_old.first_local_tree+itree)" )
+      # end
       if (new_rank!=my_rank)
         if (!(new_rank+1 in keys(ranks_count)))
           push!(lst_ranks,new_rank+1)
@@ -368,22 +377,24 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
         old2new[current_old_quad_index]=0
       else
         current_new_quad_index=1
-        num_trees_new=Cint(pXest_new.connectivity[].num_trees)
-        found=false
-        for itree_new=0:num_trees_new-1
-          new_tree=_p4est_tree_array_index(Val{Dc},pXest_new.trees,itree_new)[]
-          num_quads_new=Cint(new_tree.quadrants.elem_count)
-          for iquad_new=0:num_quads_new-1
-            q_new = _p4est_quadrant_array_index(Val{Dc},new_tree.quadrants, iquad_new)
-            found = _p4est_quadrant_is_equal(Val{Dc},q,q_new)!=0
-            if found
-              break
-            end
-            current_new_quad_index+=1
+        # println("LLLL $(pXest_new.first_local_tree) $(pXest_new.last_local_tree)")
+        new_tree=_p4est_tree_array_index(Val{Dc},pXest_new.trees,pXest_new.first_local_tree)[]
+        for t=pXest_new.first_local_tree:pXest_new.last_local_tree
+          new_tree=_p4est_tree_array_index(Val{Dc},pXest_new.trees,t)[]
+          if t == itree
+            break
           end
+          current_new_quad_index += Cint(new_tree.quadrants.elem_count)
+        end
+        found=false
+        num_quads_new=Cint(new_tree.quadrants.elem_count)
+        for iquad_new=0:num_quads_new-1
+          q_new = _p4est_quadrant_array_index(Val{Dc},new_tree.quadrants, iquad_new)
+          found = _p4est_quadrant_is_equal(Val{Dc},q,q_new)!=0
           if found
             break
           end
+          current_new_quad_index+=1
         end
         Gridap.Helpers.@check found
         old2new[current_old_quad_index]=current_new_quad_index
@@ -398,6 +409,14 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
   for (i,rank) in enumerate(lst_ranks)
      ptr_ranks[i+1]=ptr_ranks[i]+ranks_count[rank]
   end
+
+  # if (pXest_old.mpirank == 1)
+  #    println("LST $(lst_ranks)")
+  #    println("LIDS $(local_ids)")
+  #    println("PTRS $(ptr_ranks)")
+  #    println("O2N $(old2new)")
+  # end
+
   lst_ranks,PartitionedArrays.Table(local_ids,ptr_ranks),old2new
 end
 

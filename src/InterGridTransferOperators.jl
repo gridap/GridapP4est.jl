@@ -1,25 +1,30 @@
 function change_domain_coarse_to_fine(c_cell_field,
                                       ftrian::Triangulation{Dc,Dp},
-                                      glue::FineToCoarseModelGlue) where {Dc,Dp}
+                                      glue::Union{Nothing,FineToCoarseModelGlue}) where {Dc,Dp}
 
-  fcell_to_child_id=glue.fcell_to_child_id
-  fcell_to_ccell=glue.fine_to_coarse_faces_map[Dc+1]
+  if (num_cells(ftrian) != 0)
+    fcell_to_child_id=glue.fcell_to_child_id
+    fcell_to_ccell=glue.fine_to_coarse_faces_map[Dc+1]
 
-  Gridap.Helpers.@check length(fcell_to_child_id)==num_cells(ftrian)
-  Gridap.Helpers.@check DomainStyle(c_cell_field)==ReferenceDomain()
+    Gridap.Helpers.@check length(fcell_to_child_id)==num_cells(ftrian)
+    Gridap.Helpers.@check DomainStyle(c_cell_field)==ReferenceDomain()
 
-  # TO-DO: can we pre-compute this?
-  rrule_reffe=Gridap.ReferenceFEs.LagrangianRefFE(Float64,QUAD,1)
-  rrule_grid=Gridap.Geometry.UnstructuredGrid(
-                Gridap.Visualization.compute_reference_grid(rrule_reffe,2))
+    # TO-DO: can we pre-compute this?
+    rrule_reffe=Gridap.ReferenceFEs.LagrangianRefFE(Float64,QUAD,1)
+    rrule_grid=Gridap.Geometry.UnstructuredGrid(
+                  Gridap.Visualization.compute_reference_grid(rrule_reffe,2))
 
-  rrule_f_to_c_ref_map=get_cell_map(rrule_grid)
-  cfield=Gridap.CellData.get_data(c_cell_field)
-  m1=Reindex(cfield)
-  f_to_cfield=lazy_map(m1,fcell_to_ccell)
-  m2=Reindex(rrule_f_to_c_ref_map)
-  cfield_to_ffield=lazy_map(∘,f_to_cfield,lazy_map(m2,fcell_to_child_id))
-  Gridap.CellData.GenericCellField(cfield_to_ffield,ftrian,ReferenceDomain())
+    rrule_f_to_c_ref_map=get_cell_map(rrule_grid)
+    cfield=Gridap.CellData.get_data(c_cell_field)
+    m1=Reindex(cfield)
+    f_to_cfield=lazy_map(m1,fcell_to_ccell)
+    m2=Reindex(rrule_f_to_c_ref_map)
+    cfield_to_ffield=lazy_map(∘,f_to_cfield,lazy_map(m2,fcell_to_child_id))
+    Gridap.CellData.GenericCellField(cfield_to_ffield,ftrian,ReferenceDomain())
+  else
+    cfield_to_ffield=Fill(Gridap.Fields.ConstantField(0.0),num_cells(ftrian))
+    Gridap.CellData.GenericCellField(cfield_to_ffield,ftrian,ReferenceDomain())
+  end
 end
 
 function change_domain_fine_to_coarse(f_cell_field,
@@ -114,12 +119,25 @@ function Gridap.Arrays.evaluate!(cache,
   cfx.array
 end
 
-function change_domain_coarse_to_fine(c_cell_field::GridapDistributed.DistributedCellField,
+function change_domain_coarse_to_fine(Uh::GridapDistributed.DistributedFESpace,
+                                      c_cell_field,
                                       ftrian::GridapDistributed.DistributedTriangulation{Dc,Dp},
-                                      glue::MPIData{<:FineToCoarseModelGlue}) where {Dc,Dp}
+                                      glue::MPIData{<:Union{Nothing,FineToCoarseModelGlue}}) where {Dc,Dp}
+
+  i_am_in_coarse=(c_cell_field != nothing)
+
+  fields=map_parts(GridapDistributed.local_views(ftrian)) do Ω
+    if (i_am_in_coarse)
+      c_cell_field.fields.part
+    else
+      Gridap.Helpers.@check num_cells(Ω) == 0
+      Gridap.CellData.GenericCellField(Fill(Gridap.Fields.ConstantField(0.0),num_cells(Ω)),Ω,ReferenceDomain())
+    end
+  end
+  c_cell_field_fine=GridapDistributed.DistributedCellField(fields)
 
   dfield=map_parts(change_domain_coarse_to_fine,
-                    GridapDistributed.local_views(c_cell_field),
+                    GridapDistributed.local_views(c_cell_field_fine),
                     GridapDistributed.local_views(ftrian),
                     glue)
   GridapDistributed.DistributedCellField(dfield)
@@ -134,14 +152,22 @@ function ProlongationOperator(uH,Uh,Vh,ftrian,glue,dΩ)
 end
 
 function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.DistributedCellField,
-                                      ctrian::GridapDistributed.DistributedTriangulation{Dc,Dp},
-                                      glue::MPIData{<:FineToCoarseModelGlue}) where {Dc,Dp}
+                                      ctrian::Union{GridapDistributed.DistributedTriangulation,Nothing},
+                                      glue)
+  i_am_in_coarse=(ctrian != nothing)
+  if i_am_in_coarse
+    c_f_cell_field,cglue=map_parts(GridapDistributed.local_views(ctrian)) do _
+      f_cell_field.fields.part,glue.part
+    end
 
-  dfield=map_parts(change_domain_fine_to_coarse,
-                    GridapDistributed.local_views(f_cell_field),
-                    GridapDistributed.local_views(ctrian),
-                    glue)
-  GridapDistributed.DistributedCellField(dfield)
+    dfield=map_parts(change_domain_fine_to_coarse,
+                     c_f_cell_field,
+                     GridapDistributed.local_views(ctrian),
+                     cglue)
+    GridapDistributed.DistributedCellField(dfield)
+  else
+    return nothing
+  end
 end
 
 function RestrictionOperator(uh,UH,VH,ctrian,glue,dΩ)

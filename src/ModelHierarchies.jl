@@ -30,7 +30,15 @@ end
 
 
 num_levels(a::ModelHierarchy)= length(a.levels)
-get_level(a::ModelHierarchy,level) = a.levels[level]
+get_level(a::ModelHierarchy,level::Integer) = a.levels[level]
+
+get_level_model(a::ModelHierarchy,level::Integer)=get_level_model(get_level(a,level))
+get_level_model(a::ModelHierarchyLevel{A,B,Nothing}) where {A,B}=a.model
+get_level_model(a::ModelHierarchyLevel{A,B,C}) where {A,B,C}=a.model_red
+
+get_level_model_before_redist(a::ModelHierarchy,level::Integer)=
+     get_level_model_before_redist(get_level(a,level))
+get_level_model_before_redist(a::ModelHierarchyLevel) where {A,B}=a.model
 
 # Implement support for num_refs_x_level? (future work)
 function ModelHierarchy(parts,cmodel,num_procs_x_level; num_refs_x_level=nothing)

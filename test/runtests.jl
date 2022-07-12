@@ -31,6 +31,9 @@ testfiles = sort(filter(istest, readdir(testdir)))
      if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl","MeshHierarchiesTests.jl", "RedistributeToolsTests.jl"]
        np = 4
        extra_args = "-s 2 2 -r 2"
+     elseif f in ["GMGLinearSolversTests.jl"]
+       np = 2
+       extra_args = ""
      elseif f in ["OctreeDistributedDiscreteModelsTests.jl","InterGridTransferOperatorsTests.jl"]
        np = 1
        extra_args = ""

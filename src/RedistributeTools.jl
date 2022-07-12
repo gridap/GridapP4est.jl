@@ -77,17 +77,21 @@ end
 function unpack_rcv_data!(cell_dof_values,rcv_data,rcv_lids)
   map_parts(cell_dof_values,rcv_data,rcv_lids) do cell_dof_values,rcv_data,rcv_lids
     s=1
-    #println("AAAA $(rcv_data)")
-    for i=1:length(rcv_lids)
+    # println("AAAA $(rcv_data)
+    #               $(cell_dof_values.ptrs)
+    #               $(rcv_lids.ptrs)
+    #               $(rcv_lids.data)
+    #               $(length(rcv_lids))")
+    for i=1:length(rcv_lids.ptrs)-1
       for j=rcv_lids.ptrs[i]:rcv_lids.ptrs[i+1]-1
         cell=rcv_lids.data[j]
         range_cell_dof_values = cell_dof_values.ptrs[cell]:cell_dof_values.ptrs[cell+1]-1
         e=s+length(range_cell_dof_values)-1
         range_rcv_data = s:e
         cell_dof_values.data[range_cell_dof_values] .= rcv_data.data[range_rcv_data]
-        #println("BBB $(cell)
-        #             $(cell_dof_values.data[range_cell_dof_values])
-        #             $(rcv_data.data[range_rcv_data])")
+        # println("BBB $(cell)
+        #              $(cell_dof_values.data[range_cell_dof_values])
+        #              $(rcv_data.data[range_rcv_data])")
         s=e+1
       end
     end
@@ -134,6 +138,7 @@ function redistribute_fe_function(uh_old::GridapDistributed.DistributedCellField
   map_parts(schedule,tout)
 
   cell_to_ldofs_new   = map_parts(get_cell_dof_ids,Uh_new.spaces)
+
   cell_dof_values_new = _allocate_cell_wise_dofs(cell_to_ldofs_new)
 
   # We have to build the owned part of "cell_dof_values_new" out of
@@ -141,11 +146,11 @@ function redistribute_fe_function(uh_old::GridapDistributed.DistributedCellField
   #  2. cell_dof_values_new_rcv (for those cells s.t. new2old[:]=0)
  _update_cell_dof_values_with_local_info!(cell_dof_values_new,
                                           cell_dof_values_old,
-                                          glue.new2old)
+                                          new2old)
 
  map_parts(wait,tout)
 
- unpack_rcv_data!(cell_dof_values_new,rcv_data,glue.lids_rcv)
+ unpack_rcv_data!(cell_dof_values_new,rcv_data,lids_rcv)
 
  # map_parts(cell_dof_values_new) do cdvn
  # println("333333333333333 $(cdvn)")
@@ -154,8 +159,8 @@ function redistribute_fe_function(uh_old::GridapDistributed.DistributedCellField
  fgids=get_cell_gids(model_new)
  exchange!(cell_dof_values_new,fgids.exchanger)
 
- # map_parts(cell_dof_values_new) do cdvn
- #  println("444 $(cdvn)")
+ #map_parts(cell_dof_values_new) do cdvn
+ # println("444 $(cdvn)")
  # end
 
  free_values = map_parts(cell_dof_values_new,Uh_new.spaces) do cdvn, fspace

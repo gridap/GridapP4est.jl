@@ -8,6 +8,9 @@ module GridapP4est
   using Gridap.Helpers: @check
   using GridapPETSc.PETSC: PetscErrorCode
   using MPI
+  using LinearAlgebra
+  using IterativeSolvers
+  using Printf
   # END TO-REMOVE
 
   using PartitionedArrays
@@ -20,7 +23,10 @@ module GridapP4est
   include("PETSCextensions.jl")
   include("PartitionedArraysExtensions.jl")
   include("ModelHierarchies.jl")
+  include("FESpaceHierarchies.jl")
   include("RedistributeTools.jl")
+  include("GridapFixes.jl")
+  include("GMGLinearSolvers.jl")
 
   export change_domain_fine_to_coarse
   export change_domain_coarse_to_fine
@@ -33,9 +39,22 @@ module GridapP4est
   export octree_distributed_discrete_model_free
   export ProlongationOperator
   export RestrictionOperator
+
+  # ModelHierarchy
   export ModelHierarchy
   export ModelHierarchyLevel
   export model_hierarchy_free!
+  export num_levels
+  export get_level
+  export get_level_model
+  export get_level_model_before_redist
+
+  # FESpaceHierarchy
+  export FESpaceHierarchyLevel
   export redistribute_fe_function
+  export get_level_fe_space
+  export get_level_fe_space_before_redist
+
+  export GMG!
 
 end

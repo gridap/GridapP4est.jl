@@ -20,6 +20,10 @@ function i_am_in(comm::MPI.Comm)
   PartitionedArrays.get_part_id(comm) >=0
 end
 
+function i_am_in(parts)
+  i_am_in(parts.comm)
+end
+
 function PartitionedArrays.get_part_ids(comm::MPI.Comm)
   rank = PartitionedArrays.get_part_id(comm)
   nparts = PartitionedArrays.num_parts(comm)
