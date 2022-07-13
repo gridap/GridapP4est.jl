@@ -1,19 +1,31 @@
 
+function smooth_cache(A::PSparseMatrix)
+  Adx = PVector(0.0,A.rows)
+  dx  = PVector(0.0,A.cols)
+  inv_diag=map_parts(A.owned_owned_values) do a
+    1.0 ./ diag(a)
+  end
+  (Adx,dx,inv_diag)
+end
+
+function smooth!(x::PVector, r::PVector, A::PSparseMatrix; maxiter=1)
+  cache=smooth_cache(A)
+  smooth!(cache, x, r, A; maxiter=maxiter)
+end
+
 # By now, just simple Jacobi smoother !
 # We may implement in the future block Gauss Seidel, etc.
-function smooth!(x::PVector, A::PSparseMatrix, b::PVector; maxiter=1)
-  r  = b - A*x   # dynamic memory alloc
-  dx = copy(x)   # dynamic memory alloc
-  inv_diag=map_parts(A.owned_owned_values) do a
-    1.0 ./ diag(a) # dynamic memory alloc
-  end
+# We assume that the residual is up-to-date with x.
+function smooth!(cache, x::PVector, r::PVector, A::PSparseMatrix; maxiter=1)
+  Adx,dx,inv_diag=cache
   iter=0
   while iter <= maxiter
     map_parts(inv_diag,dx.owned_values,r.owned_values) do inv_diag, dx, r
        dx .= inv_diag .* r
     end
     x .= x .+ dx
-    r .= b .- A*x
+    mul!(Adx, A, dx)
+    r .= r .- Adx
     iter += 1
   end
 end
@@ -30,13 +42,18 @@ function GMG!(x::PVector,
               maxiter=10,
               smooth_iter=2)
 
-  A      = smatrices[1]
-  r      = b - A*x   # dynamic memory alloc
+  A = smatrices[1]
+  Adx = PVector(0.0, A.cols)
+  dx_interp = PVector(0.0, A.cols)
+  r = PVector(0.0, A.rows)
+  mul!(Adx,A,x)
+  r .= b .- Adx
   nrm_r0 = norm(r)
   nrm_r  = nrm_r0
   current_iter = 0
   rel_res = nrm_r / nrm_r0
   model = get_level_model(mh,1)
+  cache=smooth_cache(A)
 
   if (GridapP4est.i_am_main(model.parts))
     @printf "%6s  %12s" "Iter" "Rel res\n"
@@ -46,8 +63,9 @@ function GMG!(x::PVector,
     if (GridapP4est.i_am_main(model.parts))
        @printf "%6i  %12.4e\n" current_iter rel_res
     end
-     smooth!(x, A, b; maxiter=smooth_iter)
-     r .= b .- A * x  # dynamic memory alloc
+     # Pre-smooth current solution
+     smooth!(cache, x, r, A; maxiter=smooth_iter)
+
      nrm_r = norm(r)
      rel_res = nrm_r / nrm_r0
      if (GridapP4est.i_am_main(model.parts))
@@ -79,14 +97,19 @@ function GMG!(x::PVector,
      else
       dx=nothing
      end
-     dx_interp = PVector(0.0,smatrices[1].cols)
+     # Interpolate the dx
      mul!(dx_interp, interpolations[1], dx)
 
-     # Interpolate the dx
+     # Update solution
      x .= x .+ dx_interp
 
-     smooth!(x, A, b; maxiter=smooth_iter)
-     r .= b .- A * x
+     # Update residual
+     mul!(Adx, A, dx_interp)
+     r .= r .- Adx
+
+     # Post-smooth current solution
+     smooth!(cache, x, r, A; maxiter=smooth_iter)
+
      nrm_r = norm(r)
      rel_res = nrm_r / nrm_r0
      current_iter += 1
