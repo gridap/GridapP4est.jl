@@ -30,6 +30,105 @@ function smooth!(cache, x::PVector, r::PVector, A::PSparseMatrix; maxiter=1)
   end
 end
 
+function setup_smooth_caches(mh,smatrices)
+  nlevs=num_levels(mh)
+  # Last (i.e., coarsest) level does not need
+  # pre-/post-smoothing
+  caches=Vector{Any}(undef,nlevs-1)
+  for i=1:nlevs-1
+    model = get_level_model(mh,i)
+    if (GridapP4est.i_am_in(model.parts))
+      caches[i]=smooth_cache(smatrices[i])
+    end
+  end
+  caches
+end
+
+function allocate_level_work_vectors(mh,smatrices,lev)
+  modelH = get_level_model(mh,lev+1)
+  dxh  = PVector(0.0, smatrices[lev].cols)
+  Adxh = PVector(0.0, smatrices[lev].rows)
+  rh   = PVector(0.0, smatrices[lev].rows)
+  if (GridapP4est.i_am_in(modelH.parts))
+    AH  = smatrices[lev+1]
+    rH  = PVector(0.0,AH.rows)
+    dxH = PVector(0.0,AH.cols)
+  else
+    rH  = nothing
+    dxH = nothing
+  end
+  (dxh,Adxh,dxH,rH)
+end
+
+function allocate_work_vectors(mh,smatrices)
+  nlevs=num_levels(mh)
+  work_vectors=Vector{Any}(undef,nlevs-1)
+  for i=1:nlevs-1
+    model = get_level_model(mh,i)
+    if (GridapP4est.i_am_in(model.parts))
+      work_vectors[i]=allocate_level_work_vectors(mh,smatrices,i)
+    end
+  end
+  work_vectors
+end
+
+function apply_GMG_level!(xh,
+                          rh,
+                          lev,
+                          mh,
+                          smatrices,
+                          restrictions,
+                          interpolations,
+                          smooth_caches,
+                          work_vectors;
+                          smooth_iter=2)
+
+  modelh = get_level_model(mh,lev)
+  if (GridapP4est.i_am_in(modelh.parts))
+    if (lev==num_levels(mh))
+      # TO-DO: replace this coarsest solver by a call to a
+      #        a sparse direct solver, e.g., PETSc+MUMPs
+      # TO-DO: avoid re-computing numerical setup each time
+      map_parts(smatrices[lev].owned_owned_values,
+                xh.owned_values,
+                rh.owned_values) do Ah, xh, rh
+         xh .= Ah \ rh
+      end
+    else
+      Ah = smatrices[lev]
+      (dxh,Adxh,dxH,rH)=work_vectors[lev]
+      # Pre-smooth current solution
+      smooth!(smooth_caches[lev], xh, rh, Ah; maxiter=smooth_iter)
+
+      # Restrict the residual
+      mul!(rH,restrictions[lev],rh)
+      # Apply next_level
+      apply_GMG_level!(dxH,
+                      rH,
+                      lev+1,
+                      mh,
+                      smatrices,
+                      restrictions,
+                      interpolations,
+                      smooth_caches,
+                      work_vectors;
+                      smooth_iter=smooth_iter)
+      # Interpolate dxH in finer space
+      mul!(dxh, interpolations[lev], dxH)
+      # Update solution
+      xh .= xh .+ dxh
+      # Update residual
+      mul!(Adxh, Ah, dxh)
+      rh .= rh .- Adxh
+
+      # Post-smooth current solution
+      smooth!(smooth_caches[lev], xh, rh, Ah; maxiter=smooth_iter)
+
+    end
+  end
+end
+
+
 function GMG!(x::PVector,
               b::PVector,
               mh::ModelHierarchy,
@@ -42,77 +141,40 @@ function GMG!(x::PVector,
               maxiter=10,
               smooth_iter=2)
 
-  A = smatrices[1]
-  Adx = PVector(0.0, A.cols)
-  dx_interp = PVector(0.0, A.cols)
-  r = PVector(0.0, A.rows)
-  mul!(Adx,A,x)
-  r .= b .- Adx
-  nrm_r0 = norm(r)
+  work_vectors=allocate_work_vectors(mh,smatrices)
+  smooth_caches=setup_smooth_caches(mh,smatrices)
+  Ah=smatrices[1]
+  rh = PVector(0.0,Ah.rows)
+  rh .= b .- Ah*x
+  nrm_r0 = norm(rh)
   nrm_r  = nrm_r0
   current_iter = 0
   rel_res = nrm_r / nrm_r0
   model = get_level_model(mh,1)
-  cache=smooth_cache(A)
 
   if (GridapP4est.i_am_main(model.parts))
     @printf "%6s  %12s" "Iter" "Rel res\n"
+    @printf "%6i  %12.4e\n" current_iter rel_res
   end
 
   while current_iter <= maxiter && rel_res > rtol
+      apply_GMG_level!(x,
+                       rh,
+                       1,
+                       mh,
+                       smatrices,
+                       restrictions,
+                       interpolations,
+                       smooth_caches,
+                       work_vectors;
+                       smooth_iter=smooth_iter)
+    nrm_r = norm(rh)
+    rel_res = nrm_r / nrm_r0
     if (GridapP4est.i_am_main(model.parts))
-       @printf "%6i  %12.4e\n" current_iter rel_res
+      @printf "%6i  %12.4e\n" current_iter rel_res
     end
-     # Pre-smooth current solution
-     smooth!(cache, x, r, A; maxiter=smooth_iter)
-
-     nrm_r = norm(r)
-     rel_res = nrm_r / nrm_r0
-     if (GridapP4est.i_am_main(model.parts))
-       @printf "%6i  %12.4e\n" current_iter rel_res
-     end
-     modelH = get_level_model(mh,2)
-     if (GridapP4est.i_am_in(modelH.parts))
-       AH = smatrices[2]
-       y  = PVector(0.0,AH.cols)
-     else
-       y=nothing
-     end
-
-     # Restrict the residual
-     mul!(y,restrictions[1],r)
-
-     if (GridapP4est.i_am_in(modelH.parts))
-      dx=PVector(0.0,smatrices[2].cols)
-      # TO-DO: replace this coarsest solver by a call to a
-      #        a sparse direct solver, e.g., PETSc+MUMPs
-      map_parts(smatrices[2].owned_owned_values,dx.owned_values,y.owned_values) do A, dx, y
-        dx .= A \ y
-      end
-      #IterativeSolvers.cg!(dx,
-      #                     smatrices[2],
-      #                     y;
-      #                     verbose=true,
-      #                     reltol=1.0e-14)
-     else
-      dx=nothing
-     end
-     # Interpolate the dx
-     mul!(dx_interp, interpolations[1], dx)
-
-     # Update solution
-     x .= x .+ dx_interp
-
-     # Update residual
-     mul!(Adx, A, dx_interp)
-     r .= r .- Adx
-
-     # Post-smooth current solution
-     smooth!(cache, x, r, A; maxiter=smooth_iter)
-
-     nrm_r = norm(r)
-     rel_res = nrm_r / nrm_r0
-     current_iter += 1
+    current_iter += 1
   end
+
   return current_iter
 end
