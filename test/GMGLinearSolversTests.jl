@@ -27,24 +27,27 @@ module GMGLinearSolverTests
     test_spaces, trial_spaces
   end
 
-  function generate_mass_matrices(mh, fespaces)
-    tests,trials=fespaces
-    order=1
-    mmatrices=Vector{PSparseMatrix}(undef,num_levels(mh))
-    for i=1:num_levels(mh)
-      model = get_level_model_before_redist(mh,i)
-      if (GridapP4est.i_am_in(model.parts))
-        Ω  = Triangulation(model.dmodel)
-        dΩ = Measure(Ω,2*(order+1))
-        Vh = get_level_fe_space_before_redist(tests[i])
-        Uh = get_level_fe_space_before_redist(trials[i])
-        a(u,v)=∫(v*u)dΩ
-        A = assemble_matrix(a,Uh,Vh)
-        mmatrices[i]=A
-      end
-    end
-    mmatrices
+  function assemble_mass_matrix(model,Vh,Uh,degree)
+    Ω  = Triangulation(model.dmodel)
+    dΩ = Measure(Ω,degree)
+    a(u,v)=∫(v⋅u)dΩ
+    assemble_matrix(a,Uh,Vh)
   end
+
+  # function generate_mass_matrices(mh, fespaces)
+  #   tests,trials=fespaces
+  #   order=1
+  #   mmatrices=Vector{PSparseMatrix}(undef,num_levels(mh))
+  #   for i=1:num_levels(mh)
+  #     model = get_level_model_before_redist(mh,i)
+  #     if (GridapP4est.i_am_in(model.parts))
+  #       Vh = get_level_fe_space_before_redist(tests[i])
+  #       Uh = get_level_fe_space_before_redist(trials[i])
+  #       A = assemble_mass_matrix(model,Vh,Uh,order)
+  #     end
+  #   end
+  #   mmatrices
+  # end
 
   function generate_stiffness_matrices(mh, fespaces)
     tests,trials=fespaces
@@ -83,7 +86,6 @@ module GMGLinearSolverTests
     mesh_hierarchy_level_next
     uH_zero_dirichlet_values
     dof_values_H_fe_space_layout
-    dof_values_H_sys_layout
     uh_zero_dirichlet_values
     dof_values_h_fe_space_layout
     dof_values_h_sys_layout_b
@@ -195,7 +197,7 @@ module GMGLinearSolverTests
     end
   end
 
-  function setup_interpolation_mat(mh,fespaces,mmatrices,level)
+  function setup_interpolation_mat(mh,fespaces,level)
     Gridap.Helpers.@check 1 <= level <= num_levels(mh)-1
 
     tests,trials=fespaces
@@ -207,9 +209,13 @@ module GMGLinearSolverTests
     Ωh_red=Triangulation(get_level_model(mh,level).dmodel)
     dΩh=Measure(Ωh,2*(order+1))
     dΩh_red=Measure(Ωh_red,2*(order+1))
+
+
     Vh=get_level_fe_space_before_redist(tests[level])
     Uh=get_level_fe_space_before_redist(trials[level])
-    Mh=mmatrices[level]
+    Mh=assemble_mass_matrix(model_h,Vh,Uh,2*order+1)
+
+
     dof_values_h_fe_space_layout = PVector(0.0,Vh.gids)
     dof_values_h_sys_layout_b = similar(dof_values_h_fe_space_layout,(axes(Mh)[1],))
     dof_values_h_sys_layout_x = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
@@ -224,20 +230,23 @@ module GMGLinearSolverTests
       ΩH = Triangulation(model_H.dmodel)
       VH=get_level_fe_space(tests[level+1])
       UH=get_level_fe_space(trials[level+1])
-      MH=mmatrices[level+1]
       dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
-      dof_values_H_sys_layout = similar(dof_values_H_fe_space_layout,(axes(MH)[2],))
       uH_zero_dirichlet_values=
          map_parts(GridapDistributed.local_views(UH.spaces)) do space
              zeros(num_dirichlet_dofs(space))
          end
+      map_parts(mh.levels[level].model.parts) do part_id
+          println("INTERP $(part_id) $(ΩH)")
+      end
     else
       ΩH = nothing
       UH = nothing
       VH = nothing
       dof_values_H_fe_space_layout = nothing
-      dof_values_H_sys_layout = nothing
       uH_zero_dirichlet_values = nothing
+      map_parts(mh.levels[level].model.parts) do part_id
+        println("INTERP $(part_id) $(ΩH)")
+      end
     end
 
     cache=InterpolationMat(Ωh_red,
@@ -255,12 +264,11 @@ module GMGLinearSolverTests
                            get_level(mh,level+1),
                            uH_zero_dirichlet_values,
                            dof_values_H_fe_space_layout,
-                           dof_values_H_sys_layout,
                            uh_zero_dirichlet_values,
                            dof_values_h_fe_space_layout,
                            dof_values_h_sys_layout_b,
                            dof_values_h_sys_layout_x,
-                           mmatrices[level])
+                           Mh)
   end
 
   mutable struct RestrictionMat
@@ -278,7 +286,6 @@ module GMGLinearSolverTests
     dof_values_h_fe_space_layout_red
     uH_zero_dirichlet_values
     dof_values_H_sys_layout_b
-    dof_values_h_sys_layout
     mH
   end
 
@@ -331,7 +338,7 @@ module GMGLinearSolverTests
     end
   end
 
-  function setup_restriction_mat(mh,fespaces,mmatrices,level)
+  function setup_restriction_mat(mh,fespaces,level)
     Gridap.Helpers.@check 1 <= level <= num_levels(mh)-1
     tests,trials=fespaces
     order=1
@@ -345,8 +352,6 @@ module GMGLinearSolverTests
     Vh_red= get_level_fe_space(tests[level])
     dof_values_h_fe_space_layout_red = PVector(0.0,Vh_red.gids)
     dof_values_h_fe_space_layout     = PVector(0.0,Vh.gids)
-    Mh = mmatrices[level]
-    dof_values_h_sys_layout = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
     uh_zero_dirichlet_values_red=
       map_parts(GridapDistributed.local_views(Uh_red.spaces)) do space
            zeros(num_dirichlet_dofs(space))
@@ -358,14 +363,16 @@ module GMGLinearSolverTests
       dΩH = Measure(ΩH,2*(order+1))
       VH=get_level_fe_space(tests[level+1])
       UH=get_level_fe_space(trials[level+1])
-      MH=mmatrices[level+1]
+      MH=assemble_mass_matrix(model_H,VH,UH,2*order+1)
       # Generate arrays of DoF Values for coarse system
       dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
-      dof_values_H_sys_layout_b = similar(dof_values_H_fe_space_layout,(axes(MH)[2],))
-      MH =  mmatrices[level+1]
+      dof_values_H_sys_layout_b = similar(dof_values_H_fe_space_layout,(axes(MH)[1],))
       uH_zero_dirichlet_values=
       map_parts(GridapDistributed.local_views(UH.spaces)) do space
            zeros(num_dirichlet_dofs(space))
+      end
+      map_parts(mh.levels[level].model.parts) do part_id
+        println("RESTRICT $(part_id) $(ΩH)")
       end
     else
       ΩH  = nothing
@@ -376,6 +383,9 @@ module GMGLinearSolverTests
       dof_values_H_fe_space_layout = nothing
       dof_values_H_sys_layout_b    = nothing
       uH_zero_dirichlet_values = nothing
+      map_parts(mh.levels[level].model.parts) do part_id
+        println("RESTRICT $(part_id) $(ΩH)")
+      end
     end
 
     cache=RestrictionMat(Ωh,
@@ -392,19 +402,18 @@ module GMGLinearSolverTests
                          dof_values_h_fe_space_layout_red,
                          uH_zero_dirichlet_values,
                          dof_values_H_sys_layout_b,
-                         dof_values_h_sys_layout,
                          MH)
   end
 
-  function setup_interpolations_and_restrictions(mh,fespaces,mmatrices)
+  function setup_interpolations_and_restrictions(mh,fespaces)
     nlevs = num_levels(mh)
     interpolations=Vector{InterpolationMat}(undef,nlevs-1)
     restrictions=Vector{RestrictionMat}(undef,nlevs-1)
     for l=1:nlevs-1
       model = get_level_model(mh,l)
       if (GridapP4est.i_am_in(model.parts))
-        interpolations[l]=setup_interpolation_mat(mh,fespaces,mmatrices,l)
-        restrictions[l]=setup_restriction_mat(mh,fespaces,mmatrices,l)
+        interpolations[l]=setup_interpolation_mat(mh,fespaces,l)
+        restrictions[l]=setup_restriction_mat(mh,fespaces,l)
       end
     end
     interpolations, restrictions
@@ -426,9 +435,8 @@ module GMGLinearSolverTests
     cmodel=CartesianDiscreteModel(domain,(4,4))
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
     fespaces=generate_fe_spaces(mh)
-    mmatrices=generate_mass_matrices(mh,fespaces)
     smatrices=generate_stiffness_matrices(mh,fespaces)
-    interp,restrict=setup_interpolations_and_restrictions(mh,fespaces,mmatrices)
+    interp,restrict=setup_interpolations_and_restrictions(mh,fespaces)
 
     model=get_level_model(mh,1)
     Ω = Triangulation(model.dmodel)
@@ -452,7 +460,6 @@ module GMGLinearSolverTests
          mh,
          fespaces,
          smatrices,
-         mmatrices,
          interp,
          restrict;
          rtol=1.0e-06,

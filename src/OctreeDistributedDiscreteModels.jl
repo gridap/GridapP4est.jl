@@ -107,7 +107,7 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
    [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
   ])
 
-struct FineToCoarseModelGlue{A,B,C}
+struct FineToCoarseModelGlue{A,B,C} <: GridapType
   fine_to_coarse_faces_map::A
   fine_to_coarse_faces_dim::B
   fcell_to_child_id::C
@@ -127,12 +127,14 @@ function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                                   nothing)
 end
 
-function _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel)
+function _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel,cpartition,fpartition)
   fine_to_coarse_faces_map=Vector{Vector{Int}}(undef,Dc+1)
   fine_to_coarse_faces_dim=Vector{Vector{Int}}(undef,Dc)
 
-  num_c_cells=num_cells(cmodel)
-  num_f_cells=num_cells(fmodel)
+  num_c_cells=length(cpartition.oid_to_lid) #num_cells(cmodel)
+  num_f_cells=length(fpartition.oid_to_lid) #num_cells(fmodel)
+
+  println("$(num_c_cells) $(num_f_cells)")
 
   # Allocate local vector size # local cells
   fine_to_coarse_faces_map[Dc+1]=Vector{Int}(undef,num_f_cells)
@@ -239,12 +241,15 @@ function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
       pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-      dglue=map_parts(fmodel.models) do fmodel
-        if (num_cells(fmodel)==0)
+      fgids=get_cell_gids(fmodel)
+      dglue=map_parts(fmodel.models,fgids.partition) do fmodel, fpartition
+        if (!(GridapP4est.i_am_in(model.parts)))
           nothing
         else
-          cmodel = model.dmodel.models.part
-          _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel)
+          cmodel     = model.dmodel.models.part
+          cgids      = get_cell_gids(model.dmodel)
+          cpartition = cgids.partition.part
+          _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel,cpartition,fpartition)
         end
       end
       A=typeof(parts)

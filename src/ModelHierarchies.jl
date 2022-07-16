@@ -54,7 +54,8 @@ function ModelHierarchy(parts,cmodel,num_procs_x_level; num_refs_x_level=nothing
     if (num_procs_x_level[i]!=num_procs_x_level[i+1])
       # meshes[i+1].model is distributed among P processors
       # model_ref is distributed among Q processors, with P!=Q
-      model_ref,ref_glue=refine(meshes[i+1].model,level_parts[i])
+      modelH=get_level_model(meshes[i+1])
+      model_ref,ref_glue=refine(modelH,level_parts[i])
       model_red,red_glue=redistribute(model_ref)
     else
       model_ref,ref_glue=refine(meshes[i+1].model)

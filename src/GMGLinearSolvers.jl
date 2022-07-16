@@ -51,7 +51,7 @@ function allocate_level_work_vectors(mh,smatrices,lev)
   rh   = PVector(0.0, smatrices[lev].rows)
   if (GridapP4est.i_am_in(modelH.parts))
     AH  = smatrices[lev+1]
-    rH  = PVector(0.0,AH.rows)
+    rH  = PVector(0.0,AH.cols)
     dxH = PVector(0.0,AH.cols)
   else
     rH  = nothing
@@ -134,7 +134,6 @@ function GMG!(x::PVector,
               mh::ModelHierarchy,
               fespaces,
               smatrices,
-              mmatrices,
               interpolations,
               restrictions;
               rtol=1.0e-06,

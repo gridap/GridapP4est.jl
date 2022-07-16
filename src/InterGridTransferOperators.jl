@@ -155,6 +155,7 @@ function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.Distribute
                                       ctrian::Union{GridapDistributed.DistributedTriangulation,Nothing},
                                       glue)
   i_am_in_coarse=(ctrian != nothing)
+  println("??? $(i_am_in_coarse) $(glue.part)" )
   if i_am_in_coarse
     c_f_cell_field,cglue=map_parts(GridapDistributed.local_views(ctrian)) do _
       f_cell_field.fields.part,glue.part
