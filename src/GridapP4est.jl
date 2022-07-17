@@ -3,10 +3,8 @@ module GridapP4est
   using Gridap
 
   # BEG TO-REMOVE
-  using GridapPETSc
   using Libdl
   using Gridap.Helpers: @check
-  using GridapPETSc.PETSC: PetscErrorCode
   using MPI
   using LinearAlgebra
   using IterativeSolvers
@@ -20,7 +18,6 @@ module GridapP4est
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
   include("InterGridTransferOperators.jl")
-  include("PETSCextensions.jl")
   include("PartitionedArraysExtensions.jl")
   include("ModelHierarchies.jl")
   include("FESpaceHierarchies.jl")

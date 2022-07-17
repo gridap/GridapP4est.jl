@@ -221,12 +221,6 @@ git-tree-sha1 = "0b67924b214c9735db46071646e6ab1e1817eddd"
 uuid = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
 version = "0.2.6"
 
-[[GridapPETSc]]
-deps = ["Gridap", "GridapDistributed", "Libdl", "LinearAlgebra", "MPI", "PETSc_jll", "PartitionedArrays", "Random", "SparseArrays", "SparseMatricesCSR"]
-git-tree-sha1 = "e49b0ed48134534e8faf1ebfc30a62852cbaa00e"
-uuid = "bcdc36c2-0c3e-11ea-095a-c9dadae499f1"
-version = "0.4.4"
-
 [[IntelOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "d979e54b71da82f3a65b62553da4fc3d18c9004c"
@@ -429,12 +423,6 @@ version = "0.4.11"
 [[NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 
-[[OpenBLAS32_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "9c6c2ed4b7acd2137b878eb96c68e63b76199d0f"
-uuid = "656ef2d0-ae68-5445-9ca0-591084a874a2"
-version = "0.3.17+0"
-
 [[OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
@@ -473,12 +461,6 @@ repo-rev = "master"
 repo-url = "https://github.com/gridap/P4est_wrapper.jl"
 uuid = "3743d7c0-8adf-11ea-380b-7d33b0ecc1da"
 version = "0.1.2"
-
-[[PETSc_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "MPICH_jll", "MicrosoftMPI_jll", "OpenBLAS32_jll", "Pkg"]
-git-tree-sha1 = "0ef71c8ecd22e54d152791719246890857ddad68"
-uuid = "8fa3689e-f0b9-5420-9873-adf6ccf46f2d"
-version = "3.16.5+5"
 
 [[Parameters]]
 deps = ["OrderedCollections", "UnPack"]
