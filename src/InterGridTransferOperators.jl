@@ -142,14 +142,6 @@ function change_domain_coarse_to_fine(c_cell_field,
   GridapDistributed.DistributedCellField(dfield)
 end
 
-function ProlongationOperator(uH,Uh,Vh,ftrian,glue,dΩ)
-  uH_h = change_domain_coarse_to_fine(uH,ftrian,glue)
-  a(u,v) = ∫(v*u)dΩ
-  l(v)   = ∫(v*uH_h)dΩ
-  op=AffineFEOperator(a,l,Uh,Vh)
-  solve(op)
-end
-
 function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.DistributedCellField,
                                       ctrian::Union{GridapDistributed.DistributedTriangulation,Nothing},
                                       glue)
@@ -167,12 +159,4 @@ function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.Distribute
   else
     return nothing
   end
-end
-
-function RestrictionOperator(uh,UH,VH,ctrian,glue,dΩ)
-  uh_H = change_domain_fine_to_coarse(uh,ctrian,glue)
-  a(u,v) = ∫(v*u)dΩ
-  l(v)   = ∫(v*uh_H)dΩ
-  op=AffineFEOperator(a,l,UH,VH)
-  solve(op)
 end

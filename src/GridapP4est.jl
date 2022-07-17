@@ -37,8 +37,6 @@ module GridapP4est
   export redistribute
   export FineToCoarseModelGlue
   export octree_distributed_discrete_model_free
-  export ProlongationOperator
-  export RestrictionOperator
 
   # ModelHierarchy
   export ModelHierarchy
