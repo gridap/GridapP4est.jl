@@ -3,7 +3,6 @@ module GridapP4est
   using Gridap
 
   # BEG TO-REMOVE
-  using Libdl
   using Gridap.Helpers: @check
   using MPI
   using LinearAlgebra
