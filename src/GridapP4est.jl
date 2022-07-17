@@ -14,13 +14,14 @@ module GridapP4est
   using GridapDistributed
   using P4est_wrapper
   const PArrays = PartitionedArrays
+
+  include("PartitionedArraysExtensions.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
+  include("RedistributeTools.jl")
   include("InterGridTransferOperators.jl")
-  include("PartitionedArraysExtensions.jl")
   include("ModelHierarchies.jl")
   include("FESpaceHierarchies.jl")
-  include("RedistributeTools.jl")
   include("GridapFixes.jl")
   include("GMGLinearSolvers.jl")
 
@@ -33,6 +34,12 @@ module GridapP4est
   export redistribute
   export FineToCoarseModelGlue
   export octree_distributed_discrete_model_free
+
+  # InterGridTransferOperators
+  export InterpolationMat
+  export RestrictionMat
+  export setup_interpolation_mat
+  export setup_restriction_mat
 
   # ModelHierarchy
   export ModelHierarchy
