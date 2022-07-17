@@ -127,14 +127,65 @@ function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                                   nothing)
 end
 
-function _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel,cpartition,fpartition)
+function _compute_fine_to_coarse_model_glue(
+         cparts,
+         cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel{Dc}},
+         fmodel::GridapDistributed.DistributedDiscreteModel{Dc}) where Dc
+
+  # cmodel might be distributed among less processes than fmodel
+  fgids=get_cell_gids(fmodel)
+  f1,f2,f3=map_parts(fmodel.models,fgids.partition) do fmodel, fpartition
+    if (!(GridapP4est.i_am_in(cparts)))
+      nothing, nothing, nothing
+    else
+      cgids      = get_cell_gids(cmodel)
+      cmodel     = cmodel.models.part
+      cpartition = cgids.partition.part
+      fine_to_coarse_faces_map,
+        fine_to_coarse_faces_dim,
+          fcell_to_child_id =
+          _process_owned_cells_fine_to_coarse_model_glue(cmodel,fmodel,cpartition,fpartition)
+    end
+  end
+
+  dfine_to_coarse_cells_map = map_parts(f1) do fine_to_coarse_faces_map
+    if fine_to_coarse_faces_map!=nothing
+       fine_to_coarse_faces_map[Dc+1]
+    else
+       Int[]
+    end
+  end
+  dfcell_to_child_id = map_parts(f3) do fcell_to_child_id
+    if fcell_to_child_id!=nothing
+      fcell_to_child_id
+    else
+      Int[]
+    end
+  end
+
+  exchange!(dfine_to_coarse_cells_map, fgids.exchanger)
+  exchange!(dfcell_to_child_id, fgids.exchanger)
+  map_parts(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
+    if (!(GridapP4est.i_am_in(cparts)))
+      nothing
+    else
+      FineToCoarseModelGlue(fine_to_coarse_faces_map,fine_to_coarse_faces_dim,fcell_to_child_id)
+    end
+  end
+end
+
+
+function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc},
+                                                        fmodel::DiscreteModel{Dc},
+                                                        cpartition,
+                                                        fpartition) where Dc
+
   fine_to_coarse_faces_map=Vector{Vector{Int}}(undef,Dc+1)
   fine_to_coarse_faces_dim=Vector{Vector{Int}}(undef,Dc)
 
-  num_c_cells=length(cpartition.oid_to_lid) #num_cells(cmodel)
-  num_f_cells=length(fpartition.oid_to_lid) #num_cells(fmodel)
+  num_f_cells=num_cells(fmodel)
+  num_o_c_cells=length(cpartition.oid_to_lid)
 
-  println("$(num_c_cells) $(num_f_cells)")
 
   # Allocate local vector size # local cells
   fine_to_coarse_faces_map[Dc+1]=Vector{Int}(undef,num_f_cells)
@@ -143,7 +194,7 @@ function _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel,cpartition,fpartiti
   # Go over all cells of coarse grid portion
   num_children=get_num_children(Val{Dc})
   c=1
-  for cell=1:num_c_cells
+  for cell=1:num_o_c_cells
     for child=1:num_children
       fine_to_coarse_faces_map[Dc+1][c+child-1]=cell
       fcell_to_child_id[c+child-1]=child
@@ -159,44 +210,45 @@ function _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel,cpartition,fpartiti
                                               Gridap.Geometry.num_faces(ftopology,d-1))
   end
 
-  c_cell_faces=[]
-  cache_c_cell_faces=[]
-  f_cell_faces=[]
-  cache_f_cell_faces=[]
-  for d=1:Dc
-    push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
-    push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
-    push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
-    push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
-  end
-  parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
-  for cell=1:num_f_cells
-    parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
-    child=fcell_to_child_id[cell]
-    for d=1:Dc
-      parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
-                                    c_cell_faces[d],
-                                    parent_cell)
-    end
-    for d=1:Dc
-      cell_f_faces=getindex!(cache_f_cell_faces[d],
-                              f_cell_faces[d],
-                              cell)
-      for (lf,f) in enumerate(cell_f_faces)
-        c     = rrule_f_to_c_lid_2D[d][child][lf]
-        dim_c = rrule_f_to_c_dim_2D[d][child][lf]
-        if (dim_c == Dc)
-          fine_to_coarse_faces_map[d][f]=parent_cell
-        else
-          fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
-        end
-        fine_to_coarse_faces_dim[d][f]=dim_c
-      end
-    end
-  end
-  FineToCoarseModelGlue(fine_to_coarse_faces_map,
-                        fine_to_coarse_faces_dim,
-                        fcell_to_child_id)
+  # c_cell_faces=[]
+  # cache_c_cell_faces=[]
+  # f_cell_faces=[]
+  # cache_f_cell_faces=[]
+  # for d=1:Dc
+  #   push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
+  #   push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
+  #   push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
+  #   push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
+  # end
+  # parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
+  # for cell=1:num_f_cells
+  #   parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
+  #   child=fcell_to_child_id[cell]
+  #   for d=1:Dc
+  #     parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
+  #                                   c_cell_faces[d],
+  #                                   parent_cell)
+  #   end
+  #   for d=1:Dc
+  #     cell_f_faces=getindex!(cache_f_cell_faces[d],
+  #                             f_cell_faces[d],
+  #                             cell)
+  #     for (lf,f) in enumerate(cell_f_faces)
+  #       c     = rrule_f_to_c_lid_2D[d][child][lf]
+  #       dim_c = rrule_f_to_c_dim_2D[d][child][lf]
+  #       if (dim_c == Dc)
+  #         fine_to_coarse_faces_map[d][f]=parent_cell
+  #       else
+  #         fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
+  #       end
+  #       fine_to_coarse_faces_dim[d][f]=dim_c
+  #     end
+  #   end
+  # end
+
+  fine_to_coarse_faces_map,
+    fine_to_coarse_faces_dim,
+       fcell_to_child_id
 end
 
 function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
@@ -241,17 +293,10 @@ function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
       pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-      fgids=get_cell_gids(fmodel)
-      dglue=map_parts(fmodel.models,fgids.partition) do fmodel, fpartition
-        if (!(GridapP4est.i_am_in(model.parts)))
-          nothing
-        else
-          cmodel     = model.dmodel.models.part
-          cgids      = get_cell_gids(model.dmodel)
-          cpartition = cgids.partition.part
-          _compute_fine_to_coarse_model_glue(Dc,cmodel,fmodel,cpartition,fpartition)
-        end
-      end
+      dglue = _compute_fine_to_coarse_model_glue(model.parts,
+                                                 model.dmodel,
+                                                 fmodel)
+
       A=typeof(parts)
       B=typeof(fmodel)
       C=typeof(model.coarse_model)

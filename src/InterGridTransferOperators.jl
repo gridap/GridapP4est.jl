@@ -119,8 +119,7 @@ function Gridap.Arrays.evaluate!(cache,
   cfx.array
 end
 
-function change_domain_coarse_to_fine(Uh::GridapDistributed.DistributedFESpace,
-                                      c_cell_field,
+function change_domain_coarse_to_fine(c_cell_field,
                                       ftrian::GridapDistributed.DistributedTriangulation{Dc,Dp},
                                       glue::MPIData{<:Union{Nothing,FineToCoarseModelGlue}}) where {Dc,Dp}
 
@@ -155,7 +154,6 @@ function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.Distribute
                                       ctrian::Union{GridapDistributed.DistributedTriangulation,Nothing},
                                       glue)
   i_am_in_coarse=(ctrian != nothing)
-  println("??? $(i_am_in_coarse) $(glue.part)" )
   if i_am_in_coarse
     c_f_cell_field,cglue=map_parts(GridapDistributed.local_views(ctrian)) do _
       f_cell_field.fields.part,glue.part

@@ -74,6 +74,7 @@ module GMGLinearSolverTests
     Ωh_red
     dΩh_red
     Ωh
+    Ωh_ghost
     ΩH
     dΩh
     UH
@@ -114,7 +115,7 @@ module GMGLinearSolverTests
       uH = nothing
     end
 
-    uH_h = change_domain_coarse_to_fine(A.Uh,uH,A.Ωh,A.mesh_hierarchy_level.ref_glue)
+    uH_h = change_domain_coarse_to_fine(uH,A.Ωh_ghost,A.mesh_hierarchy_level.ref_glue)
     #writevtk(A.Ωh,"uH_h",cellfields=["uH_h"=>uH_h])
 
     l(v) = ∫(v*uH_h)A.dΩh
@@ -207,6 +208,7 @@ module GMGLinearSolverTests
     model_h=get_level_model_before_redist(mh,level)
     Ωh=Triangulation(model_h.dmodel)
     Ωh_red=Triangulation(get_level_model(mh,level).dmodel)
+    Ωh_ghost=Triangulation(with_ghost,model_h.dmodel)
     dΩh=Measure(Ωh,2*(order+1))
     dΩh_red=Measure(Ωh_red,2*(order+1))
 
@@ -235,23 +237,24 @@ module GMGLinearSolverTests
          map_parts(GridapDistributed.local_views(UH.spaces)) do space
              zeros(num_dirichlet_dofs(space))
          end
-      map_parts(mh.levels[level].model.parts) do part_id
-          println("INTERP $(part_id) $(ΩH)")
-      end
+      # map_parts(mh.levels[level].model.parts) do part_id
+      #     println("INTERP $(part_id) $(ΩH)")
+      # end
     else
       ΩH = nothing
       UH = nothing
       VH = nothing
       dof_values_H_fe_space_layout = nothing
       uH_zero_dirichlet_values = nothing
-      map_parts(mh.levels[level].model.parts) do part_id
-        println("INTERP $(part_id) $(ΩH)")
-      end
+      # map_parts(mh.levels[level].model.parts) do part_id
+      #   println("INTERP $(part_id) $(ΩH)")
+      # end
     end
 
     cache=InterpolationMat(Ωh_red,
                            dΩh_red,
                            Ωh,
+                           Ωh_ghost,
                            ΩH,
                            dΩh,
                            UH,
@@ -371,9 +374,9 @@ module GMGLinearSolverTests
       map_parts(GridapDistributed.local_views(UH.spaces)) do space
            zeros(num_dirichlet_dofs(space))
       end
-      map_parts(mh.levels[level].model.parts) do part_id
-        println("RESTRICT $(part_id) $(ΩH)")
-      end
+      # map_parts(mh.levels[level].model.parts) do part_id
+      #   println("RESTRICT $(part_id) $(ΩH)")
+      # end
     else
       ΩH  = nothing
       dΩH = nothing
@@ -383,9 +386,9 @@ module GMGLinearSolverTests
       dof_values_H_fe_space_layout = nothing
       dof_values_H_sys_layout_b    = nothing
       uH_zero_dirichlet_values = nothing
-      map_parts(mh.levels[level].model.parts) do part_id
-        println("RESTRICT $(part_id) $(ΩH)")
-      end
+      # map_parts(mh.levels[level].model.parts) do part_id
+      #   println("RESTRICT $(part_id) $(ΩH)")
+      # end
     end
 
     cache=RestrictionMat(Ωh,
@@ -432,7 +435,7 @@ module GMGLinearSolverTests
     end
 
     num_parts_x_level = [2,1]
-    cmodel=CartesianDiscreteModel(domain,(4,4))
+    cmodel=CartesianDiscreteModel(domain,(2,2))
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
     fespaces=generate_fe_spaces(mh)
     smatrices=generate_stiffness_matrices(mh,fespaces)

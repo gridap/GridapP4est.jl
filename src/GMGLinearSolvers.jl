@@ -102,6 +102,11 @@ function apply_GMG_level!(xh,
 
       # Restrict the residual
       mul!(rH,restrictions[lev],rh)
+
+      if dxH!=nothing
+        fill!(dxH,0.0)
+      end
+
       # Apply next_level
       apply_GMG_level!(dxH,
                       rH,
@@ -169,10 +174,10 @@ function GMG!(x::PVector,
                        smooth_iter=smooth_iter)
     nrm_r = norm(rh)
     rel_res = nrm_r / nrm_r0
+    current_iter += 1
     if (GridapP4est.i_am_main(model.parts))
       @printf "%6i  %12.4e\n" current_iter rel_res
     end
-    current_iter += 1
   end
 
   return current_iter

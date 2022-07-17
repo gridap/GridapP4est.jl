@@ -11,7 +11,7 @@ module InterGridTransferOperatorsTests
   u(x) = x[1] + x[2]
   f(x) = -Δ(u)(x)
 
-  #function run(parts,subdomains)
+  function run(parts,subdomains)
     subdomains=(1,1)
     if length(subdomains)==2
       domain=(0,1,0,1)
@@ -36,7 +36,7 @@ module InterGridTransferOperatorsTests
     uH     = interpolate(u,UH)
     ftrian = get_triangulation(fmodel.dmodel)
     ctrian = get_triangulation(cmodel.dmodel)
-    uH_h   = GridapP4est.change_domain_coarse_to_fine(uH,ftrian,glue)
+    uH_h   = change_domain_coarse_to_fine(uH,ftrian,glue)
 
     dΩh=Measure(ftrian,2*(order+1))
     dΩH=Measure(ctrian,2*(order+1))
@@ -54,7 +54,6 @@ module InterGridTransferOperatorsTests
 
     udofsp = PVector(0.0,Uh.gids)
     map_parts(udofsp.values) do vals
-      println("XXX ", length(vals))
       @assert length(vals)==length(udofs)
       copy!(vals,udofs)
     end
@@ -95,7 +94,7 @@ module InterGridTransferOperatorsTests
 
     octree_distributed_discrete_model_free(cmodel)
     octree_distributed_discrete_model_free(fmodel)
-  # end
+  end
   if !MPI.Initialized()
     MPI.Init()
   end
