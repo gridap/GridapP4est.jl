@@ -434,7 +434,7 @@ module GMGLinearSolverTests
       domain=(0,1,0,1,0,1)
     end
 
-    num_parts_x_level = [2,1]
+    num_parts_x_level = [4,2,1]
     cmodel=CartesianDiscreteModel(domain,(2,2))
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
     fespaces=generate_fe_spaces(mh)
@@ -486,7 +486,7 @@ module GMGLinearSolverTests
   if !MPI.Initialized()
     MPI.Init()
   end
-  parts = get_part_ids(mpi,2)
+  parts = get_part_ids(mpi,4)
   run(parts,(1,1))
   MPI.Finalize()
 end
