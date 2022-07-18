@@ -81,7 +81,8 @@ function apply_GMG_level!(xh,
                           interpolations,
                           smooth_caches,
                           work_vectors;
-                          smooth_iter=2)
+                          smooth_iter=2,
+                          verbose=false)
 
   modelh = get_level_model(mh,lev)
   if (GridapP4est.i_am_in(modelh.parts))
@@ -101,7 +102,7 @@ function apply_GMG_level!(xh,
       smooth!(smooth_caches[lev], xh, rh, Ah; maxiter=smooth_iter)
 
       # Restrict the residual
-      mul!(rH,restrictions[lev],rh)
+      mul!(rH,restrictions[lev],rh; verbose=verbose)
 
       if dxH!=nothing
         fill!(dxH,0.0)
@@ -117,9 +118,12 @@ function apply_GMG_level!(xh,
                       interpolations,
                       smooth_caches,
                       work_vectors;
-                      smooth_iter=smooth_iter)
+                      smooth_iter=smooth_iter,
+                      verbose=verbose)
+
       # Interpolate dxH in finer space
-      mul!(dxh, interpolations[lev], dxH)
+      mul!(dxh, interpolations[lev], dxH; verbose=verbose)
+
       # Update solution
       xh .= xh .+ dxh
       # Update residual
@@ -143,7 +147,8 @@ function GMG!(x::PVector,
               restrictions;
               rtol=1.0e-06,
               maxiter=10,
-              smooth_iter=2)
+              smooth_iter=2,
+              verbose=false)
 
   work_vectors=allocate_work_vectors(mh,smatrices)
   smooth_caches=setup_smooth_caches(mh,smatrices)
@@ -162,16 +167,17 @@ function GMG!(x::PVector,
   end
 
   while current_iter <= maxiter && rel_res > rtol
-      apply_GMG_level!(x,
-                       rh,
-                       1,
-                       mh,
-                       smatrices,
-                       restrictions,
-                       interpolations,
-                       smooth_caches,
-                       work_vectors;
-                       smooth_iter=smooth_iter)
+    apply_GMG_level!(x,
+                     rh,
+                     1,
+                     mh,
+                     smatrices,
+                     restrictions,
+                     interpolations,
+                     smooth_caches,
+                     work_vectors;
+                     smooth_iter=smooth_iter,
+                     verbose=verbose)
     nrm_r = norm(rh)
     rel_res = nrm_r / nrm_r0
     current_iter += 1
@@ -179,6 +185,6 @@ function GMG!(x::PVector,
       @printf "%6i  %12.4e\n" current_iter rel_res
     end
   end
-
-  return current_iter
+  converged=(rel_res < rtol)
+  return current_iter, converged
 end

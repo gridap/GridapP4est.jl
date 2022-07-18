@@ -169,18 +169,13 @@ function assemble_mass_matrix(model,Vh,Uh,degree)
 end
 
 mutable struct InterpolationMat
-  Ωh_red
-  dΩh_red
   Ωh
   Ωh_ghost
-  ΩH
   dΩh
   UH
-  VH
   Uh
   Vh
   Uh_red
-  Vh_red
   mesh_hierarchy_level
   mesh_hierarchy_level_next
   uH_zero_dirichlet_values
@@ -192,8 +187,11 @@ mutable struct InterpolationMat
   mh
 end
 
-# TO-DO: InterpolationMatCache
-function LinearAlgebra.mul!(x::PVector,A::InterpolationMat,y::Union{PVector,Nothing})
+function LinearAlgebra.mul!(x::PVector,
+                            A::InterpolationMat,
+                            y::Union{PVector,Nothing};
+                            verbose=false,
+                            reltol=1.0e-14)
   parts = A.mesh_hierarchy_level.model.parts
   Gridap.Helpers.@check GridapP4est.i_am_in(parts)
 
@@ -202,19 +200,15 @@ function LinearAlgebra.mul!(x::PVector,A::InterpolationMat,y::Union{PVector,Noth
   i_am_in_coarse= GridapP4est.i_am_in(coarse_parts)
 
   if (i_am_in_coarse)
-    # To-think: Do we need communication after copy!?
     copy!(A.dof_values_H_fe_space_layout,y)
-    exchange!(A.dof_values_H_fe_space_layout)
     uH = FEFunction(A.UH,
                     A.dof_values_H_fe_space_layout,
                     A.uH_zero_dirichlet_values)
-    # writevtk(A.ΩH,"uH",nsubcells=2,cellfields=["uH"=>uH])
   else
     uH = nothing
   end
 
   uH_h = change_domain_coarse_to_fine(uH,A.Ωh_ghost,A.mesh_hierarchy_level.ref_glue)
-  #writevtk(A.Ωh,"uH_h",cellfields=["uH_h"=>uH_h])
 
   l(v) = ∫(v*uH_h)A.dΩh
   Gridap.FESpaces.assemble_vector!(l,A.dof_values_h_sys_layout_b,A.Vh)
@@ -222,37 +216,17 @@ function LinearAlgebra.mul!(x::PVector,A::InterpolationMat,y::Union{PVector,Noth
 
   if (A.mesh_hierarchy_level.model_red != nothing)
     fill!(A.dof_values_h_sys_layout_x,0.0)
-    # println("aaaaaaaaaa aaaaaaaaaaaaaa")
     IterativeSolvers.cg!(A.dof_values_h_sys_layout_x,
                          A.mh,
                          A.dof_values_h_sys_layout_b;
-                         verbose=i_am_main(parts),
-                         reltol=1.0e-14)
-    # println("bbbbbbbbbb bbbbbbbbbbbbbb")
+                         verbose=(i_am_main(parts) && verbose),
+                         reltol=reltol)
     copy!(A.dof_values_h_fe_space_layout,
           A.dof_values_h_sys_layout_x)
-    exchange!(A.dof_values_h_fe_space_layout)
-
-    # map_parts(A.dof_values_h_fe_space_layout.values,
-    #           A.dof_values_h_sys_layout_x.values) do a,b
-    #   println(a)
-    #   println(b)
-    # end
 
     uhold=FEFunction(A.Uh,
                      A.dof_values_h_fe_space_layout,
                      A.uh_zero_dirichlet_values)
-
-    # println("XXX $(sum(∫(uhold)A.dΩh))")
-
-    # map_parts(A.mesh_hierarchy_level.model.parts,uhold.fields) do part,fs
-    #     println("AAA1 $(fs.cell_dof_values)")
-    #     println("AAA1 $(fs.free_values)")
-    #     println("AAA1 $(fs.dirichlet_values)")
-    #     println("AAA1 $(fs.fe_space)")
-    # end
-
-    # writevtk(A.Ωh,"Correction",cellfields=["correction"=>uhold])
 
     uhnew  = redistribute_fe_function(uhold,
                                       A.Uh,
@@ -260,39 +234,13 @@ function LinearAlgebra.mul!(x::PVector,A::InterpolationMat,y::Union{PVector,Noth
                                       A.mesh_hierarchy_level.model_red.dmodel,
                                       A.mesh_hierarchy_level.red_glue)
 
-    #writevtk(A.Ωh_red,"Correction red",cellfields=["correction red"=>uhnew])
-
-    # map_parts(A.mesh_hierarchy_level.model_red.parts,uhnew.fields) do part,fs
-    #   if part == 1
-    #     println("AAA $(fs.cell_dof_values)")
-    #     println("AAA $(fs.free_values)")
-    #     println("AAA $(fs.dirichlet_values)")
-    #     println("AAA $(fs.fe_space)")
-    #   end
-    # end
-
-    # println("YYY $(sum(∫(uhnew)A.dΩh_red))")
-
-
-    # map_parts(uhnew.metadata.free_values.values) do fv
-    #   println("RRR $(fv)")
-    # end
-
-
-
-    # COMM after copy???
     copy!(x,uhnew.metadata.free_values)
-    exchange!(x)
-    # map_parts(x.values,uhnew.metadata.free_values.values) do x1, x2
-    #   println("XXX $(x1)")
-    #   println("YYY $(x2)")
-    # end
   else
     IterativeSolvers.cg!(x,
                          A.mh,
                          A.dof_values_h_sys_layout_b;
-                         verbose=i_am_main(parts),
-                         reltol=1.0e-14)
+                         verbose=(i_am_main(parts) && verbose),
+                         reltol=reltol)
   end
 end
 
@@ -305,10 +253,8 @@ function setup_interpolation_mat(mh,fespaces,level)
   # Fine level (all processes participate)
   model_h=get_level_model_before_redist(mh,level)
   Ωh=Triangulation(model_h.dmodel)
-  Ωh_red=Triangulation(get_level_model(mh,level).dmodel)
   Ωh_ghost=Triangulation(with_ghost,model_h.dmodel)
   dΩh=Measure(Ωh,2*(order+1))
-  dΩh_red=Measure(Ωh_red,2*(order+1))
 
 
   Vh=get_level_fe_space_before_redist(tests[level])
@@ -327,7 +273,6 @@ function setup_interpolation_mat(mh,fespaces,level)
   # Coarse level (only processes of the next level participate)
   model_H=get_level_model(mh,level+1)
   if (GridapP4est.i_am_in(model_H.parts))
-    ΩH = Triangulation(model_H.dmodel)
     VH=get_level_fe_space(tests[level+1])
     UH=get_level_fe_space(trials[level+1])
     dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
@@ -335,32 +280,19 @@ function setup_interpolation_mat(mh,fespaces,level)
        map_parts(GridapDistributed.local_views(UH.spaces)) do space
            zeros(num_dirichlet_dofs(space))
        end
-    # map_parts(mh.levels[level].model.parts) do part_id
-    #     println("INTERP $(part_id) $(ΩH)")
-    # end
   else
-    ΩH = nothing
     UH = nothing
-    VH = nothing
     dof_values_H_fe_space_layout = nothing
     uH_zero_dirichlet_values = nothing
-    # map_parts(mh.levels[level].model.parts) do part_id
-    #   println("INTERP $(part_id) $(ΩH)")
-    # end
   end
 
-  cache=InterpolationMat(Ωh_red,
-                         dΩh_red,
-                         Ωh,
+  cache=InterpolationMat(Ωh,
                          Ωh_ghost,
-                         ΩH,
                          dΩh,
                          UH,
-                         VH,
                          Uh,
                          Vh,
                          get_level_fe_space(trials[level]),
-                         get_level_fe_space(tests[level]),
                          get_level(mh,level),
                          get_level(mh,level+1),
                          uH_zero_dirichlet_values,
@@ -372,11 +304,10 @@ function setup_interpolation_mat(mh,fespaces,level)
                          Mh)
 end
 
-mutable struct RestrictionMat
-  Ωh
+struct RestrictionMat
   ΩH
-  dΩh
   dΩH
+  dΩh
   Uh
   Uh_red
   UH
@@ -390,28 +321,28 @@ mutable struct RestrictionMat
   mH
 end
 
-function LinearAlgebra.mul!(x::Union{PVector,Nothing}, A::RestrictionMat, y::PVector)
+function LinearAlgebra.mul!(x::Union{PVector,Nothing},
+                            A::RestrictionMat,
+                            y::PVector;
+                            verbose=false,
+                            reltol=1.0e-14)
+
   parts = A.mesh_hierarchy_level.model.parts
   Gridap.Helpers.@check GridapP4est.i_am_in(parts)
 
   copy!(A.dof_values_h_fe_space_layout_red,y)
-  exchange!(A.dof_values_h_fe_space_layout_red)
   if (A.mesh_hierarchy_level.model_red != nothing)
     uhold = FEFunction(A.Uh_red,
                        A.dof_values_h_fe_space_layout_red,
                        A.uh_zero_dirichlet_values_red)
 
-    # x is in a subcommunicator of y
     uh=redistribute_fe_function(uhold,
                                 A.Uh_red,
                                 A.Uh,
                                 A.mesh_hierarchy_level.model.dmodel,
                                 A.mesh_hierarchy_level.red_glue;
                                 reverse=true)
-
-    # writevtk(A.Ωh,"Residual",cellfields=["residual"=>uh])
   else
-    # x and y are in the same communicator
     uh = FEFunction(A.Uh,
                     A.dof_values_h_fe_space_layout_red,
                     A.uh_zero_dirichlet_values_red)
@@ -430,12 +361,11 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing}, A::RestrictionMat, y::PVe
     IterativeSolvers.cg!(x,
                          A.mH,
                          A.dof_values_H_sys_layout_b;
-                         verbose=i_am_main(parts),
-                         reltol=1.0e-14)
+                         reltol=reltol,
+                         verbose=(i_am_main(parts) && verbose))
     uH = FEFunction(A.UH,
                     x,
                     A.uH_zero_dirichlet_values)
-    # writevtk(A.ΩH,"Residual_projected",cellfields=["residual_projected"=>uH])
   end
 end
 
@@ -449,8 +379,8 @@ function setup_restriction_mat(mh,fespaces,level)
   dΩh = Measure(Ωh,2*order+1)
   Uh  = get_level_fe_space_before_redist(trials[level])
   Vh  = get_level_fe_space_before_redist(tests[level])
-  Uh_red= get_level_fe_space(trials[level])
   Vh_red= get_level_fe_space(tests[level])
+  Uh_red= get_level_fe_space(trials[level])
   dof_values_h_fe_space_layout_red = PVector(0.0,Vh_red.gids)
   dof_values_h_fe_space_layout     = PVector(0.0,Vh.gids)
   uh_zero_dirichlet_values_red=
@@ -461,47 +391,39 @@ function setup_restriction_mat(mh,fespaces,level)
   model_H=get_level_model(mh,level+1)
   if (GridapP4est.i_am_in(model_H.parts))
     ΩH  = Triangulation(model_H.dmodel)
-    dΩH = Measure(ΩH,2*(order+1))
+    dΩH = Measure(ΩH,2*order+1)
     VH=get_level_fe_space(tests[level+1])
     UH=get_level_fe_space(trials[level+1])
     MH=assemble_mass_matrix(model_H,VH,UH,2*order+1)
-    # Generate arrays of DoF Values for coarse system
     dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
     dof_values_H_sys_layout_b = similar(dof_values_H_fe_space_layout,(axes(MH)[1],))
     uH_zero_dirichlet_values=
     map_parts(GridapDistributed.local_views(UH.spaces)) do space
          zeros(num_dirichlet_dofs(space))
     end
-    # map_parts(mh.levels[level].model.parts) do part_id
-    #   println("RESTRICT $(part_id) $(ΩH)")
-    # end
   else
-    ΩH  = nothing
+    ΩH = nothing
     dΩH = nothing
-    VH  = nothing
-    UH  = nothing
-    MH  = nothing
+    VH = nothing
+    UH = nothing
+    MH = nothing
     dof_values_H_fe_space_layout = nothing
-    dof_values_H_sys_layout_b    = nothing
+    dof_values_H_sys_layout_b = nothing
     uH_zero_dirichlet_values = nothing
-    # map_parts(mh.levels[level].model.parts) do part_id
-    #   println("RESTRICT $(part_id) $(ΩH)")
-    # end
   end
 
-  cache=RestrictionMat(Ωh,
-                       ΩH,
-                       dΩh,
-                       dΩH,
-                       Uh,
-                       Uh_red,
-                       UH,
-                       VH,
-                       get_level(mh,level),
-                       get_level(mh,level+1),
-                       uh_zero_dirichlet_values_red,
-                       dof_values_h_fe_space_layout_red,
-                       uH_zero_dirichlet_values,
-                       dof_values_H_sys_layout_b,
-                       MH)
+  RestrictionMat(ΩH,
+                 dΩH,
+                 dΩh,
+                 Uh,
+                 Uh_red,
+                 UH,
+                 VH,
+                 get_level(mh,level),
+                 get_level(mh,level+1),
+                 uh_zero_dirichlet_values_red,
+                 dof_values_h_fe_space_layout_red,
+                 uH_zero_dirichlet_values,
+                 dof_values_H_sys_layout_b,
+                 MH)
 end
