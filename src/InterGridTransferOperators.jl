@@ -161,9 +161,9 @@ function change_domain_fine_to_coarse(f_cell_field::GridapDistributed.Distribute
   end
 end
 
-function assemble_mass_matrix(model,Vh,Uh,degree)
+function assemble_mass_matrix(model,Vh,Uh,qdegree)
   Ω  = Triangulation(model.dmodel)
-  dΩ = Measure(Ω,degree)
+  dΩ = Measure(Ω,qdegree)
   a(u,v)=∫(v⋅u)dΩ
   assemble_matrix(a,Uh,Vh)
 end
@@ -185,6 +185,65 @@ mutable struct InterpolationMat
   dof_values_h_sys_layout_b
   dof_values_h_sys_layout_x
   mh
+end
+
+function InterpolationMat(mh,fespaces,level,qdegree)
+  Gridap.Helpers.@check 1 <= level <= num_levels(mh)-1
+
+  tests,trials=fespaces
+
+  # Fine level (all processes participate)
+  model_h=get_level_model_before_redist(mh,level)
+  Ωh=Triangulation(model_h.dmodel)
+  Ωh_ghost=Triangulation(with_ghost,model_h.dmodel)
+  dΩh=Measure(Ωh,qdegree)
+
+
+  Vh=get_level_fe_space_before_redist(tests[level])
+  Uh=get_level_fe_space_before_redist(trials[level])
+  Mh=assemble_mass_matrix(model_h,Vh,Uh,qdegree)
+
+
+  dof_values_h_fe_space_layout = PVector(0.0,Vh.gids)
+  dof_values_h_sys_layout_b = similar(dof_values_h_fe_space_layout,(axes(Mh)[1],))
+  dof_values_h_sys_layout_x = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
+  uh_zero_dirichlet_values=
+     map_parts(GridapDistributed.local_views(Uh.spaces)) do space
+        zeros(num_dirichlet_dofs(space))
+     end
+
+  # Coarse level (only processes of the next level participate)
+  model_H=get_level_model(mh,level+1)
+  if (GridapP4est.i_am_in(model_H.parts))
+    VH=get_level_fe_space(tests[level+1])
+    UH=get_level_fe_space(trials[level+1])
+    dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
+    uH_zero_dirichlet_values=
+       map_parts(GridapDistributed.local_views(UH.spaces)) do space
+           zeros(num_dirichlet_dofs(space))
+       end
+  else
+    UH = nothing
+    dof_values_H_fe_space_layout = nothing
+    uH_zero_dirichlet_values = nothing
+  end
+
+  cache=InterpolationMat(Ωh,
+                         Ωh_ghost,
+                         dΩh,
+                         UH,
+                         Uh,
+                         Vh,
+                         get_level_fe_space(trials[level]),
+                         get_level(mh,level),
+                         get_level(mh,level+1),
+                         uH_zero_dirichlet_values,
+                         dof_values_H_fe_space_layout,
+                         uh_zero_dirichlet_values,
+                         dof_values_h_fe_space_layout,
+                         dof_values_h_sys_layout_b,
+                         dof_values_h_sys_layout_x,
+                         Mh)
 end
 
 function LinearAlgebra.mul!(x::PVector,
@@ -244,66 +303,6 @@ function LinearAlgebra.mul!(x::PVector,
   end
 end
 
-function setup_interpolation_mat(mh,fespaces,level)
-  Gridap.Helpers.@check 1 <= level <= num_levels(mh)-1
-
-  tests,trials=fespaces
-  order=1
-
-  # Fine level (all processes participate)
-  model_h=get_level_model_before_redist(mh,level)
-  Ωh=Triangulation(model_h.dmodel)
-  Ωh_ghost=Triangulation(with_ghost,model_h.dmodel)
-  dΩh=Measure(Ωh,2*(order+1))
-
-
-  Vh=get_level_fe_space_before_redist(tests[level])
-  Uh=get_level_fe_space_before_redist(trials[level])
-  Mh=assemble_mass_matrix(model_h,Vh,Uh,2*order+1)
-
-
-  dof_values_h_fe_space_layout = PVector(0.0,Vh.gids)
-  dof_values_h_sys_layout_b = similar(dof_values_h_fe_space_layout,(axes(Mh)[1],))
-  dof_values_h_sys_layout_x = similar(dof_values_h_fe_space_layout,(axes(Mh)[2],))
-  uh_zero_dirichlet_values=
-     map_parts(GridapDistributed.local_views(Uh.spaces)) do space
-        zeros(num_dirichlet_dofs(space))
-     end
-
-  # Coarse level (only processes of the next level participate)
-  model_H=get_level_model(mh,level+1)
-  if (GridapP4est.i_am_in(model_H.parts))
-    VH=get_level_fe_space(tests[level+1])
-    UH=get_level_fe_space(trials[level+1])
-    dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
-    uH_zero_dirichlet_values=
-       map_parts(GridapDistributed.local_views(UH.spaces)) do space
-           zeros(num_dirichlet_dofs(space))
-       end
-  else
-    UH = nothing
-    dof_values_H_fe_space_layout = nothing
-    uH_zero_dirichlet_values = nothing
-  end
-
-  cache=InterpolationMat(Ωh,
-                         Ωh_ghost,
-                         dΩh,
-                         UH,
-                         Uh,
-                         Vh,
-                         get_level_fe_space(trials[level]),
-                         get_level(mh,level),
-                         get_level(mh,level+1),
-                         uH_zero_dirichlet_values,
-                         dof_values_H_fe_space_layout,
-                         uh_zero_dirichlet_values,
-                         dof_values_h_fe_space_layout,
-                         dof_values_h_sys_layout_b,
-                         dof_values_h_sys_layout_x,
-                         Mh)
-end
-
 struct RestrictionMat
   ΩH
   dΩH
@@ -319,6 +318,64 @@ struct RestrictionMat
   uH_zero_dirichlet_values
   dof_values_H_sys_layout_b
   mH
+end
+
+function RestrictionMat(mh,fespaces,level,qdegree)
+  Gridap.Helpers.@check 1 <= level <= num_levels(mh)-1
+  tests,trials=fespaces
+
+  model_h=get_level_model_before_redist(mh,level)
+  Ωh  = Triangulation(model_h.dmodel)
+  dΩh = Measure(Ωh,qdegree)
+  Uh  = get_level_fe_space_before_redist(trials[level])
+  Vh  = get_level_fe_space_before_redist(tests[level])
+  Vh_red= get_level_fe_space(tests[level])
+  Uh_red= get_level_fe_space(trials[level])
+  dof_values_h_fe_space_layout_red = PVector(0.0,Vh_red.gids)
+  dof_values_h_fe_space_layout     = PVector(0.0,Vh.gids)
+  uh_zero_dirichlet_values_red=
+    map_parts(GridapDistributed.local_views(Uh_red.spaces)) do space
+         zeros(num_dirichlet_dofs(space))
+    end
+
+  model_H=get_level_model(mh,level+1)
+  if (GridapP4est.i_am_in(model_H.parts))
+    ΩH  = Triangulation(model_H.dmodel)
+    dΩH = Measure(ΩH,qdegree)
+    VH=get_level_fe_space(tests[level+1])
+    UH=get_level_fe_space(trials[level+1])
+    MH=assemble_mass_matrix(model_H,VH,UH,qdegree)
+    dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
+    dof_values_H_sys_layout_b = similar(dof_values_H_fe_space_layout,(axes(MH)[1],))
+    uH_zero_dirichlet_values=
+    map_parts(GridapDistributed.local_views(UH.spaces)) do space
+         zeros(num_dirichlet_dofs(space))
+    end
+  else
+    ΩH = nothing
+    dΩH = nothing
+    VH = nothing
+    UH = nothing
+    MH = nothing
+    dof_values_H_fe_space_layout = nothing
+    dof_values_H_sys_layout_b = nothing
+    uH_zero_dirichlet_values = nothing
+  end
+
+  RestrictionMat(ΩH,
+                 dΩH,
+                 dΩh,
+                 Uh,
+                 Uh_red,
+                 UH,
+                 VH,
+                 get_level(mh,level),
+                 get_level(mh,level+1),
+                 uh_zero_dirichlet_values_red,
+                 dof_values_h_fe_space_layout_red,
+                 uH_zero_dirichlet_values,
+                 dof_values_H_sys_layout_b,
+                 MH)
 end
 
 function LinearAlgebra.mul!(x::Union{PVector,Nothing},
@@ -367,63 +424,4 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing},
                     x,
                     A.uH_zero_dirichlet_values)
   end
-end
-
-function setup_restriction_mat(mh,fespaces,level)
-  Gridap.Helpers.@check 1 <= level <= num_levels(mh)-1
-  tests,trials=fespaces
-  order=1
-
-  model_h=get_level_model_before_redist(mh,level)
-  Ωh  = Triangulation(model_h.dmodel)
-  dΩh = Measure(Ωh,2*order+1)
-  Uh  = get_level_fe_space_before_redist(trials[level])
-  Vh  = get_level_fe_space_before_redist(tests[level])
-  Vh_red= get_level_fe_space(tests[level])
-  Uh_red= get_level_fe_space(trials[level])
-  dof_values_h_fe_space_layout_red = PVector(0.0,Vh_red.gids)
-  dof_values_h_fe_space_layout     = PVector(0.0,Vh.gids)
-  uh_zero_dirichlet_values_red=
-    map_parts(GridapDistributed.local_views(Uh_red.spaces)) do space
-         zeros(num_dirichlet_dofs(space))
-    end
-
-  model_H=get_level_model(mh,level+1)
-  if (GridapP4est.i_am_in(model_H.parts))
-    ΩH  = Triangulation(model_H.dmodel)
-    dΩH = Measure(ΩH,2*order+1)
-    VH=get_level_fe_space(tests[level+1])
-    UH=get_level_fe_space(trials[level+1])
-    MH=assemble_mass_matrix(model_H,VH,UH,2*order+1)
-    dof_values_H_fe_space_layout = PVector(0.0,VH.gids)
-    dof_values_H_sys_layout_b = similar(dof_values_H_fe_space_layout,(axes(MH)[1],))
-    uH_zero_dirichlet_values=
-    map_parts(GridapDistributed.local_views(UH.spaces)) do space
-         zeros(num_dirichlet_dofs(space))
-    end
-  else
-    ΩH = nothing
-    dΩH = nothing
-    VH = nothing
-    UH = nothing
-    MH = nothing
-    dof_values_H_fe_space_layout = nothing
-    dof_values_H_sys_layout_b = nothing
-    uH_zero_dirichlet_values = nothing
-  end
-
-  RestrictionMat(ΩH,
-                 dΩH,
-                 dΩh,
-                 Uh,
-                 Uh_red,
-                 UH,
-                 VH,
-                 get_level(mh,level),
-                 get_level(mh,level+1),
-                 uh_zero_dirichlet_values_red,
-                 dof_values_h_fe_space_layout_red,
-                 uH_zero_dirichlet_values,
-                 dof_values_H_sys_layout_b,
-                 MH)
 end

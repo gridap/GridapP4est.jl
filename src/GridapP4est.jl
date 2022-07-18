@@ -33,13 +33,13 @@ module GridapP4est
   export refine
   export redistribute
   export FineToCoarseModelGlue
-  export octree_distributed_discrete_model_free
+  export octree_distributed_discrete_model_free!
 
   # InterGridTransferOperators
   export InterpolationMat
   export RestrictionMat
-  export setup_interpolation_mat
-  export setup_restriction_mat
+  export InterpolationMat
+  export RestrictionMat
 
   # ModelHierarchy
   export ModelHierarchy

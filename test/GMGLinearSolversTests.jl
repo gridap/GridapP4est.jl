@@ -9,34 +9,17 @@ module GMGLinearSolverTests
   using LinearAlgebra
   using IterativeSolvers
 
-  function generate_fe_spaces(mh)
-    order=1
-    reffe=ReferenceFE(lagrangian,Float64,order)
-    test_spaces = Vector{FESpaceHierarchyLevel}(undef,num_levels(mh))
-    trial_spaces = Vector{FESpaceHierarchyLevel}(undef,num_levels(mh))
-    for i=1:num_levels(mh)
-      model = get_level_model(mh,i)
-      if (GridapP4est.i_am_in(model.parts))
-         Vh = TestFESpace(get_level(mh,i),reffe,dirichlet_tags="boundary")
-         Uh = TrialFESpace(u,Vh)
-         test_spaces[i]  = Vh
-         trial_spaces[i] = Uh
-      end
-    end
-    test_spaces, trial_spaces
-  end
 
-  function generate_stiffness_matrices(mh, fespaces)
+  function generate_stiffness_matrices(mh, fespaces, qdegree)
     tests,trials=fespaces
     Gridap.Helpers.@check num_levels(mh)==length(tests)
     Gridap.Helpers.@check num_levels(mh)==length(trials)
-    order=1
     matrices=Vector{PSparseMatrix}(undef,num_levels(mh))
     for i=1:num_levels(mh)
       model = get_level_model(mh,i)
       if (GridapP4est.i_am_in(model.parts))
         Ω  = Triangulation(model.dmodel)
-        dΩ = Measure(Ω,2*(order+1))
+        dΩ = Measure(Ω,qdegree)
         Vh = get_level_fe_space(tests[i])
         Uh = get_level_fe_space(trials[i])
         a(u,v)=∫(∇(v)⋅∇(u))dΩ
@@ -47,15 +30,15 @@ module GMGLinearSolverTests
     matrices
   end
 
-  function setup_interpolations_and_restrictions(mh,fespaces)
+  function setup_interpolations_and_restrictions(mh,fespaces,qdegree)
     nlevs = num_levels(mh)
     interpolations=Vector{InterpolationMat}(undef,nlevs-1)
     restrictions=Vector{RestrictionMat}(undef,nlevs-1)
     for l=1:nlevs-1
       model = get_level_model(mh,l)
       if (GridapP4est.i_am_in(model.parts))
-        interpolations[l]=setup_interpolation_mat(mh,fespaces,l)
-        restrictions[l]=setup_restriction_mat(mh,fespaces,l)
+        interpolations[l]=InterpolationMat(mh,fespaces,l,qdegree)
+        restrictions[l]=RestrictionMat(mh,fespaces,l,qdegree)
       end
     end
     interpolations, restrictions
@@ -73,18 +56,23 @@ module GMGLinearSolverTests
       domain=(0,1,0,1,0,1)
     end
 
-    num_parts_x_level = [4,2,1]
+    order=1
+    reffe=ReferenceFE(lagrangian,Float64,order)
+    degree=2*order+1
+
+    num_parts_x_level = [4,4,2,1]
     cmodel=CartesianDiscreteModel(domain,(2,2))
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
-    fespaces=generate_fe_spaces(mh)
-    smatrices=generate_stiffness_matrices(mh,fespaces)
-    interp,restrict=setup_interpolations_and_restrictions(mh,fespaces)
+
+    tests    = TestFESpace(mh,reffe,dirichlet_tags="boundary")
+    trials   = TrialFESpace(u,tests)
+    fespaces = (tests,trials)
+    smatrices= generate_stiffness_matrices(mh,fespaces,degree)
+    interp,restrict=setup_interpolations_and_restrictions(mh,fespaces,degree)
 
     model=get_level_model(mh,1)
     Ω = Triangulation(model.dmodel)
-    order=1
-    dΩ = Measure(Ω,2*(order+1))
-    tests,trials=fespaces
+    dΩ = Measure(Ω,degree)
     Vh = tests[1]
     Uh = trials[1]
     a(u,v)=∫(∇(v)⋅∇(u))dΩ
@@ -100,7 +88,6 @@ module GMGLinearSolverTests
     GMG!(x,
          b,
          mh,
-         fespaces,
          smatrices,
          interp,
          restrict;

@@ -17,8 +17,10 @@ module OctreeDistributedDiscreteModelsTests
     model=OctreeDistributedDiscreteModel(parts,
                                          coarse_discrete_model)
     fmodel,glue=refine(model)
-    fmodel,glue=refine(fmodel)
-    octree_distributed_discrete_model_free(model)
+    ffmodel,glue=refine(fmodel)
+    octree_distributed_discrete_model_free!(model)
+    octree_distributed_discrete_model_free!(fmodel)
+    octree_distributed_discrete_model_free!(ffmodel)
   end
   if !MPI.Initialized()
     MPI.Init()

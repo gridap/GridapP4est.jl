@@ -141,7 +141,6 @@ end
 function GMG!(x::PVector,
               b::PVector,
               mh::ModelHierarchy,
-              fespaces,
               smatrices,
               interpolations,
               restrictions;
