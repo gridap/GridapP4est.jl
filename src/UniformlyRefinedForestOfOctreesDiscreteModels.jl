@@ -950,10 +950,10 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
                                           ptr_pXest_ghost,
                                           ptr_pXest_lnodes)
 
-  pXest_lnodes_destroy(ptr_pXest_lnodes)
-  pXest_ghost_destroy(ptr_pXest_ghost)
-  pXest_destroy(ptr_pXest)
-  pXest_connectivity_destroy(ptr_pXest_connectivity)
+  pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
+  pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
+  pXest_destroy(Val{Dc},ptr_pXest)
+  pXest_connectivity_destroy(Val{Dc},ptr_pXest_connectivity)
 
   sc_finalize()
   dmodel
