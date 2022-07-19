@@ -69,7 +69,8 @@ function apply_GMG_level!(xh,
                           smatrices,
                           restrictions,
                           interpolations,
-                          smoothers_caches,
+                          pre_smoothers_caches,
+                          post_smoothers_caches,
                           coarsest_solver_cache,
                           work_vectors;
                           verbose=false)
@@ -91,7 +92,7 @@ function apply_GMG_level!(xh,
       (dxh,Adxh,dxH,rH)=work_vectors[lev]
 
       # Pre-smooth current solution
-      solve!(xh, smoothers_caches[lev], rh)
+      solve!(xh, pre_smoothers_caches[lev], rh)
 
       # Restrict the residual
       mul!(rH,restrictions[lev],rh; verbose=verbose)
@@ -108,7 +109,8 @@ function apply_GMG_level!(xh,
                       smatrices,
                       restrictions,
                       interpolations,
-                      smoothers_caches,
+                      pre_smoothers_caches,
+                      post_smoothers_caches,
                       coarsest_solver_cache,
                       work_vectors;
                       verbose=verbose)
@@ -123,7 +125,7 @@ function apply_GMG_level!(xh,
       rh .= rh .- Adxh
 
       # Post-smooth current solution
-      solve!(xh, smoothers_caches[lev], rh)
+      solve!(xh, post_smoothers_caches[lev], rh)
 
     end
   end
@@ -137,13 +139,19 @@ function GMG!(x::PVector,
               interpolations,
               restrictions;
               rtol=1.0e-06,
-              maxiter=10,
-              smoother::Gridap.Algebra.LinearSolver=JacobiSmoother(5),
+              maxiter=100,
+              pre_smoother::Gridap.Algebra.LinearSolver=JacobiSmoother(5),
+              post_smoother::Gridap.Algebra.LinearSolver=pre_smoother,
               coarsest_solver::Gridap.Algebra.LinearSolver=BackslashSolver(),
               verbose=false)
 
   work_vectors=allocate_work_vectors(mh,smatrices)
-  smooth_caches=setup_smoothers_caches(mh,smoother,smatrices)
+  pre_smoothers_caches=setup_smoothers_caches(mh,pre_smoother,smatrices)
+  if (!(pre_smoother===post_smoother))
+    post_smoothers_caches=setup_smoothers_caches(mh,post_smoother,smatrices)
+  else
+    post_smoothers_caches=pre_smoothers_caches
+  end
   coarsest_solver_cache=setup_coarsest_solver_cache(mh,coarsest_solver,smatrices)
 
   Ah=smatrices[1]
@@ -168,7 +176,8 @@ function GMG!(x::PVector,
                      smatrices,
                      restrictions,
                      interpolations,
-                     smooth_caches,
+                     pre_smoothers_caches,
+                     post_smoothers_caches,
                      coarsest_solver_cache,
                      work_vectors;
                      verbose=verbose)

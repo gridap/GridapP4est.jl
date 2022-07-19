@@ -84,9 +84,6 @@ module GMGLinearSolverTests
     A=op.op.matrix
     b=op.op.vector
     x=PVector(0.0,A.cols)
-
-
-
     GMG!(x,
          b,
          mh,
@@ -95,7 +92,8 @@ module GMGLinearSolverTests
          restrict;
          rtol=1.0e-06,
          maxiter=200,
-         smoother=JacobiSmoother(10))
+         pre_smoother=JacobiSmoother(10),
+         post_smoother=JacobiSmoother(5))
 
     uh=FEFunction(Uh,x)
     # Error norms and print solution
