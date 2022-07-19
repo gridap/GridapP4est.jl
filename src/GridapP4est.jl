@@ -19,9 +19,9 @@ module GridapP4est
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
   include("RedistributeTools.jl")
-  include("InterGridTransferOperators.jl")
   include("ModelHierarchies.jl")
   include("FESpaceHierarchies.jl")
+  include("InterGridTransferOperators.jl")
   include("GridapFixes.jl")
   include("JacobiSmoothers.jl")
   include("GMGLinearSolvers.jl")
@@ -41,6 +41,7 @@ module GridapP4est
   export RestrictionMat
   export InterpolationMat
   export RestrictionMat
+  export setup_interpolations_and_restrictions
 
   # ModelHierarchy
   export ModelHierarchy

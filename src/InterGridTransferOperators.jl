@@ -425,3 +425,17 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing},
                     A.uH_zero_dirichlet_values)
   end
 end
+
+function setup_interpolations_and_restrictions(mh,fespaces,qdegree)
+  nlevs = num_levels(mh)
+  interpolations=Vector{InterpolationMat}(undef,nlevs-1)
+  restrictions=Vector{RestrictionMat}(undef,nlevs-1)
+  for l=1:nlevs-1
+    model = get_level_model(mh,l)
+    if (GridapP4est.i_am_in(model.parts))
+      interpolations[l]=InterpolationMat(mh,fespaces,l,qdegree)
+      restrictions[l]=RestrictionMat(mh,fespaces,l,qdegree)
+    end
+  end
+  interpolations, restrictions
+end
