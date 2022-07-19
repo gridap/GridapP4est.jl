@@ -58,7 +58,7 @@ module GMGLinearSolverTests
 
     order=1
     reffe=ReferenceFE(lagrangian,Float64,order)
-    degree=2*order+1
+    qdegree=2*order+1
 
     num_parts_x_level = [4,4,2,1]
     cmodel=CartesianDiscreteModel(domain,(2,2))
@@ -67,12 +67,12 @@ module GMGLinearSolverTests
     tests    = TestFESpace(mh,reffe,dirichlet_tags="boundary")
     trials   = TrialFESpace(u,tests)
     fespaces = (tests,trials)
-    smatrices= generate_stiffness_matrices(mh,fespaces,degree)
-    interp,restrict=setup_interpolations_and_restrictions(mh,fespaces,degree)
+    smatrices= generate_stiffness_matrices(mh,fespaces,qdegree)
+    interp,restrict=setup_interpolations_and_restrictions(mh,fespaces,qdegree)
 
     model=get_level_model(mh,1)
     Ω = Triangulation(model.dmodel)
-    dΩ = Measure(Ω,degree)
+    dΩ = Measure(Ω,qdegree)
     Vh = tests[1]
     Uh = trials[1]
     a(u,v)=∫(∇(v)⋅∇(u))dΩ
@@ -85,6 +85,8 @@ module GMGLinearSolverTests
     b=op.op.vector
     x=PVector(0.0,A.cols)
 
+
+
     GMG!(x,
          b,
          mh,
@@ -93,7 +95,7 @@ module GMGLinearSolverTests
          restrict;
          rtol=1.0e-06,
          maxiter=200,
-         smooth_iter=5)
+         smoother=JacobiSmoother(10))
 
     uh=FEFunction(Uh,x)
     # Error norms and print solution

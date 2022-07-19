@@ -23,6 +23,7 @@ module GridapP4est
   include("ModelHierarchies.jl")
   include("FESpaceHierarchies.jl")
   include("GridapFixes.jl")
+  include("JacobiSmoothers.jl")
   include("GMGLinearSolvers.jl")
 
   export change_domain_fine_to_coarse
@@ -56,6 +57,8 @@ module GridapP4est
   export get_level_fe_space
   export get_level_fe_space_before_redist
 
+  # Solvers
   export GMG!
+  export JacobiSmoother
 
 end

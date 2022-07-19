@@ -6,9 +6,14 @@ struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapType
   ptr_pXest              :: E
 end
 
+"""
+See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
+argument values for the p4est_verbosity_level parameter
+"""
 function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
-                              coarse_model::DiscreteModel{Dc,Dp};
-                              p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
+                                        coarse_model::DiscreteModel{Dc,Dp},
+                                        num_uniform_refinements;
+                                        p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
     comm = parts.comm
     if i_am_in(parts.comm)
       sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
@@ -20,7 +25,7 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
             ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
                                                         comm,
                                                         coarse_model,
-                                                        0)
+                                                        num_uniform_refinements)
       dmodel=setup_distributed_discrete_model(Val{Dc},
                                               parts,
                                               coarse_model,
@@ -56,6 +61,13 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                                       nothing)
     end
   end
+
+function OctreeDistributedDiscreteModel(
+    parts::MPIData{<:Integer},
+    coarse_model::DiscreteModel{Dc,Dp};
+    p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
+  OctreeDistributedDiscreteModel(parts,coarse_model,0; p4est_verbosity_level=p4est_verbosity_level)
+end
 
 function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscreteModel{Dc}) where Dc
   if i_am_in(model.parts.comm)
