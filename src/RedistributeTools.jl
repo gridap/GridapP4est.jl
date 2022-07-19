@@ -28,25 +28,19 @@ function _update_cell_dof_values_with_local_info!(cell_dof_values_new,
         oentry=getindex!(ocache,cell_dof_values_old,ocell)
         range=cell_dof_values_new.ptrs[ncell]:cell_dof_values_new.ptrs[ncell+1]-1
         cell_dof_values_new.data[range] .= oentry
-        # println("YYY $(ncell) $(ocell) $(range) $(cell_dof_values_new.data[range])")
       end
     end
    end
 end
 
-function allocate_comm_data(cell_dof_values,lids)
-  map_parts(cell_dof_values,lids) do cell_dof_values,lids
-    cache = array_cache(cell_dof_values)
-    # println("YYY $(length(lids.ptrs))")
+function allocate_comm_data(num_dofs_x_cell,lids)
+  map_parts(num_dofs_x_cell,lids) do num_dofs_x_cell,lids
     n = length(lids)
     ptrs = Vector{Int32}(undef,n+1)
     ptrs.= 0
     for i=1:n
       for j=lids.ptrs[i]:lids.ptrs[i+1]-1
-        # println("XXXX $(n) $(i) $(j) $(length(lids.data))")
-        cell=lids.data[j]
-        #ldofs=getindex!(cache,cell_dof_values,cell)
-        ptrs[i+1]=ptrs[i+1]+4#length(ldofs)
+        ptrs[i+1]=ptrs[i+1]+num_dofs_x_cell.data[j]
       end
     end
     PArrays.length_to_ptrs!(ptrs)
@@ -67,7 +61,6 @@ function pack_snd_data!(snd_data,cell_dof_values,snd_lids)
         e=s+length(ldofs)-1
         range=s:e
         snd_data.data[range] .= ldofs
-        # println("AAA $(cell) $(ldofs) $(range)")
         s=e+1
       end
     end
@@ -77,11 +70,6 @@ end
 function unpack_rcv_data!(cell_dof_values,rcv_data,rcv_lids)
   map_parts(cell_dof_values,rcv_data,rcv_lids) do cell_dof_values,rcv_data,rcv_lids
     s=1
-    # println("AAAA $(rcv_data)
-    #               $(cell_dof_values.ptrs)
-    #               $(rcv_lids.ptrs)
-    #               $(rcv_lids.data)
-    #               $(length(rcv_lids))")
     for i=1:length(rcv_lids.ptrs)-1
       for j=rcv_lids.ptrs[i]:rcv_lids.ptrs[i+1]-1
         cell=rcv_lids.data[j]
@@ -89,9 +77,6 @@ function unpack_rcv_data!(cell_dof_values,rcv_data,rcv_lids)
         e=s+length(range_cell_dof_values)-1
         range_rcv_data = s:e
         cell_dof_values.data[range_cell_dof_values] .= rcv_data.data[range_rcv_data]
-        # println("BBB $(cell)
-        #              $(cell_dof_values.data[range_cell_dof_values])
-        #              $(rcv_data.data[range_rcv_data])")
         s=e+1
       end
     end
@@ -120,14 +105,22 @@ function redistribute_fe_function(uh_old::GridapDistributed.DistributedCellField
   end
 
   cell_dof_values_old = map_parts(get_cell_dof_values,uh_old.fields)
+  cell_dof_ids_new    = map_parts(get_cell_dof_ids,Uh_new.spaces)
 
-  snd_data=allocate_comm_data(cell_dof_values_old,lids_snd)
-  rcv_data=allocate_comm_data(cell_dof_values_old,lids_rcv)
+
+  function num_dofs_x_cell(cell_dofs_array,lids)
+    map_parts(cell_dofs_array,lids_rcv) do cell_dofs_array, lids
+       data = [length(cell_dofs_array[i]) for i=1:length(cell_dofs_array) ]
+       PArrays.Table(data,lids.ptrs)
+    end
+  end
+
+  num_dofs_x_cell_snd=num_dofs_x_cell(cell_dof_values_old, lids_snd)
+  num_dofs_x_cell_rcv=num_dofs_x_cell(cell_dof_ids_new, lids_rcv)
+  snd_data=allocate_comm_data(num_dofs_x_cell_snd,lids_snd)
+  rcv_data=allocate_comm_data(num_dofs_x_cell_rcv,lids_rcv)
+
   pack_snd_data!(snd_data,cell_dof_values_old,lids_snd)
-
-  # map_parts(snd_data,parts_rcv,parts_snd) do snd_data,parts_rcv,parts_snd
-  #  println("YYY $(snd_data) $(parts_rcv) $(parts_snd)")
-  # end
 
   tout= async_exchange!(rcv_data,
                         snd_data,
@@ -152,27 +145,18 @@ function redistribute_fe_function(uh_old::GridapDistributed.DistributedCellField
 
  unpack_rcv_data!(cell_dof_values_new,rcv_data,lids_rcv)
 
- # map_parts(cell_dof_values_new) do cdvn
- # println("333333333333333 $(cdvn)")
- # end
-
  fgids=get_cell_gids(model_new)
  exchange!(cell_dof_values_new,fgids.exchanger)
 
- #map_parts(cell_dof_values_new) do cdvn
- # println("444 $(cdvn)")
- # end
 
  free_values = map_parts(cell_dof_values_new,Uh_new.spaces) do cdvn, fspace
    fv=Gridap.FESpaces.gather_free_values(fspace,cdvn)
-   # println("111 $(fv)")
    fv
  end
  gids = Uh_new.gids
  free_values=PVector(free_values,gids)
  dirichlet_values = map_parts(cell_dof_values_new,Uh_new.spaces) do cdvn, fspace
   dv=Gridap.FESpaces.gather_dirichlet_values(fspace,cdvn)
-  # println("222 $(dv)")
   dv
  end
  FEFunction(Uh_new,free_values,dirichlet_values)
