@@ -4,10 +4,10 @@ struct PatchBoundaryDoFsExcludeAll           <: PatchBoundaryDoFsStyle end ;
 struct PatchBoundaryDoFsExcludeOnlyDirichlet <: PatchBoundaryDoFsStyle end ;
 struct PatchBoundaryDoFsIncludeAll           <: PatchBoundaryDoFsStyle end ;
 
-struct PatchFESpace <: Gridap.FESpaces.SingleFieldFESpace
+struct PatchFESpace  <: Gridap.FESpaces.SingleFieldFESpace
   num_dofs::Int
   patch_cell_dofs_ids::Gridap.Arrays.Table
-  Vh::SingleFieldFESpace
+  Vh::Gridap.FESpaces.SingleFieldFESpace
   patch_decomposition::PatchDecomposition
 end
 
@@ -50,10 +50,10 @@ end
 #        avoid that, given that these were already used in order to
 #        build Vh. However, I cannot extract this info out of Vh!!! :-(
 function PatchFESpace(model::DiscreteModel,
-                      reffe::Tuple{<:ReferenceFEName,Any,Any},
-                      conformity::Conformity,
+                      reffe::Tuple{<:Gridap.FESpaces.ReferenceFEName,Any,Any},
+                      conformity::Gridap.FESpaces.Conformity,
                       patch_decomposition::PatchDecomposition,
-                      Vh::SingleFieldFESpace;
+                      Vh::Gridap.FESpaces.SingleFieldFESpace;
                       patch_boundary_dofs_style=PatchBoundaryDoFsExcludeAll())
 
   cell_reffe = setup_cell_reffe(model,reffe)
@@ -92,7 +92,7 @@ function Gridap.FESpaces.scatter_free_and_dirichlet_values(f::PatchFESpace,
 end
 
 function setup_cell_reffe(model::DiscreteModel,
-                          reffe::Tuple{<:ReferenceFEName,Any,Any}; kwargs...)
+                          reffe::Tuple{<:Gridap.FESpaces.ReferenceFEName,Any,Any}; kwargs...)
   basis, reffe_args,reffe_kwargs = reffe
   cell_reffe = ReferenceFE(model,basis,reffe_args...;reffe_kwargs...)
 end

@@ -20,7 +20,7 @@ function PatchDecomposition(model::DiscreteModel{Dc,Dp}; Dr=0) where {Dc,Dp}
   grid               = get_grid(model)
   ctype_reffe        = get_reffes(grid)
   cell_type          = get_cell_type(grid)
-  d_ctype_num_dfaces = [ map(reffe->num_faces(get_polytope(reffe),d),ctype_reffe) for d in 0:Dc]
+  d_ctype_num_dfaces = [ map(reffe->num_faces(Gridap.Geometry.get_polytope(reffe),d),ctype_reffe) for d in 0:Dc]
   topology           = get_grid_topology(model)
 
   patch_cells=Gridap.Geometry.get_faces(topology,Dr,Dc)

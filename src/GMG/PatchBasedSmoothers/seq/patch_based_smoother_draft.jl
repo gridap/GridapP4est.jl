@@ -2,7 +2,7 @@ using Gridap
 using Gridap.Geometry
 using Gridap.FESpaces
 using Gridap.ReferenceFEs
-using GridapBiotElasticity
+using GridapP4est
 using FillArrays
 
 # Consider a one-level smoother (multilevel comes next)
@@ -44,11 +44,11 @@ Ah\fh
 
 x=rand(num_free_dofs(Vₕ))
 y=zeros(num_free_dofs(Ph))
-prolongate!(y,Ph,x)
-w=compute_weight_operators(Ph)
+GridapP4est.prolongate!(y,Ph,x)
+w=GridapP4est.compute_weight_operators(Ph)
 x2=copy(x)
 fill!(x2,0.0)
-inject!(x2,Ph,y)
+GridapP4est.inject!(x2,Ph,y)
 @assert all(x .≈ x2)
 
 Ω  = Triangulation(model)
@@ -59,10 +59,12 @@ op=AffineFEOperator(a,l,Uₕ,Vₕ)
 A=op.op.matrix
 b=op.op.vector
 
-pbs=PatchBasedSmoother(10,Ph)
+M=PatchBasedLinearSolver(Ph)
+
+s=RichardsonSmoother(M,10,1.0/3.0)
 x=zeros(num_free_dofs(Vₕ))
 r=b-A*x
-solve!(x,pbs,A,r)
+solve!(x,s,A,r)
 
 
 # ON another note. Related to FE assembly. We are going to need:

@@ -1,9 +1,10 @@
 module GridapP4est
   using FillArrays
   using Gridap
+  using Gridap.FESpaces
+  using Gridap.Geometry
 
   # BEG TO-REMOVE
-  using Gridap.Helpers: @check
   using MPI
   using LinearAlgebra
   using IterativeSolvers
@@ -28,6 +29,11 @@ module GridapP4est
   include("GMG/RichardsonSmoothers.jl")
   include("GMG/JacobiLinearSolvers.jl")
   include("GMG/GMGLinearSolvers.jl")
+
+  include("GMG/PatchBasedSmoothers/seq/PatchDecompositions.jl")
+  include("GMG/PatchBasedSmoothers/seq/PatchFESpaces.jl")
+  include("GMG/PatchBasedSmoothers/seq/PatchBasedLinearSolvers.jl")
+
 
   export change_domain_fine_to_coarse
   export change_domain_coarse_to_fine
@@ -64,5 +70,8 @@ module GridapP4est
   export GMG!
   export RichardsonSmoother
   export JacobiLinearSolver
+  export PatchDecomposition
+  export PatchFESpace
+  export PatchBasedLinearSolver
 
 end
