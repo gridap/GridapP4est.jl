@@ -78,8 +78,8 @@ module GMGLinearSolverTests
          restrict;
          rtol=1.0e-06,
          maxiter=200,
-         pre_smoother=JacobiSmoother(10),
-         post_smoother=JacobiSmoother(5))
+         pre_smoother=RichardsonSmoother(JacobiLinearSolver(),10),
+         post_smoother=RichardsonSmoother(JacobiLinearSolver(),5))
 
     uh=FEFunction(Uh,x)
     # Error norms and print solution

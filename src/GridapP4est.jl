@@ -25,7 +25,8 @@ module GridapP4est
   include("GMG/FESpaceHierarchies.jl")
   include("GMG/InterGridTransferOperators.jl")
   include("GMG/GridapFixes.jl")
-  include("GMG/JacobiSmoothers.jl")
+  include("GMG/RichardsonSmoothers.jl")
+  include("GMG/JacobiLinearSolvers.jl")
   include("GMG/GMGLinearSolvers.jl")
 
   export change_domain_fine_to_coarse
@@ -61,6 +62,7 @@ module GridapP4est
 
   # Solvers
   export GMG!
-  export JacobiSmoother
+  export RichardsonSmoother
+  export JacobiLinearSolver
 
 end
