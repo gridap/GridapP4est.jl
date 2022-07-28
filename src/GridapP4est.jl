@@ -33,7 +33,8 @@ module GridapP4est
   include("GMG/PatchBasedSmoothers/seq/PatchDecompositions.jl")
   include("GMG/PatchBasedSmoothers/seq/PatchFESpaces.jl")
   include("GMG/PatchBasedSmoothers/seq/PatchBasedLinearSolvers.jl")
-
+  include("GMG/PatchBasedSmoothers/mpi/PatchDecompositions.jl")
+  include("GMG/PatchBasedSmoothers/mpi/PatchFESpaces.jl")
 
   export change_domain_fine_to_coarse
   export change_domain_coarse_to_fine

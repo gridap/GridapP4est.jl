@@ -1,16 +1,17 @@
 struct PatchBasedLinearSolver{A} <: Gridap.Algebra.LinearSolver
-  Ph::A
+  M  :: Gridap.Algebra.LinearSolver
+  Ph :: A
 end
 
 struct PatchBasedSymbolicSetup <: Gridap.Algebra.SymbolicSetup
-  solver::PatchBasedLinearSolver
+  solver :: PatchBasedLinearSolver
 end
 
 function Gridap.Algebra.symbolic_setup(ls::PatchBasedLinearSolver,mat::AbstractMatrix)
   PatchBasedSymbolicSetup(ls)
 end
 
-mutable struct PatchBasedSmootherNumericalSetup{A,B,C,D,E} <: Gridap.Algebra.NumericalSetup
+struct PatchBasedSmootherNumericalSetup{A,B,C,D,E} <: Gridap.Algebra.NumericalSetup
   solver         :: PatchBasedLinearSolver
   Ap             :: A
   nsAp           :: B
@@ -27,13 +28,29 @@ function Gridap.Algebra.numerical_setup(ss::PatchBasedSymbolicSetup,A::AbstractM
   dΩₚ = Measure(Ωₚ,2*order+1)
   a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
   Ap=assemble_matrix(a,assembler,Ph,Ph)
-  solver = LUSolver()
+  solver = ss.solver.M
   ssAp   = symbolic_setup(solver,Ap)
   nsAp   = numerical_setup(ssAp,Ap)
-  rp  = zeros(size(Ap,1))
-  dxp = zeros(size(Ap,2))
+  rp  = _allocate_row_vector(Ap)
+  dxp = _allocate_col_vector(Ap)
   w   = compute_weight_operators(ss.solver.Ph)
   PatchBasedSmootherNumericalSetup(ss.solver,Ap,nsAp,rp,dxp,w)
+end
+
+function _allocate_col_vector(A::AbstractMatrix)
+  zeros(size(A,2))
+end
+
+function _allocate_row_vector(A::AbstractMatrix)
+  zeros(size(A,1))
+end
+
+function _allocate_col_vector(A::PSparseMatrix)
+  PVector(0.0,A.cols)
+end
+
+function _allocate_row_vector(A::PSparseMatrix)
+  PVector(0.0,A.rows)
 end
 
 function Gridap.Algebra.numerical_setup!(ns::PatchBasedSmootherNumericalSetup, A::AbstractMatrix)

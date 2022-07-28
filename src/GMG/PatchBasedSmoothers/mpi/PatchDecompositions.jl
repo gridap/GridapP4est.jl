@@ -4,12 +4,13 @@ struct DistributedPatchDecomposition{Dc,Dp,A,B} <: GridapType
   model::B
 end
 
-function PatchDecomposition(model::DistributedDiscreteModel{Dc,Dp}; Dr=0) where {Dc,Dp}
-  patch_decompositions=map_parts(model.models) do model
-    PatchDecomposition(model;Dr=Dr)
+function PatchDecomposition(model::GridapDistributed.DistributedDiscreteModel{Dc,Dp};
+                            Dr=0) where {Dc,Dp}
+  patch_decompositions=map_parts(model.models) do lmodel
+    PatchDecomposition(lmodel;Dr=Dr)
   end
-  A=eltype(patch_decompositions)
-  B=eltype(model)
+  A=typeof(patch_decompositions)
+  B=typeof(model)
   DistributedPatchDecomposition{Dc,Dp,A,B}(patch_decompositions,model)
 end
 
@@ -18,4 +19,12 @@ function Gridap.Geometry.Triangulation(a::DistributedPatchDecomposition)
     Triangulation(a)
   end
   GridapDistributed.DistributedTriangulation(trians,a.model)
+end
+
+function get_patch_root_dim(a::DistributedPatchDecomposition)
+  patch_root_dim=0
+  map_parts(a.patch_decompositions) do patch_decomposition
+    patch_root_dim=patch_decomposition.Dr
+  end
+  patch_root_dim
 end

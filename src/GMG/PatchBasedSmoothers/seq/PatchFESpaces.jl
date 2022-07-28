@@ -54,7 +54,8 @@ function PatchFESpace(model::DiscreteModel,
                       conformity::Gridap.FESpaces.Conformity,
                       patch_decomposition::PatchDecomposition,
                       Vh::Gridap.FESpaces.SingleFieldFESpace;
-                      patch_boundary_dofs_style=PatchBoundaryDoFsExcludeAll())
+                      patch_boundary_dofs_style=PatchBoundaryDoFsExcludeAll(),
+                      patches_mask=Fill(false,num_patches(patch_decomposition)))
 
   cell_reffe = setup_cell_reffe(model,reffe)
   cell_conformity = CellConformity(cell_reffe,conformity)
@@ -72,7 +73,8 @@ function PatchFESpace(model::DiscreteModel,
                                          patch_decomposition.patch_cells_faces_on_boundary,
                                          cell_dofs_ids,
                                          cell_conformity,
-                                         patch_boundary_dofs_style)
+                                         patch_boundary_dofs_style,
+                                         patches_mask)
 
   PatchFESpace(num_dofs,patch_cell_dofs_ids,Vh,patch_decomposition)
 end
@@ -83,6 +85,7 @@ Gridap.FESpaces.get_cell_dof_ids(a::PatchFESpace)=a.patch_cell_dofs_ids
 Gridap.FESpaces.get_cell_dof_ids(a::PatchFESpace,::Triangulation)=a.patch_cell_dofs_ids
 Gridap.FESpaces.get_fe_basis(a::PatchFESpace)=get_fe_basis(a.Vh)
 Gridap.FESpaces.ConstraintStyle(a::PatchFESpace)=Gridap.FESpaces.UnConstrained()
+Gridap.FESpaces.get_vector_type(a::PatchFESpace)=get_vector_type(a.Vh)
 
 function Gridap.FESpaces.scatter_free_and_dirichlet_values(f::PatchFESpace,
                                                            free_values,
@@ -127,7 +130,8 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
                                        patch_cells_faces_on_boundary,
                                        cell_dofs_ids,
                                        cell_conformity,
-                                       patch_boundary_dofs_style)
+                                       patch_boundary_dofs_style,
+                                       patches_mask)
 
     cache=array_cache(patch_cells)
     num_patches=length(patch_cells)
@@ -143,7 +147,8 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
                                     cell_dofs_ids,
                                     cell_conformity,
                                     patch_boundary_dofs_style;
-                                    free_dofs_offset=current_dof)
+                                    free_dofs_offset=current_dof,
+                                    mask=patches_mask[patch])
     end
     return current_dof-1
 end
@@ -166,60 +171,70 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
                                        global_space_cell_dofs_ids,
                                        cell_conformity,
                                        patch_boundary_dofs_style;
-                                       free_dofs_offset=1)
+                                       free_dofs_offset=1,
+                                       mask=false)
 
   patch_global_space_cell_dofs_ids=
      lazy_map(Broadcasting(Reindex(global_space_cell_dofs_ids)),patch_cells)
 
-  g2l=Dict{Int,Int}()
-  Dc = length(patch_cells_faces_on_boundary)
   o  = patch_cells_overlapped_mesh.ptrs[patch]
+  if mask
+    for lpatch_cell=1:length(patch_cells)
+      cell_overlapped_mesh=patch_cells_overlapped_mesh.data[o+lpatch_cell-1]
+      s,e=patch_cell_dofs_ids.ptrs[cell_overlapped_mesh],
+            patch_cell_dofs_ids.ptrs[cell_overlapped_mesh+1]-1
+      patch_cell_dofs_ids.data[s:e] .= -1
+    end
+  else
+    g2l=Dict{Int,Int}()
+    Dc = length(patch_cells_faces_on_boundary)
 
-  # Loop over cells of the patch (local_cell_id_within_patch)
-  for (lpatch_cell,patch_cell) in enumerate(patch_cells)
-    cell_overlapped_mesh=patch_cells_overlapped_mesh.data[o+lpatch_cell-1]
-    s,e=patch_cell_dofs_ids.ptrs[cell_overlapped_mesh],
-          patch_cell_dofs_ids.ptrs[cell_overlapped_mesh+1]-1
-    current_patch_cell_dofs_ids=view(patch_cell_dofs_ids.data,s:e)
-    face_offset=0
-    ctype = cell_conformity.cell_ctype[patch_cell]
-    for d=0:Dc-1
-      cells_d_faces = Gridap.Geometry.get_faces(topology,Dc,d)
-      cell_d_face   = cells_d_faces[patch_cell]
-      #println(patch_cell, " ", patch_cells_faces_on_boundary[d+1][cell_overlapped_mesh])
-      #println(patch_cell, " ", cell_d_face, " ", s:e)
+    # Loop over cells of the patch (local_cell_id_within_patch)
+    for (lpatch_cell,patch_cell) in enumerate(patch_cells)
+      cell_overlapped_mesh=patch_cells_overlapped_mesh.data[o+lpatch_cell-1]
+      s,e=patch_cell_dofs_ids.ptrs[cell_overlapped_mesh],
+            patch_cell_dofs_ids.ptrs[cell_overlapped_mesh+1]-1
+      current_patch_cell_dofs_ids=view(patch_cell_dofs_ids.data,s:e)
+      face_offset=0
+      ctype = cell_conformity.cell_ctype[patch_cell]
+      for d=0:Dc-1
+        cells_d_faces = Gridap.Geometry.get_faces(topology,Dc,d)
+        cell_d_face   = cells_d_faces[patch_cell]
+        #println(patch_cell, " ", patch_cells_faces_on_boundary[d+1][cell_overlapped_mesh])
+        #println(patch_cell, " ", cell_d_face, " ", s:e)
 
-      for (lf,f) in enumerate(cell_d_face)
-        # If current face is on the patch boundary
-        if (patch_cells_faces_on_boundary[d+1][cell_overlapped_mesh][lf])
-          # assign negative indices to DoFs owned by face
-          for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
-            current_patch_cell_dofs_ids[ldof] = -1
-            # println(ldof)
-          end
-        else
-          # rely on the existing glued info (available at global_space_cell_dof_ids)
-          # (we will need a Dict{Int,Int} to hold the correspondence among global
-          # space and patch cell dofs IDs)
-          for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
-            gdof=global_space_cell_dofs_ids[patch_cell][ldof]
-            if gdof in keys(g2l)
-              current_patch_cell_dofs_ids[ldof] = g2l[gdof]
-            else
-              g2l[gdof] = free_dofs_offset
-              current_patch_cell_dofs_ids[ldof] = free_dofs_offset
-              free_dofs_offset += 1
+        for (lf,f) in enumerate(cell_d_face)
+          # If current face is on the patch boundary
+          if (patch_cells_faces_on_boundary[d+1][cell_overlapped_mesh][lf])
+            # assign negative indices to DoFs owned by face
+            for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
+              current_patch_cell_dofs_ids[ldof] = -1
+              # println(ldof)
+            end
+          else
+            # rely on the existing glued info (available at global_space_cell_dof_ids)
+            # (we will need a Dict{Int,Int} to hold the correspondence among global
+            # space and patch cell dofs IDs)
+            for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
+              gdof=global_space_cell_dofs_ids[patch_cell][ldof]
+              if gdof in keys(g2l)
+                current_patch_cell_dofs_ids[ldof] = g2l[gdof]
+              else
+                g2l[gdof] = free_dofs_offset
+                current_patch_cell_dofs_ids[ldof] = free_dofs_offset
+                free_dofs_offset += 1
+              end
             end
           end
         end
+        face_offset += cell_conformity.d_ctype_num_dfaces[d+1][ctype]
       end
-      face_offset += cell_conformity.d_ctype_num_dfaces[d+1][ctype]
-    end
-    # Interior DoFs
-    for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+1]
-      # println("ldof: $(ldof) $(length(current_patch_cell_dofs_ids))")
-      current_patch_cell_dofs_ids[ldof] = free_dofs_offset
-      free_dofs_offset += 1
+      # Interior DoFs
+      for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+1]
+        # println("ldof: $(ldof) $(length(current_patch_cell_dofs_ids))")
+        current_patch_cell_dofs_ids[ldof] = free_dofs_offset
+        free_dofs_offset += 1
+      end
     end
   end
   return free_dofs_offset

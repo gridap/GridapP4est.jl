@@ -140,7 +140,7 @@ function GMG!(x::PVector,
               restrictions;
               rtol=1.0e-06,
               maxiter=100,
-              pre_smoother::Gridap.Algebra.LinearSolver=JacobiSmoother(5),
+              pre_smoother::Gridap.Algebra.LinearSolver=RichardsonSmoother(JacobiLinearSolver(),10),
               post_smoother::Gridap.Algebra.LinearSolver=pre_smoother,
               coarsest_solver::Gridap.Algebra.LinearSolver=BackslashSolver(),
               verbose=false)

@@ -20,19 +20,6 @@ Ph=PatchFESpace(model,reffe,H1Conformity(),pd,Vₕ)
 
 assembler=SparseMatrixAssembler(Ph,Ph)
 
-function Gridap.Geometry.get_glue(trian::BodyFittedTriangulation{Dt},::Val{Dt}) where Dt
-  tface_to_mface = trian.tface_to_mface
-  tface_to_mface_map = FillArrays.Fill(Gridap.Fields.GenericField(identity),num_cells(trian))
-  if isa(tface_to_mface,Gridap.Arrays.IdentityVector) && num_faces(trian.model,Dt) == num_cells(trian)
-    mface_to_tface = tface_to_mface
-  else
-    #nmfaces = num_faces(trian.model,Dt)
-    # Crashes here!!! It does not support overlapping!!!
-    mface_to_tface = nothing #PosNegPartition(tface_to_mface,Int32(nmfaces))
-  end
-  FaceToFaceGlue(tface_to_mface,tface_to_mface_map,mface_to_tface)
-end
-
 Ωₚ  = Triangulation(pd)
 dΩₚ = Measure(Ωₚ,2*order+1)
 a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
@@ -40,7 +27,6 @@ l(v)=∫(1*v)*dΩₚ
 Ah=assemble_matrix(a,assembler,Ph,Ph)
 fh=assemble_vector(l,assembler,Ph)
 Ah\fh
-
 
 x=rand(num_free_dofs(Vₕ))
 y=zeros(num_free_dofs(Ph))
@@ -59,7 +45,7 @@ op=AffineFEOperator(a,l,Uₕ,Vₕ)
 A=op.op.matrix
 b=op.op.vector
 
-M=PatchBasedLinearSolver(Ph)
+M=PatchBasedLinearSolver(LUSolver(),Ph)
 
 s=RichardsonSmoother(M,10,1.0/3.0)
 x=zeros(num_free_dofs(Vₕ))
