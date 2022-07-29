@@ -48,7 +48,11 @@ module PatchLinearSolverTests
     end
 
     function test_smoother(PD,Ph,Vh,A,b)
-      M=PatchBasedLinearSolver(PD,Ph,LUSolver())
+      Ωₚ  = Triangulation(PD)
+      order=1
+      dΩₚ = Measure(Ωₚ,2*order+1)
+      a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
+      M=PatchBasedLinearSolver(a,Ph,LUSolver())
       s=RichardsonSmoother(M,10,1.0/3.0)
       x=GridapP4est._allocate_col_vector(A)
       r=b-A*x

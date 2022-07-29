@@ -8,6 +8,7 @@ module GMGLinearSolverTests
   using Test
   using LinearAlgebra
   using IterativeSolvers
+  using FillArrays
 
 
   function generate_stiffness_matrices(mh, fespaces, qdegree)
@@ -30,24 +31,26 @@ module GMGLinearSolverTests
     matrices
   end
 
+  function generate_patch_based_smoothers(mh,fespaces,qdegree)
+    Gridap.Helpers.@notimplemented
+  end
+
   # Manufactured solution
   u(x) = x[1] + x[2]
   f(x) = -Δ(u)(x)
 
-  function run(parts,subdomains)
-    if length(subdomains)==2
-      domain=(0,1,0,1)
-    else
-      @assert length(subdomains)==3
-      domain=(0,1,0,1,0,1)
-    end
+  function run(parts,
+               coarse_grid_partition,
+               num_parts_x_level,
+               order;
+               pre_smoothers  = Fill(RichardsonSmoother(JacobiLinearSolver(),10),length(num_parts_x_level)-1),
+               post_smoothers = pre_smoothers)
+    domain=(0,1,0,1)
 
-    order=1
     reffe=ReferenceFE(lagrangian,Float64,order)
     qdegree=2*order+1
 
-    num_parts_x_level = [4,4,2,1]
-    cmodel=CartesianDiscreteModel(domain,(2,2))
+    cmodel=CartesianDiscreteModel(domain,coarse_grid_partition)
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
 
     tests    = TestFESpace(mh,reffe,dirichlet_tags="boundary")
@@ -78,8 +81,8 @@ module GMGLinearSolverTests
          restrict;
          rtol=1.0e-06,
          maxiter=200,
-         pre_smoother=RichardsonSmoother(JacobiLinearSolver(),10),
-         post_smoother=RichardsonSmoother(JacobiLinearSolver(),5))
+         pre_smoothers=pre_smoothers,
+         post_smoothers=post_smoothers)
 
     uh=FEFunction(Uh,x)
     # Error norms and print solution
@@ -88,17 +91,19 @@ module GMGLinearSolverTests
     tol = 1.0e-9
     @test e_l2 < tol
     map_parts(parts) do part
-    if (part==1)
-      println("$(e_l2) < $(tol)\n")
-    end
+      if (part==1)
+        println("$(e_l2) < $(tol)\n")
+      end
     end
     model_hierarchy_free!(mh)
   end
-
   if !MPI.Initialized()
     MPI.Init()
   end
   parts = get_part_ids(mpi,4)
-  run(parts,(1,1))
+  order=1
+  num_parts_x_level=[4,4,2,1]
+  coarse_grid_partition=(2,2)
+  run(parts,coarse_grid_partition,num_parts_x_level,order)
   MPI.Finalize()
 end

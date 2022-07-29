@@ -1,7 +1,7 @@
-struct PatchBasedLinearSolver{A,B} <: Gridap.Algebra.LinearSolver
-  PD :: A
-  Ph :: B
-  M  :: Gridap.Algebra.LinearSolver
+struct PatchBasedLinearSolver{A} <: Gridap.Algebra.LinearSolver
+  bilinear_form  :: Function
+  Ph             :: A
+  M              :: Gridap.Algebra.LinearSolver
 end
 
 struct PatchBasedSymbolicSetup <: Gridap.Algebra.SymbolicSetup
@@ -22,14 +22,9 @@ struct PatchBasedSmootherNumericalSetup{A,B,C,D,E} <: Gridap.Algebra.NumericalSe
 end
 
 function Gridap.Algebra.numerical_setup(ss::PatchBasedSymbolicSetup,A::AbstractMatrix)
-  PD=ss.solver.PD
   Ph=ss.solver.Ph
   assembler=SparseMatrixAssembler(Ph,Ph)
-  Ωₚ  = Triangulation(PD)
-  order=1
-  dΩₚ = Measure(Ωₚ,2*order+1)
-  a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
-  Ap=assemble_matrix(a,assembler,Ph,Ph)
+  Ap=assemble_matrix(ss.solver.bilinear_form,assembler,Ph,Ph)
   solver = ss.solver.M
   ssAp   = symbolic_setup(solver,Ap)
   nsAp   = numerical_setup(ssAp,Ap)
