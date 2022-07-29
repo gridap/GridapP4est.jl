@@ -1,6 +1,8 @@
 module GMGLinearSolverTests
   using MPI
   using Gridap
+  using Gridap.FESpaces
+  using Gridap.ReferenceFEs
   using PartitionedArrays
   using GridapDistributed
   using GridapP4est
@@ -31,8 +33,27 @@ module GMGLinearSolverTests
     matrices
   end
 
-  function generate_patch_based_smoothers(mh,fespaces,qdegree)
-    Gridap.Helpers.@notimplemented
+  function generate_patch_based_smoothers(mh,fespaces,order)
+    tests,trials=fespaces
+    Gridap.Helpers.@check num_levels(mh)==length(tests)
+    Gridap.Helpers.@check num_levels(mh)==length(trials)
+    smoothers=Vector{RichardsonSmoother}(undef,num_levels(mh)-1)
+    reffe=ReferenceFE(lagrangian,Float64,order)
+    for i=1:num_levels(mh)-1
+      model = get_level_model(mh,i)
+      if (GridapP4est.i_am_in(model.parts))
+        Vh = get_level_fe_space(tests[i])
+        Uh = get_level_fe_space(trials[i])
+        PD=PatchDecomposition(model.dmodel)
+        Ph=PatchFESpace(model.dmodel,reffe,H1Conformity(),PD,Vh)
+        Ω  = Triangulation(PD)
+        dΩ = Measure(Ω,2*order+1)
+        a(u,v)=∫(∇(v)⋅∇(u))dΩ
+        PLS=PatchBasedLinearSolver(a,Ph,LUSolver())
+        smoothers[i]=RichardsonSmoother(PLS,10)
+      end
+    end
+    smoothers
   end
 
   # Manufactured solution
@@ -42,9 +63,7 @@ module GMGLinearSolverTests
   function run(parts,
                coarse_grid_partition,
                num_parts_x_level,
-               order;
-               pre_smoothers  = Fill(RichardsonSmoother(JacobiLinearSolver(),10),length(num_parts_x_level)-1),
-               post_smoothers = pre_smoothers)
+               order)
     domain=(0,1,0,1)
 
     reffe=ReferenceFE(lagrangian,Float64,order)
@@ -57,6 +76,8 @@ module GMGLinearSolverTests
     trials   = TrialFESpace(u,tests)
     fespaces = (tests,trials)
     smatrices= generate_stiffness_matrices(mh,fespaces,qdegree)
+    # smoothers= generate_patch_based_smoothers(mh,fespaces,order)
+    smoothers = Fill(RichardsonSmoother(JacobiLinearSolver(),10),num_levels(mh)-1)
     interp,restrict=setup_interpolations_and_restrictions(mh,fespaces,qdegree)
 
     model=get_level_model(mh,1)
@@ -81,8 +102,8 @@ module GMGLinearSolverTests
          restrict;
          rtol=1.0e-06,
          maxiter=200,
-         pre_smoothers=pre_smoothers,
-         post_smoothers=post_smoothers)
+         pre_smoothers=smoothers,
+         post_smoothers=smoothers)
 
     uh=FEFunction(Uh,x)
     # Error norms and print solution

@@ -1,3 +1,17 @@
+# ON another note. Related to FE assembly. We are going to need:
+# "Por otra parte, tb podemos tener metodos q reciben una patch-cell array y la
+# aplanan para q parezca una cell array (aunq con cells repetidas). Combinando las
+# patch-cell local matrices y cell_dofs aplanadas puedes usar el assembly verbatim si
+# quieres ensamblar la matriz."
+
+# Another note. During FE assembly we may end computing the cell matrix of a given cell
+# more than once due to cell overlapping among patches (recall the computation of these
+# matrices is lazy, it occurs on first touch). Can we live with that or should we pay
+# attention on how to avoid this? I think that Gridap already includes tools for
+# taking profit of this, I think it is called MemoArray, but it might be something else
+# (not 100% sure, to investigate)
+
+
 struct PatchBasedLinearSolver{A} <: Gridap.Algebra.LinearSolver
   bilinear_form  :: Function
   Ph             :: A
