@@ -1,6 +1,7 @@
-struct PatchBasedLinearSolver{A} <: Gridap.Algebra.LinearSolver
+struct PatchBasedLinearSolver{A,B} <: Gridap.Algebra.LinearSolver
+  PD :: A
+  Ph :: B
   M  :: Gridap.Algebra.LinearSolver
-  Ph :: A
 end
 
 struct PatchBasedSymbolicSetup <: Gridap.Algebra.SymbolicSetup
@@ -21,9 +22,10 @@ struct PatchBasedSmootherNumericalSetup{A,B,C,D,E} <: Gridap.Algebra.NumericalSe
 end
 
 function Gridap.Algebra.numerical_setup(ss::PatchBasedSymbolicSetup,A::AbstractMatrix)
+  PD=ss.solver.PD
   Ph=ss.solver.Ph
   assembler=SparseMatrixAssembler(Ph,Ph)
-  Ωₚ  = Triangulation(Ph.patch_decomposition)
+  Ωₚ  = Triangulation(PD)
   order=1
   dΩₚ = Measure(Ωₚ,2*order+1)
   a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
@@ -33,7 +35,7 @@ function Gridap.Algebra.numerical_setup(ss::PatchBasedSymbolicSetup,A::AbstractM
   nsAp   = numerical_setup(ssAp,Ap)
   rp  = _allocate_row_vector(Ap)
   dxp = _allocate_col_vector(Ap)
-  w   = compute_weight_operators(ss.solver.Ph)
+  w   = compute_weight_operators(Ph)
   PatchBasedSmootherNumericalSetup(ss.solver,Ap,nsAp,rp,dxp,w)
 end
 

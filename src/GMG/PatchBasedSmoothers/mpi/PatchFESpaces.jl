@@ -18,7 +18,6 @@ function PatchFESpace(model::GridapDistributed.DistributedDiscreteModel,
   function f(model,patch_decomposition,Vh,partition)
     patches_mask = fill(false,length(partition.lid_to_gid))
     patches_mask[partition.hid_to_lid] .= true # Mask ghost patch roots
-    println(patches_mask)
     PatchFESpace(model,
                  reffe,
                  conformity,
@@ -71,7 +70,8 @@ function compute_weight_operators(Ph::GridapDistributed.DistributedSingleFieldFE
   parts=get_part_ids(Ph.spaces)
   Gridap.Helpers.@notimplementedif num_parts(parts)!=1
   w=PVector(0.0,Ph.gids)
-  map_parts(w.owned_values,Ph.spaces) do Ph
-    w.owned_values .= compute_weight_operators(Ph)
+  map_parts(w.owned_values,Ph.spaces) do w,Ph
+    w .= compute_weight_operators(Ph)
   end
+  w
 end

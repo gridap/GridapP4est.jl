@@ -5,6 +5,8 @@ using MPI
 using ArgParse
 using Test
 
+@time @testset "PatchLinearSolverTests" begin include("GMG/seq/PatchLinearSolverTests.jl") end
+
 function parse_commandline()
     s = ArgParseSettings()
     @add_arg_table! s begin
