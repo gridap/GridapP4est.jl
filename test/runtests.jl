@@ -5,6 +5,7 @@ using MPI
 using ArgParse
 using Test
 
+@time @testset "RichardsonSmoothers" begin include("GMG/seq/RichardsonSmoothersTests.jl") end
 @time @testset "PatchLinearSolverTests" begin include("GMG/seq/PatchLinearSolverTests.jl") end
 
 function parse_commandline()
@@ -38,7 +39,7 @@ function run_tests(testdir)
           extra_args = "-s 2 2 -r 2"
         elseif f in ["MeshHierarchiesTests.jl",
                      "RedistributeToolsTests.jl",
-                     "GMGLinearSolversTests.jl",
+                     "GMGLinearSolversPoissonTests.jl",
                      "OctreeDistributedDiscreteModelsTests.jl"]
           np = 4
           extra_args = ""
@@ -59,6 +60,6 @@ function run_tests(testdir)
 end
 
 run_tests(@__DIR__)
-run_tests(joinpath(@__DIR__, "GMG"))
+run_tests(joinpath(@__DIR__, "GMG/mpi"))
 
 end # module
