@@ -128,7 +128,7 @@ module GMGLinearSolverHDivRTTests
   num_refinements=[1,2,3,4,5]
   alpha_exps=[0,1,2,3,4]
   iter_matrix=zeros(Int,5,5)
-
+  coarse_grid_partition=(5,5)
   free_dofs=Vector{Int64}(undef,length(num_refinements))
 
   for ref=1:length(num_refinements)
