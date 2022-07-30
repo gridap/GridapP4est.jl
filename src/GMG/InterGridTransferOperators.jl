@@ -269,7 +269,7 @@ function LinearAlgebra.mul!(x::PVector,
 
   uH_h = change_domain_coarse_to_fine(uH,A.Ωh_ghost,A.mesh_hierarchy_level.ref_glue)
 
-  l(v) = ∫(v*uH_h)A.dΩh
+  l(v) = ∫(v⋅uH_h)A.dΩh
   Gridap.FESpaces.assemble_vector!(l,A.dof_values_h_sys_layout_b,A.Vh)
   parts=A.mesh_hierarchy_level.model.parts
 
@@ -412,7 +412,7 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing},
   parts = A.mesh_hierarchy_level_next.model.parts
   if (GridapP4est.i_am_in(parts))
     Gridap.Helpers.@check x != nothing
-    l(v) = ∫(v*uh_H)A.dΩH
+    l(v) = ∫(v⋅uh_H)A.dΩH
     Gridap.FESpaces.assemble_vector!(l,A.dof_values_H_sys_layout_b,A.VH)
     fill!(x,0.0)
     IterativeSolvers.cg!(x,
