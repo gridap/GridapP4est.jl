@@ -25,7 +25,7 @@ module OctreeDistributedDiscreteModelsTests
   if !MPI.Initialized()
     MPI.Init()
   end
-  parts = get_part_ids(mpi,4)
+  parts = get_part_ids(mpi,6)
   run(parts,(2,2))
   MPI.Finalize()
 end # module

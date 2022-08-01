@@ -41,7 +41,7 @@ function run_tests(testdir)
                      "RedistributeToolsTests.jl",
                      "GMGLinearSolversPoissonTests.jl",
                      "OctreeDistributedDiscreteModelsTests.jl"]
-          np = 4
+          np = 6
           extra_args = ""
         else
           np = nprocs
