@@ -72,6 +72,7 @@ function compute_weight_operators(Ph::GridapDistributed.DistributedSingleFieldFE
   w=PVector(0.0,Ph.gids)
   map_parts(w.owned_values,Ph.spaces) do w,Ph
     w .= compute_weight_operators(Ph)
+    #println(w)
   end
   w
 end

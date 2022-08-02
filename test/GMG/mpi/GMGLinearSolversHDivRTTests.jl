@@ -27,6 +27,9 @@ module GMGLinearSolverHDivRTTests
         Uh = get_level_fe_space(trials[i])
         a(u,v)=∫(v⋅u)dΩ+∫((α*divergence(v))*divergence(u))dΩ
         A = assemble_matrix(a,Uh,Vh)
+        # map_parts(A.owned_owned_values) do Ah
+        #   println(eigvals(Array(Ah)))
+        # end
         matrices[i]=A
       end
     end
@@ -45,7 +48,15 @@ module GMGLinearSolverHDivRTTests
         Vh = get_level_fe_space(tests[i])
         Uh = get_level_fe_space(trials[i])
         PD=PatchDecomposition(model.dmodel)
+        #map_parts(PD.patch_decompositions,Vh.spaces) do PD, Vh
+        #  println(PD.patch_cells)
+        #  println(PD.patch_cells_faces_on_boundary[2])
+        #  println(get_cell_dof_ids(Vh))
+        #end
         Ph=PatchFESpace(model.dmodel,reffe,DivConformity(),PD,Vh)
+        #map_parts(Ph.spaces) do space
+        #  println(get_cell_dof_ids(space))
+        #end
         Ω  = Triangulation(PD)
         dΩ = Measure(Ω,2*(order+1))
         a(u,v)=∫(v⋅u)dΩ+∫((α*divergence(v))*divergence(u))dΩ
@@ -63,8 +74,7 @@ module GMGLinearSolverHDivRTTests
                coarse_grid_partition,
                num_parts_x_level,
                order,
-               α;
-               smoother=:jacobi)
+               α)
     domain=(0,1,0,1)
 
     reffe=ReferenceFE(raviart_thomas,Float64,order)
@@ -73,7 +83,7 @@ module GMGLinearSolverHDivRTTests
     cmodel=CartesianDiscreteModel(domain,coarse_grid_partition)
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
 
-    tests    = TestFESpace(mh,reffe,dirichlet_tags="boundary")
+    tests    = TestFESpace(mh,reffe; dirichlet_tags="boundary")
     trials   = TrialFESpace(u,tests)
     fespaces = (tests,trials)
     smatrices= generate_stiffness_matrices(mh,fespaces,qdegree,α)
@@ -94,16 +104,26 @@ module GMGLinearSolverHDivRTTests
     A=op.op.matrix
     b=op.op.vector
     x=PVector(0.0,A.cols)
-    num_iters,converged=GMG!(x,
-         b,
-         mh,
-         smatrices,
-         interp,
-         restrict;
-         rtol=1.0e-06,
-         maxiter=200,
-         pre_smoothers=smoothers,
-         post_smoothers=smoothers)
+    solver=GMGLinearSolver(mh,
+                    smatrices,
+                    interp,
+                    restrict,
+                    pre_smoothers=smoothers,
+                    post_smoothers=smoothers,
+                    maxiter=1,
+                    rtol=1.0e-06,
+                    verbose=false,
+                    mode=:preconditioner)
+    ss=symbolic_setup(solver,A)
+    ns=numerical_setup(ss,A)
+
+    x,history=IterativeSolvers.cg!(x,
+                         A,
+                         b;
+                         verbose=i_am_main(parts),
+                         reltol=1.0e-06,
+                         Pl=ns,
+                         log=true)
 
     # uh=FEFunction(Uh,x)
     # Error norms and print solution
@@ -117,7 +137,7 @@ module GMGLinearSolverHDivRTTests
     #  end
     # end
     model_hierarchy_free!(mh)
-    num_iters,num_free_dofs(Vh)
+    history.iters,num_free_dofs(Vh)
   end
   if !MPI.Initialized()
     MPI.Init()
@@ -128,7 +148,7 @@ module GMGLinearSolverHDivRTTests
   num_refinements=[1,2,3,4,5]
   alpha_exps=[0,1,2,3,4]
   iter_matrix=zeros(Int,5,5)
-  coarse_grid_partition=(5,5)
+  coarse_grid_partition=(1,1)
   free_dofs=Vector{Int64}(undef,length(num_refinements))
 
   for ref=1:length(num_refinements)

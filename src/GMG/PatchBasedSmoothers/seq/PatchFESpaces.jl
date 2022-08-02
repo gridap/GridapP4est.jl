@@ -208,6 +208,7 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
           if (patch_cells_faces_on_boundary[d+1][cell_overlapped_mesh][lf])
             # assign negative indices to DoFs owned by face
             for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
+              gdof=global_space_cell_dofs_ids[patch_cell][ldof]
               current_patch_cell_dofs_ids[ldof] = -1
               # println(ldof)
             end
@@ -217,12 +218,16 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
             # space and patch cell dofs IDs)
             for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
               gdof=global_space_cell_dofs_ids[patch_cell][ldof]
-              if gdof in keys(g2l)
-                current_patch_cell_dofs_ids[ldof] = g2l[gdof]
+              if (gdof>0)
+                if gdof in keys(g2l)
+                  current_patch_cell_dofs_ids[ldof] = g2l[gdof]
+                else
+                  g2l[gdof] = free_dofs_offset
+                  current_patch_cell_dofs_ids[ldof] = free_dofs_offset
+                  free_dofs_offset += 1
+                end
               else
-                g2l[gdof] = free_dofs_offset
-                current_patch_cell_dofs_ids[ldof] = free_dofs_offset
-                free_dofs_offset += 1
+                current_patch_cell_dofs_ids[ldof] = -1
               end
             end
           end

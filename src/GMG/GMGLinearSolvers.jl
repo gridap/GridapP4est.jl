@@ -1,5 +1,100 @@
 
+struct GMGLinearSolver{A,B,C,D,E,F,G,H} <: Gridap.Algebra.LinearSolver
+  mh              :: ModelHierarchy
+  smatrices       :: A
+  interp          :: B
+  restrict        :: C
+  pre_smoothers   :: D
+  post_smoothers  :: E
+  coarsest_solver :: F
+  maxiter         :: G
+  rtol            :: H
+  verbose         :: Bool
+  mode            :: Symbol
+end
 
+function GMGLinearSolver(mh,
+      smatrices,
+      interp,
+      restrict;
+      pre_smoothers=Fill(RichardsonSmoother(JacobiLinearSolver(),10),num_levels(mh)-1),
+      post_smoothers=pre_smoothers,
+      coarsest_solver=Gridap.Algebra.BackslashSolver(),
+      maxiter=100,
+      rtol=1.0e-06,
+      verbose::Bool=false,
+      mode=:preconditioner)
+
+  Gridap.Helpers.@check mode == :preconditioner || mode == :solver
+  Gridap.Helpers.@check isa(maxiter,Integer)
+  Gridap.Helpers.@check isa(rtol,Real)
+
+  A=typeof(smatrices)
+  B=typeof(interp)
+  C=typeof(restrict)
+  D=typeof(pre_smoothers)
+  E=typeof(post_smoothers)
+  F=typeof(coarsest_solver)
+  G=typeof(maxiter)
+  H=typeof(rtol)
+  GMGLinearSolver{A,B,C,D,E,F,G,H}(mh,
+                   smatrices,
+                   interp,
+                   restrict,
+                   pre_smoothers,
+                   post_smoothers,
+                   coarsest_solver,
+                   maxiter,
+                   rtol,
+                   verbose,
+                   mode)
+end
+
+struct GMGSymbolicSetup <: Gridap.Algebra.SymbolicSetup
+  solver :: GMGLinearSolver
+end
+
+function Gridap.Algebra.symbolic_setup(solver::GMGLinearSolver,mat::AbstractMatrix)
+  GMGSymbolicSetup(solver)
+end
+
+struct GMGNumericalSetup{A,B,C,D} <: Gridap.Algebra.NumericalSetup
+  solver                 :: GMGLinearSolver
+  pre_smoothers_caches   :: A
+  post_smoothers_caches  :: B
+  coarsest_solver_cache  :: C
+  work_vectors           :: D
+
+  function GMGNumericalSetup(ss::GMGSymbolicSetup)
+    mh              = ss.solver.mh
+    pre_smoothers   = ss.solver.pre_smoothers
+    post_smoothers  = ss.solver.post_smoothers
+    smatrices       = ss.solver.smatrices
+    coarsest_solver = ss.solver.coarsest_solver
+
+    work_vectors=allocate_work_vectors(mh,smatrices)
+    pre_smoothers_caches=setup_smoothers_caches(mh,pre_smoothers,smatrices)
+    if (!(pre_smoothers===post_smoothers))
+      post_smoothers_caches=setup_smoothers_caches(mh,post_smoothers,smatrices)
+    else
+      post_smoothers_caches=pre_smoothers_caches
+    end
+    coarsest_solver_cache=setup_coarsest_solver_cache(mh,coarsest_solver,smatrices)
+    A=typeof(pre_smoothers_caches)
+    B=typeof(post_smoothers_caches)
+    C=typeof(coarsest_solver_cache)
+    D=typeof(work_vectors)
+    new{A,B,C,D}(ss.solver,
+                 pre_smoothers_caches,
+                 post_smoothers_caches,
+                 coarsest_solver_cache,
+                 work_vectors)
+  end
+end
+
+function Gridap.Algebra.numerical_setup(ss::GMGSymbolicSetup,mat::AbstractMatrix)
+  GMGNumericalSetup(ss)
+end
 
 function setup_smoothers_caches(mh,smoothers,smatrices)
   Gridap.Helpers.@check length(smoothers) == num_levels(mh)-1
@@ -132,32 +227,33 @@ function apply_GMG_level!(xh,
   end
 end
 
+function Gridap.Algebra.solve!(
+  x::AbstractVector,ns::GMGNumericalSetup,b::AbstractVector)
 
-function GMG!(x::PVector,
-              b::PVector,
-              mh::ModelHierarchy,
-              smatrices,
-              interpolations,
-              restrictions;
-              rtol=1.0e-06,
-              maxiter=100,
-              pre_smoothers::AbstractVector{<:Gridap.Algebra.LinearSolver}=Fill(RichardsonSmoother(JacobiLinearSolver(),10),num_levels(mh)-1),
-              post_smoothers::AbstractVector{<:Gridap.Algebra.LinearSolver}=pre_smoothers,
-              coarsest_solver::Gridap.Algebra.LinearSolver=BackslashSolver(),
-              verbose=false)
+  smatrices      = ns.solver.smatrices
+  mh             = ns.solver.mh
+  maxiter        = ns.solver.maxiter
+  rtol           = ns.solver.rtol
+  restrictions   = ns.solver.restrict
+  interpolations = ns.solver.interp
+  verbose        = ns.solver.verbose
+  mode           = ns.solver.mode
 
-  work_vectors=allocate_work_vectors(mh,smatrices)
-  pre_smoothers_caches=setup_smoothers_caches(mh,pre_smoothers,smatrices)
-  if (!(pre_smoothers===post_smoothers))
-    post_smoothers_caches=setup_smoothers_caches(mh,post_smoothers,smatrices)
-  else
-    post_smoothers_caches=pre_smoothers_caches
-  end
-  coarsest_solver_cache=setup_coarsest_solver_cache(mh,coarsest_solver,smatrices)
+  pre_smoothers_caches  = ns.pre_smoothers_caches
+  post_smoothers_caches = ns.post_smoothers_caches
+  coarsest_solver_cache = ns.coarsest_solver_cache
+  work_vectors          = ns.work_vectors
 
   Ah=smatrices[1]
-  rh = PVector(0.0,Ah.rows)
-  rh .= b .- Ah*x
+
+  if (mode==:preconditioner)
+    fill!(x,0.0)
+    rh = copy(b)
+  else
+    rh = PVector(0.0,Ah.rows)
+    rh .= b .- Ah*x
+  end
+
   nrm_r0 = norm(rh)
   nrm_r  = nrm_r0
   current_iter = 0
@@ -169,7 +265,7 @@ function GMG!(x::PVector,
     @printf "%6i  %12.4e\n" current_iter rel_res
   end
 
-  while current_iter <= maxiter && rel_res > rtol
+  while current_iter < maxiter && rel_res > rtol
     apply_GMG_level!(x,
                      rh,
                      1,
@@ -191,4 +287,8 @@ function GMG!(x::PVector,
   end
   converged=(rel_res < rtol)
   return current_iter, converged
+end
+
+function LinearAlgebra.ldiv!(x::AbstractVector,ns::GMGNumericalSetup,b::AbstractVector)
+  solve!(x,ns,b)
 end

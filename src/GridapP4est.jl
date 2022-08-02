@@ -68,7 +68,7 @@ module GridapP4est
   export get_level_fe_space_before_redist
 
   # Solvers
-  export GMG!
+  export GMGLinearSolver
   export RichardsonSmoother
   export JacobiLinearSolver
   export PatchDecomposition

@@ -7,14 +7,17 @@ struct PatchDecomposition{Dc,Dp} <: GridapType
   Dr                            :: Int # Topological dim of the face at the root of the patch
   patch_cells                   :: AbstractVector{<:AbstractVector} # Patch+local cell -> cell
   patch_cells_overlapped_mesh   :: Gridap.Arrays.Table # Patch+local cell -> overlapped cell
-  patch_cells_faces_on_boundary :: Vector{Gridap.Arrays.Table} # Df + overlapped cell -> faces on boundary
+  patch_cells_faces_on_boundary :: Vector{Gridap.Arrays.Table} # Df + overlapped cell -> faces on
+  neumann_entities              :: Vector{<:Integer}
 end
 
 num_patches(a::PatchDecomposition)= length(a.patch_cells_overlapped_mesh.ptrs)-1
 Gridap.Geometry.num_cells(a::PatchDecomposition)  = a.patch_cells_overlapped_mesh.data[end]
 
 
-function PatchDecomposition(model::DiscreteModel{Dc,Dp}; Dr=0) where {Dc,Dp}
+function PatchDecomposition(model::DiscreteModel{Dc,Dp};
+                            Dr=0,
+                            neumann_entities=Int[]) where {Dc,Dp}
   Gridap.Helpers.@check 0 <= Dr <= Dc-1
 
   grid               = get_grid(model)
@@ -39,13 +42,15 @@ function PatchDecomposition(model::DiscreteModel{Dc,Dp}; Dr=0) where {Dc,Dp}
   generate_patch_boundary_faces!(model,
                                  patch_cells_faces_on_boundary,
                                  patch_cells,
-                                 patch_cells_overlapped_mesh)
+                                 patch_cells_overlapped_mesh,
+                                 neumann_entities)
 
   PatchDecomposition{Dc,Dp}(model,
                             Dr,
                             patch_cells,
                             patch_cells_overlapped_mesh,
-                            patch_cells_faces_on_boundary)
+                            patch_cells_faces_on_boundary,
+                            neumann_entities)
 end
 
 function Gridap.Geometry.Triangulation(a::PatchDecomposition)
@@ -115,9 +120,11 @@ end
 function generate_patch_boundary_faces!(model,
                                         patch_cells_faces_on_boundary,
                                         patch_cells,
-                                        patch_cells_overlapped_mesh)
+                                        patch_cells_overlapped_mesh,
+                                        neumann_entities)
     Dc=num_cell_dims(model)
     topology=get_grid_topology(model)
+    labeling=get_face_labeling(model)
     num_patches=length(patch_cells.ptrs)-1
     cache=array_cache(patch_cells)
     for patch=1:num_patches
@@ -125,18 +132,22 @@ function generate_patch_boundary_faces!(model,
       generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
                                      Dc,
                                      topology,
+                                     labeling,
                                      patch,
                                      current_patch_cells,
-                                     patch_cells_overlapped_mesh)
+                                     patch_cells_overlapped_mesh,
+                                     neumann_entities)
     end
 end
 
 function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
                                         Dc,
                                         topology,
+                                        face_labeling,
                                         patch,
                                         patch_cells,
-                                        patch_cells_overlapped_mesh)
+                                        patch_cells_overlapped_mesh,
+                                        neumann_entities)
 
   # Cells facets
   Df=Dc-1
@@ -152,43 +163,68 @@ function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
     cell_facets=getindex!(cache_cells_facets,cells_facets,patch_cell)
     # Go over the facets (i.e., faces of dim D-1) in the current cell
     for (lfacet,facet) in enumerate(cell_facets)
-      # TO-DO: use cache here!!!
-      cells_around_facet=getindex!(cache_cells_around_facets,cells_around_facets,facet)
+      facet_entity=face_labeling.d_to_dface_to_entity[Df+1][facet]
+
+      cells_around_facet=getindex!(cache_cells_around_facets,
+                                   cells_around_facets,
+                                   facet)
+
       # Go over the cells around facet
+      cell_not_in_patch_found=false
       for cell_around_facet in cells_around_facet
-          # Is cell_around_facet outside the patch?
-          if !(cell_around_facet in patch_cells) || length(cells_around_facet) == 1
-            cell_overlapped_mesh = patch_cells_overlapped_mesh[patch][lpatch_cell]
-            position=patch_cells_faces_on_boundary[Df+1].ptrs[cell_overlapped_mesh]+lfacet-1
-            patch_cells_faces_on_boundary[Df+1].data[position]=true
+        if !(cell_around_facet in patch_cells)
+          cell_not_in_patch_found=true
+          break
+        end
+      end
 
-            # Go over the faces of the lower dimension on the boundary of
-            # the facet. And then propagate true to all cells around, and
-            # for each cell around, we need to identify which is the local
-            # face identifier within that cell
+      facet_at_neumann_boundary = facet_entity in neumann_entities
 
-            # Go over the faces on the boundary of the current facet
-            for d=0:Df-1
-              d_faces_on_boundary_of_current_facet=Gridap.Geometry.get_faces(topology,Df,d)[facet]
-              for f in d_faces_on_boundary_of_current_facet
-                # # TO-DO: to use caches!!!
-                # Locate the local position of f within the cell (lface)
-                cells_d_faces = Gridap.Geometry.get_faces(topology,Dc,d)
-                d_faces_cells = Gridap.Geometry.get_faces(topology,d,Dc)
-                for cell_around_face in d_faces_cells[f]
-                  if (cell_around_face in patch_cells)
-                    cell_d_face   = cells_d_faces[cell_around_face]
-                    lface         = findfirst((x->x==f),cell_d_face)
-                    lpatch_cell2   = findfirst((x->x==cell_around_face),patch_cells)
-                    cell_overlapped_mesh =
-                       patch_cells_overlapped_mesh[patch][lpatch_cell2]
-                    position=patch_cells_faces_on_boundary[d+1].ptrs[cell_overlapped_mesh]+lface-1
-                    patch_cells_faces_on_boundary[d+1].data[position]=true
-                  end
-                end
+      facet_at_boundary = ((length(cells_around_facet) == 1) ||
+                          cell_not_in_patch_found) && !(facet_at_neumann_boundary)
+
+      # if (facet_at_neumann_boundary)
+      #     println("XXX")
+      #     println(facet)
+      #     println(length(cells_around_facet))
+      #     @assert length(cells_around_facet)==1
+      #     println(cell_not_in_patch_found)
+      #     @assert !cell_not_in_patch_found
+      #     println("YYY")
+      #     @assert !facet_at_boundary
+      # end
+
+      if (facet_at_boundary)
+        cell_overlapped_mesh = patch_cells_overlapped_mesh[patch][lpatch_cell]
+        position=patch_cells_faces_on_boundary[Df+1].ptrs[cell_overlapped_mesh]+lfacet-1
+        patch_cells_faces_on_boundary[Df+1].data[position]=true
+
+        # Go over the faces of the lower dimension on the boundary of
+        # the facet. And then propagate true to all cells around, and
+        # for each cell around, we need to identify which is the local
+        # face identifier within that cell
+
+        # Go over the faces on the boundary of the current facet
+        for d=0:Df-1
+          d_faces_on_boundary_of_current_facet=Gridap.Geometry.get_faces(topology,Df,d)[facet]
+          for f in d_faces_on_boundary_of_current_facet
+            # # TO-DO: to use caches!!!
+            # Locate the local position of f within the cell (lface)
+            cells_d_faces = Gridap.Geometry.get_faces(topology,Dc,d)
+            d_faces_cells = Gridap.Geometry.get_faces(topology,d,Dc)
+            for cell_around_face in d_faces_cells[f]
+              if (cell_around_face in patch_cells)
+                cell_d_face   = cells_d_faces[cell_around_face]
+                lface         = findfirst((x->x==f),cell_d_face)
+                lpatch_cell2   = findfirst((x->x==cell_around_face),patch_cells)
+                cell_overlapped_mesh =
+                    patch_cells_overlapped_mesh[patch][lpatch_cell2]
+                position=patch_cells_faces_on_boundary[d+1].ptrs[cell_overlapped_mesh]+lface-1
+                patch_cells_faces_on_boundary[d+1].data[position]=true
               end
             end
           end
+        end
       end
     end
   end

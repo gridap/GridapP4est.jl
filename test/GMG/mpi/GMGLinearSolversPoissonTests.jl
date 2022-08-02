@@ -94,16 +94,25 @@ module GMGLinearSolverPoissonTests
     A=op.op.matrix
     b=op.op.vector
     x=PVector(0.0,A.cols)
-    GMG!(x,
-         b,
-         mh,
-         smatrices,
-         interp,
-         restrict;
-         rtol=1.0e-06,
-         maxiter=200,
-         pre_smoothers=smoothers,
-         post_smoothers=smoothers)
+    solver=GMGLinearSolver(mh,
+                    smatrices,
+                    interp,
+                    restrict,
+                    pre_smoothers=smoothers,
+                    post_smoothers=smoothers,
+                    maxiter=1,
+                    rtol=1.0e-06,
+                    verbose=false,
+                    mode=:preconditioner)
+    ss=symbolic_setup(solver,A)
+    ns=numerical_setup(ss,A)
+
+    IterativeSolvers.cg!(x,
+                         A,
+                         b;
+                         verbose=i_am_main(parts),
+                         reltol=1.0e-06,
+                         Pl=ns)
 
     uh=FEFunction(Uh,x)
     # Error norms and print solution
