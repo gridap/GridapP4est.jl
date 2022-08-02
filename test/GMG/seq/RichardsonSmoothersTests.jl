@@ -3,7 +3,7 @@ module RichardsonSmoothersTests
    using Gridap
    using Test
    using LinearAlgebra
-   smooth=RichardsonSmoother(JacobiLinearSolver(),10)
+   smooth=RichardsonSmoother(JacobiLinearSolver(),20)
    A=rand(3,3)
    A=A'*A+10.0*I
    x=rand(3)

@@ -72,8 +72,6 @@ module GMGLinearSolverTests
     cmodel=CartesianDiscreteModel(domain,coarse_grid_partition)
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
 
-    if GridapP4est.i_am_in(mh.level_parts[1])
-
     tests    = TestFESpace(mh,reffe,dirichlet_tags="boundary")
     trials   = TrialFESpace(u,tests)
     fespaces = (tests,trials)
@@ -118,16 +116,14 @@ module GMGLinearSolverTests
         println("$(e_l2) < $(tol)\n")
       end
     end
-    end
+    # end
     model_hierarchy_free!(mh)
   end
-  if !MPI.Initialized()
-    MPI.Init()
-  end
-  parts = get_part_ids(mpi,6)
+
   order=1
   num_parts_x_level=[4,4,2,2]
+  ranks=num_parts_x_level[1]
   coarse_grid_partition=(2,2)
-  run(parts,coarse_grid_partition,num_parts_x_level,order)
+  prun(run,mpi,ranks,coarse_grid_partition,num_parts_x_level,order)
   MPI.Finalize()
 end

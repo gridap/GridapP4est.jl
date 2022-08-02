@@ -15,8 +15,6 @@ module RedistributeToolsTests
     cmodel=CartesianDiscreteModel(domain,partition)
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
 
-    if GridapP4est.i_am_in(mh.level_parts[1])
-
     # FE Spaces
     order=1
     reffe = ReferenceFE(lagrangian,Float64,order)
@@ -62,7 +60,6 @@ module RedistributeToolsTests
     o=sum(∫(uhnew)dΩ_old)
     n=sum(∫(uhold)dΩ_new)
     @test o ≈ n
-    end
     model_hierarchy_free!(mh)
 
     # map_parts(mh.level_parts[1],GridapDistributed.local_views(uhold),
@@ -82,10 +79,7 @@ module RedistributeToolsTests
   # Give me how many processors you want per level
   # in an array with as many entries as levels
   num_parts_x_level = [4,2,2]
-  if !MPI.Initialized()
-    MPI.Init()
-  end
-  parts = get_part_ids(mpi,6)
-  run(parts,num_parts_x_level)
+  ranks=num_parts_x_level[1]
+  prun(run,mpi,ranks,num_parts_x_level)
   MPI.Finalize()
 end
