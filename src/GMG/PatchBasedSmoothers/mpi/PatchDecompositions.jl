@@ -6,11 +6,11 @@ end
 
 function PatchDecomposition(model::GridapDistributed.DistributedDiscreteModel{Dc,Dp};
                             Dr=0,
-                            neumann_entities=Int[]) where {Dc,Dp}
+                            patch_boundary_style::PatchBoundaryStyle=PatchBoundaryExclude()) where {Dc,Dp}
   patch_decompositions=map_parts(model.models) do lmodel
     PatchDecomposition(lmodel;
                        Dr=Dr,
-                       neumann_entities=neumann_entities)
+                       patch_boundary_style=patch_boundary_style)
   end
   A=typeof(patch_decompositions)
   B=typeof(model)

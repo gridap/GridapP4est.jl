@@ -1,3 +1,6 @@
+abstract type PatchBoundaryStyle end ;
+struct PatchBoundaryExclude  <: PatchBoundaryStyle end ;
+struct PatchBoundaryInclude  <: PatchBoundaryStyle end ;
 
 # Question? Might a patch decomposition involve patches
 #           with roots of different topological dimension?
@@ -8,16 +11,16 @@ struct PatchDecomposition{Dc,Dp} <: GridapType
   patch_cells                   :: AbstractVector{<:AbstractVector} # Patch+local cell -> cell
   patch_cells_overlapped_mesh   :: Gridap.Arrays.Table # Patch+local cell -> overlapped cell
   patch_cells_faces_on_boundary :: Vector{Gridap.Arrays.Table} # Df + overlapped cell -> faces on
-  neumann_entities              :: Vector{<:Integer}
 end
 
 num_patches(a::PatchDecomposition)= length(a.patch_cells_overlapped_mesh.ptrs)-1
 Gridap.Geometry.num_cells(a::PatchDecomposition)  = a.patch_cells_overlapped_mesh.data[end]
 
 
-function PatchDecomposition(model::DiscreteModel{Dc,Dp};
-                            Dr=0,
-                            neumann_entities=Int[]) where {Dc,Dp}
+function PatchDecomposition(
+  model::DiscreteModel{Dc,Dp};
+  Dr=0,
+  patch_boundary_style::PatchBoundaryStyle=PatchBoundaryExclude()) where {Dc,Dp}
   Gridap.Helpers.@check 0 <= Dr <= Dc-1
 
   grid               = get_grid(model)
@@ -43,14 +46,13 @@ function PatchDecomposition(model::DiscreteModel{Dc,Dp};
                                  patch_cells_faces_on_boundary,
                                  patch_cells,
                                  patch_cells_overlapped_mesh,
-                                 neumann_entities)
+                                 patch_boundary_style)
 
   PatchDecomposition{Dc,Dp}(model,
                             Dr,
                             patch_cells,
                             patch_cells_overlapped_mesh,
-                            patch_cells_faces_on_boundary,
-                            neumann_entities)
+                            patch_cells_faces_on_boundary)
 end
 
 function Gridap.Geometry.Triangulation(a::PatchDecomposition)
@@ -121,7 +123,7 @@ function generate_patch_boundary_faces!(model,
                                         patch_cells_faces_on_boundary,
                                         patch_cells,
                                         patch_cells_overlapped_mesh,
-                                        neumann_entities)
+                                        patch_boundary_style)
     Dc=num_cell_dims(model)
     topology=get_grid_topology(model)
     labeling=get_face_labeling(model)
@@ -136,7 +138,7 @@ function generate_patch_boundary_faces!(model,
                                      patch,
                                      current_patch_cells,
                                      patch_cells_overlapped_mesh,
-                                     neumann_entities)
+                                     patch_boundary_style)
     end
 end
 
@@ -147,7 +149,11 @@ function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
                                         patch,
                                         patch_cells,
                                         patch_cells_overlapped_mesh,
-                                        neumann_entities)
+                                        patch_boundary_style)
+
+  boundary_tag=findfirst(x->(x=="boundary"),face_labeling.tag_to_name)
+  Gridap.Helpers.@check boundary_tag != nothing
+  boundary_entities=face_labeling.tag_to_entities[boundary_tag]
 
   # Cells facets
   Df=Dc-1
@@ -178,10 +184,16 @@ function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
         end
       end
 
-      facet_at_neumann_boundary = facet_entity in neumann_entities
-
-      facet_at_boundary = ((length(cells_around_facet) == 1) ||
-                          cell_not_in_patch_found) && !(facet_at_neumann_boundary)
+      facet_at_global_boundary = facet_entity in boundary_entities
+      if (facet_at_global_boundary)
+        facet_at_patch_boundary = false
+      elseif (patch_boundary_style isa PatchBoundaryInclude)
+        facet_at_patch_boundary = false
+      elseif ((patch_boundary_style  isa PatchBoundaryExclude) && cell_not_in_patch_found)
+        facet_at_patch_boundary = true
+      else
+        facet_at_patch_boundary = false
+      end
 
       # if (facet_at_neumann_boundary)
       #     println("XXX")
@@ -194,7 +206,7 @@ function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
       #     @assert !facet_at_boundary
       # end
 
-      if (facet_at_boundary)
+      if (facet_at_patch_boundary)
         cell_overlapped_mesh = patch_cells_overlapped_mesh[patch][lpatch_cell]
         position=patch_cells_faces_on_boundary[Df+1].ptrs[cell_overlapped_mesh]+lfacet-1
         patch_cells_faces_on_boundary[Df+1].data[position]=true

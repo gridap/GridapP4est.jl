@@ -11,8 +11,7 @@ function PatchFESpace(model::GridapDistributed.DistributedDiscreteModel,
                       reffe::Tuple{<:Gridap.FESpaces.ReferenceFEName,Any,Any},
                       conformity::Gridap.FESpaces.Conformity,
                       patch_decomposition::DistributedPatchDecomposition,
-                      Vh::GridapDistributed.DistributedSingleFieldFESpace;
-                      patch_boundary_dofs_style=PatchBoundaryDoFsExcludeAll())
+                      Vh::GridapDistributed.DistributedSingleFieldFESpace)
   root_gids=get_face_gids(model,get_patch_root_dim(patch_decomposition))
 
   function f(model,patch_decomposition,Vh,partition)
@@ -23,7 +22,6 @@ function PatchFESpace(model::GridapDistributed.DistributedDiscreteModel,
                  conformity,
                  patch_decomposition,
                  Vh;
-                 patch_boundary_dofs_style=patch_boundary_dofs_style,
                  patches_mask=patches_mask)
   end
 
