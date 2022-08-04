@@ -16,8 +16,8 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                         p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
     comm = parts.comm
     if i_am_in(parts.comm)
-      sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
-      p4est_init(C_NULL, p4est_verbosity_level)
+      #sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
+      #p4est_init(C_NULL, p4est_verbosity_level)
 
       ptr_pXest_connectivity,
         ptr_pXest,

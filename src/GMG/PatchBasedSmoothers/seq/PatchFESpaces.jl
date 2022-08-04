@@ -1,9 +1,3 @@
-# Temporary ... keep thinking ...
-abstract type PatchBoundaryDoFsStyle end ;
-struct PatchBoundaryDoFsExcludeAll           <: PatchBoundaryDoFsStyle end ;
-struct PatchBoundaryDoFsExcludeOnlyDirichlet <: PatchBoundaryDoFsStyle end ;
-struct PatchBoundaryDoFsIncludeAll           <: PatchBoundaryDoFsStyle end ;
-
 struct PatchFESpace  <: Gridap.FESpaces.SingleFieldFESpace
   num_dofs::Int
   patch_cell_dofs_ids::Gridap.Arrays.Table
@@ -54,7 +48,6 @@ function PatchFESpace(model::DiscreteModel,
                       conformity::Gridap.FESpaces.Conformity,
                       patch_decomposition::PatchDecomposition,
                       Vh::Gridap.FESpaces.SingleFieldFESpace;
-                      patch_boundary_dofs_style=PatchBoundaryDoFsExcludeAll(),
                       patches_mask=Fill(false,num_patches(patch_decomposition)))
 
   cell_reffe = setup_cell_reffe(model,reffe)
@@ -73,7 +66,6 @@ function PatchFESpace(model::DiscreteModel,
                                          patch_decomposition.patch_cells_faces_on_boundary,
                                          cell_dofs_ids,
                                          cell_conformity,
-                                         patch_boundary_dofs_style,
                                          patches_mask)
 
   PatchFESpace(num_dofs,patch_cell_dofs_ids,Vh,patch_decomposition)
@@ -130,7 +122,6 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
                                        patch_cells_faces_on_boundary,
                                        cell_dofs_ids,
                                        cell_conformity,
-                                       patch_boundary_dofs_style,
                                        patches_mask)
 
     cache=array_cache(patch_cells)
@@ -145,8 +136,7 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
                                     patch_cells_overlapped_mesh,
                                     patch_cells_faces_on_boundary,
                                     cell_dofs_ids,
-                                    cell_conformity,
-                                    patch_boundary_dofs_style;
+                                    cell_conformity;
                                     free_dofs_offset=current_dof,
                                     mask=patches_mask[patch])
     end
@@ -169,8 +159,7 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
                                        patch_cells_overlapped_mesh::Gridap.Arrays.Table,
                                        patch_cells_faces_on_boundary,
                                        global_space_cell_dofs_ids,
-                                       cell_conformity,
-                                       patch_boundary_dofs_style;
+                                       cell_conformity;
                                        free_dofs_offset=1,
                                        mask=false)
 
@@ -208,6 +197,7 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
           if (patch_cells_faces_on_boundary[d+1][cell_overlapped_mesh][lf])
             # assign negative indices to DoFs owned by face
             for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
+              gdof=global_space_cell_dofs_ids[patch_cell][ldof]
               current_patch_cell_dofs_ids[ldof] = -1
               # println(ldof)
             end
@@ -217,12 +207,16 @@ function generate_patch_cell_dofs_ids!(patch_cell_dofs_ids,
             # space and patch cell dofs IDs)
             for ldof in cell_conformity.ctype_lface_own_ldofs[ctype][face_offset+lf]
               gdof=global_space_cell_dofs_ids[patch_cell][ldof]
-              if gdof in keys(g2l)
-                current_patch_cell_dofs_ids[ldof] = g2l[gdof]
+              if (gdof>0)
+                if gdof in keys(g2l)
+                  current_patch_cell_dofs_ids[ldof] = g2l[gdof]
+                else
+                  g2l[gdof] = free_dofs_offset
+                  current_patch_cell_dofs_ids[ldof] = free_dofs_offset
+                  free_dofs_offset += 1
+                end
               else
-                g2l[gdof] = free_dofs_offset
-                current_patch_cell_dofs_ids[ldof] = free_dofs_offset
-                free_dofs_offset += 1
+                current_patch_cell_dofs_ids[ldof] = -1
               end
             end
           end

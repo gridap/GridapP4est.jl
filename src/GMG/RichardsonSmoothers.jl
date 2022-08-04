@@ -58,6 +58,7 @@ function Gridap.Algebra.solve!(
   iter=0
   while iter <= ns.smoother.num_smooth_steps
     solve!(dx,ns.Mns,r)
+    dx .= ns.smoother.damping_factor .* dx
     x .= x .+ dx
     mul!(Adx, ns.A, dx)
     r .= r .- Adx
