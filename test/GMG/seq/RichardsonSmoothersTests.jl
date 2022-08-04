@@ -11,5 +11,5 @@ module RichardsonSmoothersTests
    r=b-A*x
    r0=norm(r)
    solve!(x,smooth,A,r)
-   @test norm(r)/norm(r0) < 1.0e-08
+   @test norm(r)/norm(r0) < 1.0e-06
 end
