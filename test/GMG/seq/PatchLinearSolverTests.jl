@@ -8,7 +8,7 @@ module PatchLinearSolverTests
     using PartitionedArrays
     using Test
 
-    const order=2
+    const order=1
 
     function returns_PD_Ph_xh_Vh(model)
       reffe = ReferenceFE(lagrangian,Float64,order)
