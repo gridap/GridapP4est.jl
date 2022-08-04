@@ -15,11 +15,8 @@ module MeshHierarchiesTests
 
   # Give me how many processors you want per level
   # in an array with as many entries as levels
-  num_parts_x_level = [4,2,2,2,2,1]
-  if !MPI.Initialized()
-    MPI.Init()
-  end
-  parts = get_part_ids(mpi,4)
-  run(parts,num_parts_x_level)
+  num_parts_x_level = [4,2,2,2,2,2]
+  ranks=num_parts_x_level[1]
+  prun(run,mpi,ranks,num_parts_x_level)
   MPI.Finalize()
 end

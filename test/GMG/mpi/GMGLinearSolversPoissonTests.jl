@@ -125,15 +125,14 @@ module GMGLinearSolverPoissonTests
         println("$(e_l2) < $(tol)\n")
       end
     end
+    # end
     model_hierarchy_free!(mh)
   end
-  if !MPI.Initialized()
-    MPI.Init()
-  end
-  parts = get_part_ids(mpi,4)
+
   order=1
-  num_parts_x_level=[4,4,2,1]
+  num_parts_x_level=[4,4,2,2]
+  ranks=num_parts_x_level[1]
   coarse_grid_partition=(2,2)
-  run(parts,coarse_grid_partition,num_parts_x_level,order)
+  prun(run,mpi,ranks,coarse_grid_partition,num_parts_x_level,order)
   MPI.Finalize()
 end

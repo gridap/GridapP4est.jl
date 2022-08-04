@@ -22,10 +22,7 @@ module OctreeDistributedDiscreteModelsTests
     octree_distributed_discrete_model_free!(fmodel)
     octree_distributed_discrete_model_free!(ffmodel)
   end
-  if !MPI.Initialized()
-    MPI.Init()
-  end
-  parts = get_part_ids(mpi,4)
-  run(parts,(2,2))
+
+  prun(run,mpi,4,(2,2))
   MPI.Finalize()
 end # module
