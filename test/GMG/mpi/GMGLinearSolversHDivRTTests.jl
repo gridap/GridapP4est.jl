@@ -1,4 +1,4 @@
-module GMGLinearSolverHDivRTTests
+#module GMGLinearSolverHDivRTTests
   using MPI
   using Gridap
   using Gridap.FESpaces
@@ -78,12 +78,12 @@ module GMGLinearSolverHDivRTTests
     domain=(0,1,0,1)
 
     reffe=ReferenceFE(raviart_thomas,Float64,order)
-    qdegree=2*(order+1)
+    qdegree=10*(order+1)
 
     cmodel=CartesianDiscreteModel(domain,coarse_grid_partition)
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
 
-    tests    = TestFESpace(mh,reffe; dirichlet_tags="boundary")
+    tests    = TestFESpace(mh,reffe; dirichlet_tags=[7,8])
     trials   = TrialFESpace(u,tests)
     fespaces = (tests,trials)
     smatrices= generate_stiffness_matrices(mh,fespaces,qdegree,α)
@@ -145,10 +145,10 @@ module GMGLinearSolverHDivRTTests
   parts = get_part_ids(mpi,1)
   order=0
 
-  num_refinements=[1,2,3,4,5]
-  alpha_exps=[0,1,2,3,4]
+  num_refinements=[1]#,2,3,4,5]
+  alpha_exps=[0]#,1,2,3,4]
   iter_matrix=zeros(Int,5,5)
-  coarse_grid_partition=(1,1)
+  coarse_grid_partition=(30,30)
   free_dofs=Vector{Int64}(undef,length(num_refinements))
 
   for ref=1:length(num_refinements)
@@ -164,4 +164,4 @@ module GMGLinearSolverHDivRTTests
   println(free_dofs)
 
   MPI.Finalize()
-end
+# end
