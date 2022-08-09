@@ -12,7 +12,7 @@ module PatchLinearSolverTests
 
     function returns_PD_Ph_xh_Vh(model)
       reffe = ReferenceFE(lagrangian,Float64,order)
-      Vh    = TestFESpace(model,reffe;conformity=:H1)
+      Vh    = TestFESpace(model,reffe)
       PD=PatchDecomposition(model)
       Ph=PatchFESpace(model,reffe,H1Conformity(),PD,Vh)
       assembler=SparseMatrixAssembler(Ph,Ph)
@@ -33,8 +33,8 @@ module PatchLinearSolverTests
     _,dPh,dxh,dVh=returns_PD_Ph_xh_Vh(dmodel);
     _,Ph,xh,Vh=returns_PD_Ph_xh_Vh(model)
     @test num_free_dofs(Ph) == num_free_dofs(dPh)
-    @test all(dxh.owned_values.parts[1] .≈ xh[1:5])
-    @test all(dxh.owned_values.parts[2] .≈ xh[6:end])
+    @test all(dxh.owned_values.parts[1] .≈ xh[1:3])
+    @test all(dxh.owned_values.parts[2] .≈ xh[4:end])
 
     function compute_matrix_vector(model,Vh)
       Ω = Triangulation(model)

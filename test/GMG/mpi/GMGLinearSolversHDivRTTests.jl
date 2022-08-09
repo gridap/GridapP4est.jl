@@ -1,4 +1,4 @@
-#module GMGLinearSolverHDivRTTests
+module GMGLinearSolverHDivRTTests
   using MPI
   using Gridap
   using Gridap.FESpaces
@@ -164,4 +164,4 @@
   println(free_dofs)
 
   MPI.Finalize()
-# end
+end
