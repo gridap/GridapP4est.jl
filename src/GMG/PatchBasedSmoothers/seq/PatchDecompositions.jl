@@ -30,6 +30,7 @@ function PatchDecomposition(
   topology           = get_grid_topology(model)
 
   patch_cells=Gridap.Geometry.get_faces(topology,Dr,Dc)
+  patch_facets=Gridap.Geometry.get_faces(topology,Dr,Dc-1)
   patch_cells_overlapped_mesh=
      setup_patch_cells_overlapped_mesh(patch_cells)
 
@@ -46,6 +47,7 @@ function PatchDecomposition(
                                  patch_cells_faces_on_boundary,
                                  patch_cells,
                                  patch_cells_overlapped_mesh,
+                                 patch_facets,
                                  patch_boundary_style)
 
   PatchDecomposition{Dc,Dp}(model,
@@ -123,14 +125,17 @@ function generate_patch_boundary_faces!(model,
                                         patch_cells_faces_on_boundary,
                                         patch_cells,
                                         patch_cells_overlapped_mesh,
+                                        patch_facets,
                                         patch_boundary_style)
     Dc=num_cell_dims(model)
     topology=get_grid_topology(model)
     labeling=get_face_labeling(model)
     num_patches=length(patch_cells.ptrs)-1
-    cache=array_cache(patch_cells)
+    cache_patch_cells=array_cache(patch_cells)
+    cache_patch_facets=array_cache(patch_facets)
     for patch=1:num_patches
-      current_patch_cells=getindex!(cache,patch_cells,patch)
+      current_patch_cells=getindex!(cache_patch_cells,patch_cells,patch)
+      current_patch_facets=getindex!(cache_patch_facets,patch_facets,patch)
       generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
                                      Dc,
                                      topology,
@@ -138,6 +143,7 @@ function generate_patch_boundary_faces!(model,
                                      patch,
                                      current_patch_cells,
                                      patch_cells_overlapped_mesh,
+                                     current_patch_facets,
                                      patch_boundary_style)
     end
 end
@@ -149,6 +155,7 @@ function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
                                         patch,
                                         patch_cells,
                                         patch_cells_overlapped_mesh,
+                                        patch_facets,
                                         patch_boundary_style)
 
   boundary_tag=findfirst(x->(x=="boundary"),face_labeling.tag_to_name)
@@ -186,7 +193,11 @@ function generate_patch_boundary_faces!(patch_cells_faces_on_boundary,
 
       facet_at_global_boundary = facet_entity in boundary_entities
       if (facet_at_global_boundary)
-        facet_at_patch_boundary = false
+        if (facet in patch_facets)
+          facet_at_patch_boundary = false
+        else
+          facet_at_patch_boundary = true
+        end
       elseif (patch_boundary_style isa PatchBoundaryInclude)
         facet_at_patch_boundary = false
       elseif ((patch_boundary_style  isa PatchBoundaryExclude) && cell_not_in_patch_found)

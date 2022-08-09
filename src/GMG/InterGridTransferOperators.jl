@@ -420,9 +420,6 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing},
                          A.dof_values_H_sys_layout_b;
                          reltol=reltol,
                          verbose=(i_am_main(parts) && verbose))
-    uH = FEFunction(A.UH,
-                    x,
-                    A.uH_zero_dirichlet_values)
   end
 end
 
