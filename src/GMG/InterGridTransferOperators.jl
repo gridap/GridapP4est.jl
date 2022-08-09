@@ -308,14 +308,6 @@ function LinearAlgebra.mul!(x::PVector,
                          A.dof_values_h_sys_layout_b;
                          verbose=(i_am_main(parts) && verbose),
                          reltol=reltol)
-
-    uh = FEFunction(A.Uh,
-                    x,
-                    map_parts(A.Uh.spaces) do space
-                      zeros(num_dirichlet_dofs(space))
-                    end)
-
-    # writevtk(A.Ωh,"uh_$(iter)", cellfields=["uh" => uh])
   end
 end
 
