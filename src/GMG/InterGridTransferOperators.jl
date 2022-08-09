@@ -419,11 +419,6 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing},
     uh = FEFunction(A.Uh,
                     A.dof_values_h_fe_space_layout_red,
                     A.uh_zero_dirichlet_values_red)
-    iter=readchomp(`date +%s`)
-    sleep(1.0)
-    map_parts(uh.fields) do uh
-        writevtk(get_triangulation(uh),"rh_$(iter)",cellfields=["rh" => uh])
-    end
   end
 
   # uh is in h communicator, but with void parts for those tasks not in the next level
@@ -441,14 +436,6 @@ function LinearAlgebra.mul!(x::Union{PVector,Nothing},
                          A.dof_values_H_sys_layout_b;
                          reltol=reltol,
                          verbose=(i_am_main(parts) && verbose))
-    uH = FEFunction(A.UH,
-                    x,
-                    A.uH_zero_dirichlet_values)
-
-
-    map_parts(uH.fields) do uH
-        writevtk(get_triangulation(uH),"rH_$(iter)",cellfields=["rH" => uH])
-    end
   end
 end
 
