@@ -267,15 +267,7 @@ function LinearAlgebra.mul!(x::PVector,
     uH = nothing
   end
 
-  # iter=rand(1:1000)
-  # map_parts(uH.fields) do uH
-  #   writevtk(get_triangulation(uH),"uH_$(iter)",cellfields=["uH" => uH])
-  # end
-
   uH_h = change_domain_coarse_to_fine(uH,A.Ωh_ghost,A.mesh_hierarchy_level.ref_glue)
-  # map_parts(uH_h.fields) do uH_h
-  #   writevtk(get_triangulation(uH_h),"uH_h_$(iter)",cellfields=["uH_h" => uH_h])
-  # end
 
   l(v) = ∫(v⋅uH_h)A.dΩh
   Gridap.FESpaces.assemble_vector!(l,A.dof_values_h_sys_layout_b,A.Vh)
