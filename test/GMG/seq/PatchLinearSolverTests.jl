@@ -12,6 +12,7 @@ module PatchLinearSolverTests
 
     function returns_PD_Ph_xh_Vh(model)
       reffe = ReferenceFE(lagrangian,Float64,order)
+      # reffe=ReferenceFE(lagrangian,VectorValue{2,Float64},order) @santiagobadia: For Vector Laplacian
       Vh    = TestFESpace(model,reffe)
       PD=PatchDecomposition(model)
       Ph=PatchFESpace(model,reffe,H1Conformity(),PD,Vh)
@@ -20,6 +21,9 @@ module PatchLinearSolverTests
       dΩₚ = Measure(Ωₚ,2*order+1)
       a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
       l(v)=∫(1*v)*dΩₚ
+      # α =1,0; a(u,v)=∫(v⋅u)dΩ+∫(α*∇(v)⊙∇(u))dΩ # @santiagobadia: For vector Laplacian
+      # f(x) = VectorValue(1.0,0.0)
+      # l(v)=∫(v⋅f)dΩ
       Ah=assemble_matrix(a,assembler,Ph,Ph)
       fh=assemble_vector(l,assembler,Ph)
       PD,Ph,Ah\fh,Vh
@@ -41,6 +45,9 @@ module PatchLinearSolverTests
       dΩ = Measure(Ω,2*order+1)
       a(u,v)=∫(∇(v)⋅∇(u))*dΩ
       l(v)=∫(1*v)*dΩ
+      # α =1,0; a(u,v)=∫(v⋅u)dΩ+∫(α*∇(v)⊙∇(u))dΩ # @santiagobadia: For vector Laplacian
+      # f(x) = VectorValue(1.0,0.0)
+      # l(v)=∫(v⋅f)dΩ
       assembler=SparseMatrixAssembler(Vh,Vh)
       Ah=assemble_matrix(a,assembler,Vh,Vh)
       lh=assemble_vector(l,assembler,Vh)
@@ -52,6 +59,7 @@ module PatchLinearSolverTests
       order=1
       dΩₚ = Measure(Ωₚ,2*order+1)
       a(u,v)=∫(∇(v)⋅∇(u))*dΩₚ
+      # α =1,0; a(u,v)=∫(v⋅u)dΩ+∫(α*∇(v)⊙∇(u))dΩ # @santiagobadia: For vector Laplacian
       M=PatchBasedLinearSolver(a,Ph,LUSolver())
       s=RichardsonSmoother(M,10,1.0/3.0)
       x=GridapP4est._allocate_col_vector(A)
