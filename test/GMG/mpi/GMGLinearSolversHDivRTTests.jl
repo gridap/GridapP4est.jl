@@ -26,6 +26,7 @@ module GMGLinearSolverHDivRTTests
         Vh = get_level_fe_space(tests[i])
         Uh = get_level_fe_space(trials[i])
         a(u,v)=∫(v⋅u)dΩ+∫((α*divergence(v))*divergence(u))dΩ
+        # a(u,v)=∫(v⋅u)dΩ+∫(α*∇(v)⊙∇(u))dΩ # @santiagobadia: For vector Laplacian
         A = assemble_matrix(a,Uh,Vh)
         # map_parts(A.owned_owned_values) do Ah
         #   println(eigvals(Array(Ah)))
@@ -42,6 +43,7 @@ module GMGLinearSolverHDivRTTests
     Gridap.Helpers.@check num_levels(mh)==length(trials)
     smoothers=Vector{RichardsonSmoother}(undef,num_levels(mh)-1)
     reffe=ReferenceFE(raviart_thomas,Float64,order)
+    # reffe=ReferenceFE(lagrangian,VectorValue{2,Float64},order) @santiagobadia: For Vector Laplacian
     for i=1:num_levels(mh)-1
       model = get_level_model(mh,i)
       if (GridapP4est.i_am_in(model.parts))
@@ -54,12 +56,14 @@ module GMGLinearSolverHDivRTTests
         #  println(get_cell_dof_ids(Vh))
         #end
         Ph=PatchFESpace(model.dmodel,reffe,DivConformity(),PD,Vh)
+        # Ph=PatchFESpace(model.dmodel,reffe,H1Conformity(),PD,Vh) # @santiagobadia: For vector Laplacian
         #map_parts(Ph.spaces) do space
         #  println(get_cell_dof_ids(space))
         #end
         Ω  = Triangulation(PD)
         dΩ = Measure(Ω,2*(order+1))
         a(u,v)=∫(v⋅u)dΩ+∫((α*divergence(v))*divergence(u))dΩ
+        # a(u,v)=∫(v⋅u)dΩ+∫(α*∇(v)⊙∇(u))dΩ
         PLS=PatchBasedLinearSolver(a,Ph,LUSolver())
         smoothers[i]=RichardsonSmoother(PLS,1,1.0/3.0)
       end
@@ -78,12 +82,14 @@ module GMGLinearSolverHDivRTTests
     domain=(0,1,0,1)
 
     reffe=ReferenceFE(raviart_thomas,Float64,order)
+    # reffe=ReferenceFE(lagrangian,VectorValue{2,Float64},order) @santiagobadia: For Vector Laplacian
     qdegree=2*(order+1)
 
     cmodel=CartesianDiscreteModel(domain,coarse_grid_partition)
     mh=ModelHierarchy(parts,cmodel,num_parts_x_level)
 
-    tests    = TestFESpace(mh,reffe)
+    # tests    = TestFESpace(mh,reffe)
+    tests    = TestFESpace(mh,reffe,dirichlet_tags="boundary")
     trials   = TrialFESpace(u,tests)
     fespaces = (tests,trials)
     smatrices= generate_stiffness_matrices(mh,fespaces,qdegree,α)
@@ -96,6 +102,7 @@ module GMGLinearSolverHDivRTTests
     Vh = tests[1]
     Uh = trials[1]
     a(u,v)=∫(v⋅u)dΩ+∫((α*divergence(v))*divergence(u))dΩ
+    # a(u,v)=∫(v⋅u)dΩ+∫(α*∇(v)⊙∇(u))dΩ # @santiagobadia: For vector Laplacian
     l(v)=∫(v⋅f)dΩ
     Vh = get_level_fe_space(tests[1])
     Uh = get_level_fe_space(trials[1])
@@ -137,6 +144,7 @@ module GMGLinearSolverHDivRTTests
     #  end
     # end
     model_hierarchy_free!(mh)
+    # println("Dirichlet",num_dirichlet_dofs(Vh)) #not implemented!
     history.iters,num_free_dofs(Vh)
   end
   if !MPI.Initialized()
@@ -145,21 +153,29 @@ module GMGLinearSolverHDivRTTests
   parts = get_part_ids(mpi,1)
   order=0
 
-  num_refinements=[1,2,3,4,5]
-  alpha_exps=[0,1,2,3,4]
-  iter_matrix=zeros(Int,5,5)
-  coarse_grid_partition=(5,5)
+  num_refinements=[1,2,3,4]#,5]
+  alpha_exps=[0,1,2,3]#,4]
+  nr = length(num_refinements)
+  na = length(alpha_exps)
+  iter_matrix=zeros(Int,nr,na)
+  coarse_grid_partition=(2,2)
   free_dofs=Vector{Int64}(undef,length(num_refinements))
 
   for ref=1:length(num_refinements)
+  # ref=5
       num_parts_x_level=[1 for i=1:num_refinements[ref]+1]
       for alpha_exp=1:length(alpha_exps)
-        α=10.0^alpha_exps[alpha_exp]
-        num_iters,num_free_dofs=run(parts,coarse_grid_partition,num_parts_x_level,order,α)
-        free_dofs[ref]=num_free_dofs
-        iter_matrix[ref,alpha_exp]=num_iters
+      # alpha_exp = 1
+      α= 10.0^alpha_exps[alpha_exp]
+      num_iters,num_free_dofs2=run(parts,coarse_grid_partition,num_parts_x_level,order,α)
+      free_dofs[ref]=num_free_dofs2
+      iter_matrix[ref,alpha_exp]=num_iters
       end
   end
+  # num_parts_x_level=[1 for i=1:num_refinements[2]+1]
+  # α = 1.0
+  # num_iters,num_free_dofs2=run(parts,coarse_grid_partition,num_parts_x_level,order,α)
+
   println(iter_matrix)
   println(free_dofs)
 
