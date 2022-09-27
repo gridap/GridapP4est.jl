@@ -1,4 +1,4 @@
-module GMGLinearSolverHDivRTTests
+module GMGLinearSolverLaplacianTests
   using MPI
   using Gridap
   using Gridap.FESpaces
