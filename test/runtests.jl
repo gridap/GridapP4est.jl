@@ -43,7 +43,7 @@ function run_tests(testdir)
                      "OctreeDistributedDiscreteModelsTests.jl"]
           np = 6
           extra_args = ""
-        elseif f in ["GMGLinearSolversHDivRTTests.jl","GMGLinearSolverLaplacianTests"]
+        elseif f in ["GMGLinearSolversHDivRTTests.jl","GMGLinearSolversLaplacianTests"]
           np = 1
           extra_args = ""
         else
