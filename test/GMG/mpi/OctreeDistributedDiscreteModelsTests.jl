@@ -15,7 +15,8 @@ module OctreeDistributedDiscreteModelsTests
     end
     coarse_discrete_model=CartesianDiscreteModel(domain,subdomains)
     model=OctreeDistributedDiscreteModel(parts,
-                                         coarse_discrete_model)
+                                         coarse_discrete_model,
+                                         1)
     fmodel,glue=refine(model)
     ffmodel,glue=refine(fmodel)
     octree_distributed_discrete_model_free!(model)

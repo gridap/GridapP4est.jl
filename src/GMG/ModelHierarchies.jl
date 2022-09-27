@@ -41,11 +41,11 @@ get_level_model_before_redist(a::ModelHierarchy,level::Integer)=
 get_level_model_before_redist(a::ModelHierarchyLevel) where {A,B}=a.model
 
 # Implement support for num_refs_x_level? (future work)
-function ModelHierarchy(parts,cmodel,num_procs_x_level; num_refs_x_level=nothing)
+function ModelHierarchy(parts,cmodel,num_procs_x_level; num_refs_coarse_model=0, num_refs_x_level=nothing)
   num_levels  = length(num_procs_x_level)
   level_parts = generate_level_parts(parts,num_procs_x_level)
 
-  model=OctreeDistributedDiscreteModel(level_parts[num_levels],cmodel)
+  model=OctreeDistributedDiscreteModel(level_parts[num_levels],cmodel,num_refs_coarse_model)
   meshes=Vector{ModelHierarchyLevel}(undef,num_levels)
 
   meshes[num_levels]=ModelHierarchyLevel(num_levels,model,nothing,nothing,nothing)
