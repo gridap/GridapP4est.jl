@@ -52,15 +52,6 @@ module GridapP4est
   export RestrictionMat
   export setup_interpolations_and_restrictions
 
-  # ModelHierarchy
-  export ModelHierarchy
-  export ModelHierarchyLevel
-  export model_hierarchy_free!
-  export num_levels
-  export get_level
-  export get_level_model
-  export get_level_model_before_redist
-
   # FESpaceHierarchy
   export FESpaceHierarchyLevel
   export redistribute_fe_function
