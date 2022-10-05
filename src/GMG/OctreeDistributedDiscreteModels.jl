@@ -1,4 +1,4 @@
-struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapType
+struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.AbstractDistributedDiscreteModel
   parts                  :: A
   dmodel                 :: B
   coarse_model           :: C
@@ -14,53 +14,53 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
                                         num_uniform_refinements;
                                         p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
-    comm = parts.comm
-    if i_am_in(parts.comm)
-      #sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
-      #p4est_init(C_NULL, p4est_verbosity_level)
+  comm = parts.comm
+  if i_am_in(parts.comm)
+    #sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
+    #p4est_init(C_NULL, p4est_verbosity_level)
 
-      ptr_pXest_connectivity,
-        ptr_pXest,
-          ptr_pXest_ghost,
-            ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
-                                                        comm,
-                                                        coarse_model,
-                                                        num_uniform_refinements)
-      dmodel=setup_distributed_discrete_model(Val{Dc},
-                                              parts,
-                                              coarse_model,
-                                              ptr_pXest_connectivity,
-                                              ptr_pXest,
-                                              ptr_pXest_ghost,
-                                              ptr_pXest_lnodes)
-
-      pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
-      pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
-
-      A=typeof(parts)
-      B=typeof(dmodel)
-      C=typeof(coarse_model)
-      D=typeof(ptr_pXest_connectivity)
-      E=typeof(ptr_pXest)
-      OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                                      dmodel,
+    ptr_pXest_connectivity,
+      ptr_pXest,
+        ptr_pXest_ghost,
+          ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
+                                                      comm,
                                                       coarse_model,
-                                                      ptr_pXest_connectivity,
-                                                      ptr_pXest)
-    else
-      ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
-      A=typeof(parts)
-      B=typeof(nothing)
-      C=typeof(coarse_model)
-      D=typeof(ptr_pXest_connectivity)
-      E=typeof(nothing)
-      OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                                      nothing,
-                                                      coarse_model,
-                                                      ptr_pXest_connectivity,
-                                                      nothing)
-    end
+                                                      num_uniform_refinements)
+    dmodel=setup_distributed_discrete_model(Val{Dc},
+                                            parts,
+                                            coarse_model,
+                                            ptr_pXest_connectivity,
+                                            ptr_pXest,
+                                            ptr_pXest_ghost,
+                                            ptr_pXest_lnodes)
+
+    pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
+    pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
+
+    A=typeof(parts)
+    B=typeof(dmodel)
+    C=typeof(coarse_model)
+    D=typeof(ptr_pXest_connectivity)
+    E=typeof(ptr_pXest)
+    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
+                                                    dmodel,
+                                                    coarse_model,
+                                                    ptr_pXest_connectivity,
+                                                    ptr_pXest)
+  else
+    ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
+    A=typeof(parts)
+    B=typeof(nothing)
+    C=typeof(coarse_model)
+    D=typeof(ptr_pXest_connectivity)
+    E=typeof(nothing)
+    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
+                                                    nothing,
+                                                    coarse_model,
+                                                    ptr_pXest_connectivity,
+                                                    nothing)
   end
+end
 
 function OctreeDistributedDiscreteModel(
     parts::MPIData{<:Integer},
@@ -222,45 +222,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
                                               Gridap.Geometry.num_faces(ftopology,d-1))
   end
 
-  # c_cell_faces=[]
-  # cache_c_cell_faces=[]
-  # f_cell_faces=[]
-  # cache_f_cell_faces=[]
-  # for d=1:Dc
-  #   push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
-  #   push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
-  #   push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
-  #   push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
-  # end
-  # parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
-  # for cell=1:num_f_cells
-  #   parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
-  #   child=fcell_to_child_id[cell]
-  #   for d=1:Dc
-  #     parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
-  #                                   c_cell_faces[d],
-  #                                   parent_cell)
-  #   end
-  #   for d=1:Dc
-  #     cell_f_faces=getindex!(cache_f_cell_faces[d],
-  #                             f_cell_faces[d],
-  #                             cell)
-  #     for (lf,f) in enumerate(cell_f_faces)
-  #       c     = rrule_f_to_c_lid_2D[d][child][lf]
-  #       dim_c = rrule_f_to_c_dim_2D[d][child][lf]
-  #       if (dim_c == Dc)
-  #         fine_to_coarse_faces_map[d][f]=parent_cell
-  #       else
-  #         fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
-  #       end
-  #       fine_to_coarse_faces_dim[d][f]=dim_c
-  #     end
-  #   end
-  # end
-
-  fine_to_coarse_faces_map,
-    fine_to_coarse_faces_dim,
-       fcell_to_child_id
+  fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
 function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
