@@ -75,6 +75,21 @@ function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscret
   end
 end
 
+# AbstractDistributedDiscreteModel API implementation
+Geometry.num_cells(model::OctreeDistributedDiscreteModel) = Geometry.num_cells(model.dmodel)
+Geometry.num_facets(model::OctreeDistributedDiscreteModel) = Geometry.num_facets(model.dmodel)
+Geometry.num_edges(model::OctreeDistributedDiscreteModel) = Geometry.num_edges(model.dmodel)
+Geometry.num_vertices(model::OctreeDistributedDiscreteModel) = Geometry.num_vertices(model.dmodel)
+Geometry.num_faces(model::OctreeDistributedDiscreteModel) = Geometry.num_faces(model.dmodel)
+Geometry.get_grid(model::OctreeDistributedDiscreteModel) = Geometry.get_grid(model.dmodel)
+Geometry.get_grid_topology(model::OctreeDistributedDiscreteModel) = Geometry.get_grid_topology(model.dmodel)
+Geometry.get_face_labeling(model::OctreeDistributedDiscreteModel) = Geometry.get_face_labeling(model.dmodel)
+Geometry.get_cell_gids(model::OctreeDistributedDiscreteModel) = Geometry.get_cell_gids(model.dmodel)
+Geometry.get_face_gids(model::OctreeDistributedDiscreteModel) = Geometry.get_face_gids(model.dmodel)
+
+###################################################################
+# Private methods 
+
 function pXest_copy(::Type{Val{Dc}}, ptr_pXest) where Dc
   if (Dc==2)
     p4est_copy(ptr_pXest, Cint(0))
@@ -434,25 +449,17 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
      ptr_ranks[i+1]=ptr_ranks[i]+ranks_count[rank]
   end
 
-  # if (pXest_old.mpirank == 1)
-  #    println("LST $(lst_ranks)")
-  #    println("LIDS $(local_ids)")
-  #    println("PTRS $(ptr_ranks)")
-  #    println("O2N $(old2new)")
-  # end
-
   lst_ranks,PartitionedArrays.Table(local_ids,ptr_ranks),old2new
 end
 
 struct RedistributeGlue
-  lids_rcv::MPIData{<:Table}
-  lids_snd::MPIData{<:Table}
-  parts_rcv::MPIData{<:Vector}
-  parts_snd::MPIData{<:Vector}
-  old2new::MPIData{<:Vector}
-  new2old::MPIData{<:Vector}
+  lids_rcv  ::MPIData{<:Table}   # Local IDs you need to get from others
+  lids_snd  ::MPIData{<:Table}   # Local IDs you need to send to others
+  parts_rcv ::MPIData{<:Vector}  # Procs you need to get things from 
+  parts_snd ::MPIData{<:Vector}  # Procs you need to send things to 
+  old2new   ::MPIData{<:Vector}  # Mapping of local IDs from the non-distributed to distributed mesh
+  new2old   ::MPIData{<:Vector}  # Mapping of local IDs from the distributed to non-distributed mesh
 end
-
 
 function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
   parts=model.parts
