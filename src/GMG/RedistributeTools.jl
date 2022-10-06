@@ -87,7 +87,7 @@ function redistribute_fe_function(uh_old::GridapDistributed.DistributedCellField
                                   Uh_old::GridapDistributed.DistributedSingleFieldFESpace,
                                   Uh_new::GridapDistributed.DistributedSingleFieldFESpace,
                                   model_new,
-                                  glue::RedistributeGlue;
+                                  glue::GridapDistributed.RedistributeGlue;
                                   reverse=false)
 
   if !reverse
