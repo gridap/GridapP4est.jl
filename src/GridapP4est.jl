@@ -4,6 +4,7 @@ module GridapP4est
   using Gridap.FESpaces
   using Gridap.Geometry
   using Gridap.Refinement
+  using Gridap.ReferenceFEs
 
   # BEG TO-REMOVE
   using MPI

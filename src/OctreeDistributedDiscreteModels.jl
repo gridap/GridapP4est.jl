@@ -1,3 +1,5 @@
+
+
 struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp}
   parts                  :: A
   dmodel                 :: B
@@ -11,13 +13,13 @@ struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.Abst
     coarse_model,
     ptr_pXest_connectivity,
     ptr_pXest) where {Dc,Dp}
-
+  
     A = typeof(parts)
     B = typeof(dmodel)
     C = typeof(coarse_model)
     D = typeof(ptr_pXest_connectivity)
     E = typeof(ptr_pXest)
-    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
+    return new{Dc,Dp,A,B,C,D,E}(parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
   end
 end
 
@@ -174,7 +176,7 @@ function _compute_fine_to_coarse_model_glue(
       nothing
     else
       reffe          = LagrangianRefFE(Float64,QUAD,1)
-      ref_cell_map   = get_f2c_ref_cell_map(reffe,ref)
+      ref_cell_map   = get_f2c_ref_cell_map(reffe,2)
       RefinementGlue(fine_to_coarse_faces_map,fcell_to_child_id,ref_cell_map)
     end
   end
