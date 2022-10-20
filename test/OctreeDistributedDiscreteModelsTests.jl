@@ -17,6 +17,7 @@ module OctreeDistributedDiscreteModelsTests
     model        = OctreeDistributedDiscreteModel(parts,coarse_model,1)
     fmodel,glue  = refine(model)
     ffmodel,glue = refine(fmodel)
+    GridapDistributed.local_views(model)
     octree_distributed_discrete_model_free!(model)
     octree_distributed_discrete_model_free!(fmodel)
     octree_distributed_discrete_model_free!(ffmodel)
