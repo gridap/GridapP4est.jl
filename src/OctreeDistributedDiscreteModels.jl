@@ -4,6 +4,21 @@ struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.Abst
   coarse_model           :: C
   ptr_pXest_connectivity :: D
   ptr_pXest              :: E
+
+  function OctreeDistributedDiscreteModel(
+    parts,
+    dmodel::GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp},
+    coarse_model,
+    ptr_pXest_connectivity,
+    ptr_pXest) where {Dc,Dp}
+
+    A = typeof(parts)
+    B = typeof(dmodel)
+    C = typeof(coarse_model)
+    D = typeof(ptr_pXest_connectivity)
+    E = typeof(ptr_pXest)
+    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
+  end
 end
 
 """
@@ -16,9 +31,6 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                         p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
   comm = parts.comm
   if i_am_in(parts.comm)
-    #sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
-    #p4est_init(C_NULL, p4est_verbosity_level)
-
     ptr_pXest_connectivity,
       ptr_pXest,
         ptr_pXest_ghost,
@@ -26,39 +38,20 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                                       comm,
                                                       coarse_model,
                                                       num_uniform_refinements)
-    dmodel=setup_distributed_discrete_model(Val{Dc},
+    dmodel = setup_distributed_discrete_model(Val{Dc},
                                             parts,
                                             coarse_model,
                                             ptr_pXest_connectivity,
                                             ptr_pXest,
                                             ptr_pXest_ghost,
                                             ptr_pXest_lnodes)
-
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-    A=typeof(parts)
-    B=typeof(dmodel)
-    C=typeof(coarse_model)
-    D=typeof(ptr_pXest_connectivity)
-    E=typeof(ptr_pXest)
-    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                                    dmodel,
-                                                    coarse_model,
-                                                    ptr_pXest_connectivity,
-                                                    ptr_pXest)
+    return OctreeDistributedDiscreteModel(parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
   else
     ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
-    A=typeof(parts)
-    B=typeof(nothing)
-    C=typeof(coarse_model)
-    D=typeof(ptr_pXest_connectivity)
-    E=typeof(nothing)
-    OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                                    nothing,
-                                                    coarse_model,
-                                                    ptr_pXest_connectivity,
-                                                    nothing)
+    return OctreeDistributedDiscreteModel(parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
   end
 end
 
@@ -134,24 +127,8 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
    [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
   ])
 
-struct FineToCoarseModelGlue{A,B,C} <: GridapType
-  fine_to_coarse_faces_map::A
-  fine_to_coarse_faces_dim::B
-  fcell_to_child_id::C
-end
-
-
-function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
-  A=typeof(parts)
-  B=typeof(nothing)
-  C=typeof(model.coarse_model)
-  D=typeof(model.ptr_pXest_connectivity)
-  E=typeof(nothing)
-  OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                                  nothing,
-                                                  model.coarse_model,
-                                                  model.ptr_pXest_connectivity,
-                                                  nothing)
+function _create_void_octree_model(model::OctreeDistributedDiscreteModel,parts)
+  OctreeDistributedDiscreteModel(parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
 end
 
 function _compute_fine_to_coarse_model_glue(
@@ -176,14 +153,14 @@ function _compute_fine_to_coarse_model_glue(
   end
 
   dfine_to_coarse_cells_map = map_parts(f1) do fine_to_coarse_faces_map
-    if fine_to_coarse_faces_map!=nothing
+    if fine_to_coarse_faces_map != nothing
        fine_to_coarse_faces_map[Dc+1]
     else
        Int[]
     end
   end
   dfcell_to_child_id = map_parts(f3) do fcell_to_child_id
-    if fcell_to_child_id!=nothing
+    if fcell_to_child_id != nothing
       fcell_to_child_id
     else
       Int[]
@@ -196,7 +173,9 @@ function _compute_fine_to_coarse_model_glue(
     if (!(GridapP4est.i_am_in(cparts)))
       nothing
     else
-      FineToCoarseModelGlue(fine_to_coarse_faces_map,fine_to_coarse_faces_dim,fcell_to_child_id)
+      reffe          = LagrangianRefFE(Float64,QUAD,1)
+      ref_cell_map   = get_f2c_ref_cell_map(reffe,ref)
+      RefinementGlue(fine_to_coarse_faces_map,fcell_to_child_id,ref_cell_map)
     end
   end
 end
@@ -206,30 +185,28 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
                                                         fmodel::DiscreteModel{Dc},
                                                         cpartition,
                                                         fpartition) where Dc
+  fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
+  fine_to_coarse_faces_dim = Vector{Vector{Int}}(undef,Dc)
 
-  fine_to_coarse_faces_map=Vector{Vector{Int}}(undef,Dc+1)
-  fine_to_coarse_faces_dim=Vector{Vector{Int}}(undef,Dc)
-
-  num_f_cells=num_cells(fmodel)
-  num_o_c_cells=length(cpartition.oid_to_lid)
-
+  num_f_cells   = num_cells(fmodel)
+  num_o_c_cells = length(cpartition.oid_to_lid)
 
   # Allocate local vector size # local cells
-  fine_to_coarse_faces_map[Dc+1]=Vector{Int}(undef,num_f_cells)
-  fcell_to_child_id=Vector{Int}(undef,num_f_cells)
+  fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
+  fcell_to_child_id = Vector{Int}(undef,num_f_cells)
 
   # Go over all cells of coarse grid portion
-  num_children=get_num_children(Val{Dc})
-  c=1
-  for cell=1:num_o_c_cells
-    for child=1:num_children
-      fine_to_coarse_faces_map[Dc+1][c+child-1]=cell
-      fcell_to_child_id[c+child-1]=child
+  num_children = get_num_children(Val{Dc})
+  c = 1
+  for cell = 1:num_o_c_cells
+    for child = 1:num_children
+      fine_to_coarse_faces_map[Dc+1][c+child-1] = cell
+      fcell_to_child_id[c+child-1] = child
     end
-    c=c+num_children
+    c = c + num_children
   end
-  ctopology=Gridap.Geometry.get_grid_topology(cmodel)
-  ftopology=Gridap.Geometry.get_grid_topology(fmodel)
+
+  ftopology = Gridap.Geometry.get_grid_topology(fmodel)
   for d=1:Dc
     fine_to_coarse_faces_map[d] = Vector{Int}(undef,
                                               Gridap.Geometry.num_faces(ftopology,d-1))
@@ -240,22 +217,20 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
-function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
-                parts=nothing) where {Dc,Dp}
-
+function refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
    comm = model.parts.comm
    if (i_am_in(comm))
      # Copy and refine input p4est
-     ptr_new_pXest=pXest_copy(Val{Dc}, model.ptr_pXest)
+     ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
      pXest_refine!(Val{Dc}, ptr_new_pXest)
    else
      ptr_new_pXest=nothing
    end
 
-   comm = parts==nothing ? model.parts.comm : parts.comm
+   comm = (parts == nothing) ? model.parts.comm : parts.comm
    if (i_am_in(comm))
-      if (parts!=nothing)
-        aux=ptr_new_pXest
+      if (parts != nothing)
+        aux = ptr_new_pXest
         ptr_new_pXest = _p4est_to_new_comm(ptr_new_pXest,
                                            model.ptr_pXest_connectivity,
                                            model.parts.comm,
@@ -266,12 +241,12 @@ function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       end
 
       # Extract ghost and lnodes
-      ptr_pXest_ghost=setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-      ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
+      ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
+      ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
 
       # Build fine-grid mesh
-      parts = parts==nothing ? model.parts : parts
-      fmodel=setup_distributed_discrete_model(Val{Dc},
+      parts  = (parts == nothing) ? model.parts : parts
+      fmodel = setup_distributed_discrete_model(Val{Dc},
                                               parts,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
@@ -286,19 +261,15 @@ function refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                                  model.dmodel,
                                                  fmodel)
 
-      A=typeof(parts)
-      B=typeof(fmodel)
-      C=typeof(model.coarse_model)
-      D=typeof(model.ptr_pXest_connectivity)
-      E=typeof(ptr_new_pXest)
-      OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
-                                      fmodel,
-                                      model.coarse_model,
-                                      model.ptr_pXest_connectivity,
-                                      ptr_new_pXest), dglue
+      ref_model = OctreeDistributedDiscreteModel(parts,
+                                     fmodel,
+                                     model.coarse_model,
+                                     model.ptr_pXest_connectivity,
+                                     ptr_new_pXest)
+      return ref_model, dglue
    else
-    parts = parts==nothing ? model.parts : parts
-    _create_void_octree_model(model,parts), nothing
+    parts = (parts == nothing) ? model.parts : parts
+    return _create_void_octree_model(model,parts), nothing
    end
 end
 
@@ -307,26 +278,23 @@ end
 # instantiates the same among Q processors.
 function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   if (GridapP4est.i_am_in(new_comm))
-    new_comm_num_parts = GridapP4est.num_parts(new_comm)
-    global_first_quadrant=Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
+    new_comm_num_parts    = GridapP4est.num_parts(new_comm)
+    global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
 
     pXest_conn = ptr_pXest_conn[]
-    pertree=Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
+    pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
     if (GridapP4est.i_am_in(old_comm))
       pXest          = ptr_pXest[]
-
-
       old_comm_num_parts = GridapP4est.num_parts(old_comm)
-
       old_global_first_quadrant = unsafe_wrap(Array,
                                               pXest.global_first_quadrant,
                                               old_comm_num_parts+1)
 
-      for i=1:length(old_global_first_quadrant)
-        global_first_quadrant[i]=old_global_first_quadrant[i]
+      for i = 1:length(old_global_first_quadrant)
+        global_first_quadrant[i] = old_global_first_quadrant[i]
       end
-      for i=length(old_global_first_quadrant)+1:length(global_first_quadrant)
-        global_first_quadrant[i]=old_global_first_quadrant[end]
+      for i = length(old_global_first_quadrant)+1:length(global_first_quadrant)
+        global_first_quadrant[i] = old_global_first_quadrant[end]
       end
       MPI.Bcast!(global_first_quadrant,0,new_comm)
       quadrants = P4est_wrapper.p4est_deflate_quadrants(ptr_pXest,C_NULL)
@@ -337,7 +305,7 @@ function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
       quadrants = sc_array_new_count(sizeof(p4est_quadrant_t), 0)
       MPI.Bcast!(pertree,0,new_comm)
     end
-    P4est_wrapper.p4est_inflate(new_comm,
+    return P4est_wrapper.p4est_inflate(new_comm,
                                 ptr_pXest_conn,
                                 global_first_quadrant,
                                 pertree,
@@ -345,100 +313,93 @@ function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
                                 C_NULL,
                                 C_NULL)
   else
-    nothing
+    return nothing
   end
 end
 
 
 function _p4est_tree_array_index(::Type{Val{Dc}},trees,itree) where Dc
   if (Dc==2)
-    p4est_tree_array_index(trees,itree)
+    return p4est_tree_array_index(trees,itree)
   elseif (Dc==3)
-    p8est_tree_array_index(trees,itree)
+    return p8est_tree_array_index(trees,itree)
   end
 end
 
 function _p4est_comm_find_owner(::Type{Val{Dc}},ptr_pXest,itree,quad,guess) where Dc
   if (Dc==2)
-    p4est_comm_find_owner(ptr_pXest,itree,quad,guess)
+    return p4est_comm_find_owner(ptr_pXest,itree,quad,guess)
   elseif (Dc==3)
-    p8est_comm_find_owner(ptr_pXest,itree,quad,guess)
+    return p8est_comm_find_owner(ptr_pXest,itree,quad,guess)
   end
 end
 
 function _p4est_quadrant_array_index(::Type{Val{Dc}}, quadrants, iquad) where Dc
   if (Dc==2)
-    p4est_quadrant_array_index(quadrants, iquad)
+    return p4est_quadrant_array_index(quadrants, iquad)
   elseif (Dc==3)
-    p8est_quadrant_array_index(quadrants, iquad)
+    return p8est_quadrant_array_index(quadrants, iquad)
   end
 end
 
 
 function _p4est_quadrant_is_equal(::Type{Val{Dc}},  q1, q2) where Dc
   if (Dc==2)
-    p4est_quadrant_is_equal(q1,q2)
+    return p4est_quadrant_is_equal(q1,q2)
   elseif (Dc==3)
-    p8est_quadrant_is_equal(q1, q2)
+    return p8est_quadrant_is_equal(q1, q2)
   end
 end
 
 function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr_pXest_new) where Dc
-  pXest_old=ptr_pXest_old[]
-  pXest_new=ptr_pXest_new[]
-  num_trees= Cint(pXest_old.connectivity[].num_trees)
-  my_rank  = pXest_old.mpirank
-  ranks_count=Dict{Int,Int}()
-  lst_ranks=Int[]
-  old2new=Vector{Int}(undef,pXest_old.local_num_quadrants)
-  current_old_quad_index=1
-  # if (my_rank==1)
-  #   println("???? $(pXest_old.local_num_quadrants) $(num_trees)" )
-  # end
-  for itree=0:num_trees-1
-    tree=_p4est_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
-    num_quads=Cint(tree.quadrants.elem_count)
-    # if (my_rank==1)
-    #   println(">>> $(num_quads)" )
-    # end
-    for iquad=0:num_quads-1
+  pXest_old   = ptr_pXest_old[]
+  pXest_new   = ptr_pXest_new[]
+  num_trees   = Cint(pXest_old.connectivity[].num_trees)
+  my_rank     = pXest_old.mpirank
+  ranks_count = Dict{Int,Int}()
+  lst_ranks   = Int[]
+  old2new     = Vector{Int}(undef,pXest_old.local_num_quadrants)
+  current_old_quad_index = 1
+
+  for itree = 0:num_trees-1
+    tree = _p4est_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
+    num_quads = Cint(tree.quadrants.elem_count)
+
+    for iquad = 0:num_quads-1
       q = _p4est_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
       new_rank = _p4est_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
-      # if (my_rank==1)
-      #   println("???? $(my_rank) $(new_rank) $(iquad) $(pXest_old.first_local_tree+itree)" )
-      # end
-      if (new_rank!=my_rank)
+
+      if (new_rank != my_rank)
         if (!(new_rank+1 in keys(ranks_count)))
           push!(lst_ranks,new_rank+1)
-          ranks_count[new_rank+1]=0
+          ranks_count[new_rank+1] = 0
         end
-        ranks_count[new_rank+1]+=1
-        old2new[current_old_quad_index]=0
+        ranks_count[new_rank+1] += 1
+        old2new[current_old_quad_index] = 0
       else
-        current_new_quad_index=1
-        # println("LLLL $(pXest_new.first_local_tree) $(pXest_new.last_local_tree)")
-        new_tree=_p4est_tree_array_index(Val{Dc},pXest_new.trees,pXest_new.first_local_tree)[]
-        for t=pXest_new.first_local_tree:pXest_new.last_local_tree
-          new_tree=_p4est_tree_array_index(Val{Dc},pXest_new.trees,t)[]
+        current_new_quad_index = 1
+        new_tree = _p4est_tree_array_index(Val{Dc},pXest_new.trees,pXest_new.first_local_tree)[]
+        for t = pXest_new.first_local_tree:pXest_new.last_local_tree
+          new_tree = _p4est_tree_array_index(Val{Dc},pXest_new.trees,t)[]
           if t == itree
             break
           end
           current_new_quad_index += Cint(new_tree.quadrants.elem_count)
         end
-        found=false
-        num_quads_new=Cint(new_tree.quadrants.elem_count)
-        for iquad_new=0:num_quads_new-1
+        found = false
+        num_quads_new = Cint(new_tree.quadrants.elem_count)
+        for iquad_new = 0:num_quads_new-1
           q_new = _p4est_quadrant_array_index(Val{Dc},new_tree.quadrants, iquad_new)
           found = _p4est_quadrant_is_equal(Val{Dc},q,q_new)!=0
           if found
             break
           end
-          current_new_quad_index+=1
+          current_new_quad_index += 1
         end
         Gridap.Helpers.@check found
-        old2new[current_old_quad_index]=current_new_quad_index
+        old2new[current_old_quad_index] = current_new_quad_index
       end
-      current_old_quad_index+=1
+      current_old_quad_index += 1
     end
   end
 
@@ -489,12 +450,7 @@ function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-    A = typeof(parts)
-    B = typeof(fmodel)
-    C = typeof(model.coarse_model)
-    D = typeof(model.ptr_pXest_connectivity)
-    E = typeof(ptr_pXest)
-    red_model = OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E}(parts,
+    red_model = OctreeDistributedDiscreteModel(parts,
                                     fmodel,
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
