@@ -69,16 +69,16 @@ function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscret
 end
 
 # AbstractDistributedDiscreteModel API implementation
-Geometry.num_cells(model::OctreeDistributedDiscreteModel) = Geometry.num_cells(model.dmodel)
-Geometry.num_facets(model::OctreeDistributedDiscreteModel) = Geometry.num_facets(model.dmodel)
-Geometry.num_edges(model::OctreeDistributedDiscreteModel) = Geometry.num_edges(model.dmodel)
-Geometry.num_vertices(model::OctreeDistributedDiscreteModel) = Geometry.num_vertices(model.dmodel)
-Geometry.num_faces(model::OctreeDistributedDiscreteModel) = Geometry.num_faces(model.dmodel)
-Geometry.get_grid(model::OctreeDistributedDiscreteModel) = Geometry.get_grid(model.dmodel)
-Geometry.get_grid_topology(model::OctreeDistributedDiscreteModel) = Geometry.get_grid_topology(model.dmodel)
-Geometry.get_face_labeling(model::OctreeDistributedDiscreteModel) = Geometry.get_face_labeling(model.dmodel)
-Geometry.get_cell_gids(model::OctreeDistributedDiscreteModel) = Geometry.get_cell_gids(model.dmodel)
-Geometry.get_face_gids(model::OctreeDistributedDiscreteModel) = Geometry.get_face_gids(model.dmodel)
+Gridap.Geometry.num_cells(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_cells(model.dmodel)
+Gridap.Geometry.num_facets(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_facets(model.dmodel)
+Gridap.Geometry.num_edges(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_edges(model.dmodel)
+Gridap.Geometry.num_vertices(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_vertices(model.dmodel)
+Gridap.Geometry.num_faces(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_faces(model.dmodel)
+Gridap.Geometry.get_grid(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_grid(model.dmodel)
+Gridap.Geometry.get_grid_topology(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_grid_topology(model.dmodel)
+Gridap.Geometry.get_face_labeling(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_face_labeling(model.dmodel)
+GridapDistributed.get_cell_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_cell_gids(model.dmodel)
+GridapDistributed.get_face_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_face_gids(model.dmodel)
 
 ###################################################################
 # Private methods 
