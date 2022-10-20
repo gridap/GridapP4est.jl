@@ -1,6 +1,8 @@
 module OctreeDistributedDiscreteModelsTests
   using MPI
   using Gridap
+  using Gridap.ReferenceFEs
+  using Gridap.FESpaces
   using PartitionedArrays
   using GridapDistributed
   using GridapP4est
@@ -13,11 +15,20 @@ module OctreeDistributedDiscreteModelsTests
       @assert length(subdomains) == 3
       domain=(0,1,0,1,0,1)
     end
+
+    # Generate models
     coarse_model = CartesianDiscreteModel(domain,subdomains)
     model        = OctreeDistributedDiscreteModel(parts,coarse_model,1)
     fmodel,glue  = refine(model)
     ffmodel,glue = refine(fmodel)
-    GridapDistributed.local_views(model)
+
+    # FESpaces tests
+    sol(x) = x[1] + x[2]
+    reffe = ReferenceFE(lagrangian,Float64,1)
+    test  = TestFESpace(model, reffe; conformity=:H1)
+    trial = TrialFESpace(sol,test)
+
+    # Destroy models
     octree_distributed_discrete_model_free!(model)
     octree_distributed_discrete_model_free!(fmodel)
     octree_distributed_discrete_model_free!(ffmodel)

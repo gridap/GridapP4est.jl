@@ -83,7 +83,7 @@ Gridap.Geometry.get_face_labeling(model::OctreeDistributedDiscreteModel) = Grida
 GridapDistributed.local_views(model::OctreeDistributedDiscreteModel) = GridapDistributed.local_views(model.dmodel)
 GridapDistributed.get_cell_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_cell_gids(model.dmodel)
 GridapDistributed.get_face_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_face_gids(model.dmodel)
-GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.generate_gids(model.dmodel)
+GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel,spaces) = GridapDistributed.generate_gids(model.dmodel,spaces)
 
 ###################################################################
 # Private methods 
