@@ -5,8 +5,8 @@ using MPI
 using ArgParse
 using Test
 
-@time @testset "RichardsonSmoothers" begin include("GMG/seq/RichardsonSmoothersTests.jl") end
-@time @testset "PatchLinearSolverTests" begin include("GMG/seq/PatchLinearSolverTests.jl") end
+#@time @testset "RichardsonSmoothers" begin include("GMG/seq/RichardsonSmoothersTests.jl") end
+#@time @testset "PatchLinearSolverTests" begin include("GMG/seq/PatchLinearSolverTests.jl") end
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -65,6 +65,6 @@ function run_tests(testdir)
 end
 
 run_tests(@__DIR__)
-run_tests(joinpath(@__DIR__, "GMG/mpi"))
+#run_tests(joinpath(@__DIR__, "GMG/mpi"))
 
 end # module
