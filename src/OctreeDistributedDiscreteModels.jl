@@ -222,7 +222,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
-function refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
+function Gridap.Refinement.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
    comm = model.parts.comm
    if (i_am_in(comm))
      # Copy and refine input p4est
