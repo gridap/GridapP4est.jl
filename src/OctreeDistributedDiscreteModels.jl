@@ -8,11 +8,18 @@ struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.Abst
   ptr_pXest              :: E
 
   function OctreeDistributedDiscreteModel(
+    Dc::Int, 
+    Dp::Int,
     parts,
-    dmodel::GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp},
+    dmodel::Union{GridapDistributed.AbstractDistributedDiscreteModel,Nothing},
     coarse_model,
     ptr_pXest_connectivity,
-    ptr_pXest) where {Dc,Dp}
+    ptr_pXest)
+
+    if (isa(dmodel,GridapDistributed.AbstractDistributedDiscreteModel))
+      Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
+      Gridap.Helpers.@check Dc == Gridap.Geometry.num_point_dims(dmodel)
+    end
   
     A = typeof(parts)
     B = typeof(dmodel)
@@ -21,6 +28,16 @@ struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.Abst
     E = typeof(ptr_pXest)
     return new{Dc,Dp,A,B,C,D,E}(parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
   end
+end
+
+function OctreeDistributedDiscreteModel(
+  parts,
+  dmodel::GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp},
+  coarse_model,
+  ptr_pXest_connectivity,
+  ptr_pXest) where {Dc,Dp}
+
+  return OctreeDistributedDiscreteModel(Dc,Dp,parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
 end
 
 """
@@ -50,10 +67,10 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-    return OctreeDistributedDiscreteModel(parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
+    return OctreeDistributedDiscreteModel(Dc,Dp,parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
   else
     ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
-    return OctreeDistributedDiscreteModel(parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
+    return OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
   end
 end
 
@@ -132,9 +149,11 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
    [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
   ])
 
-function _create_void_octree_model(model::OctreeDistributedDiscreteModel,parts)
-  OctreeDistributedDiscreteModel(parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
+
+function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+  OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
 end
+
 
 function _compute_fine_to_coarse_model_glue(
          cparts,
@@ -179,14 +198,16 @@ function _compute_fine_to_coarse_model_glue(
   map_parts(wait,tout)
 
   map_parts(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
-    cgids      = get_cell_gids(cmodel)
-    cpartition = cgids.partition.part
-    lids_rcv = fgids.exchanger.lids_rcv.part
+    if (GridapP4est.i_am_in(cparts))
+      cgids      = get_cell_gids(cmodel)
+      cpartition = cgids.partition.part
+      lids_rcv   = fgids.exchanger.lids_rcv.part
 
-    for i in 1:length(lids_rcv.data)
-      lid = lids_rcv.data[i]
-      gid = cgids_rcv.data[i]
-      fine_to_coarse_faces_map[Dc+1][lid] = cpartition.gid_to_lid[gid]
+      for i in 1:length(lids_rcv.data)
+        lid = lids_rcv.data[i]
+        gid = cgids_rcv.data[i]
+        fine_to_coarse_faces_map[Dc+1][lid] = cpartition.gid_to_lid[gid]
+      end
     end
   end
 
@@ -318,7 +339,8 @@ function Gridap.Refinement.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                                  model.dmodel,
                                                  fmodel)
 
-      ref_model = OctreeDistributedDiscreteModel(parts,
+      ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
+                                     parts,
                                      fmodel,
                                      model.coarse_model,
                                      model.ptr_pXest_connectivity,
@@ -507,7 +529,8 @@ function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-    red_model = OctreeDistributedDiscreteModel(parts,
+    red_model = OctreeDistributedDiscreteModel(Dc,Dp,
+                                    parts,
                                     fmodel,
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
