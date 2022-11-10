@@ -3,7 +3,7 @@ module GridapP4est
   using Gridap
   using Gridap.FESpaces
   using Gridap.Geometry
-  using Gridap.Refinement
+  using Gridap.Adaptivity
   using Gridap.ReferenceFEs
 
   # BEG TO-REMOVE

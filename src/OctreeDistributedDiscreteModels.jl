@@ -217,9 +217,9 @@ function _compute_fine_to_coarse_model_glue(
       nothing
     else
       reffe          = LagrangianRefFE(Float64,QUAD,1)
-      ref_cell_map   = Gridap.Refinement.get_f2c_reference_cell_map(reffe,2)
+      ref_cell_map   = Gridap.Adaptivity.get_f2c_reference_cell_map(reffe,2)
 
-      RefinementGlue(fine_to_coarse_faces_map,fcell_to_child_id,ref_cell_map)
+      AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,ref_cell_map)
     end
   end
 end
@@ -295,7 +295,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   return fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
-function Gridap.Refinement.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
+function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
    comm = model.parts.comm
    if (i_am_in(comm))
      # Copy and refine input p4est
