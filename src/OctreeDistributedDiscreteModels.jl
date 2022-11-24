@@ -216,10 +216,10 @@ function _compute_fine_to_coarse_model_glue(
     if (!(GridapP4est.i_am_in(cparts)))
       nothing
     else
-      reffe          = LagrangianRefFE(Float64,QUAD,1)
-      ref_cell_map   = Gridap.Adaptivity.get_f2c_reference_cell_map(reffe,2)
+      reffe  = LagrangianRefFE(Float64,QUAD,1)
+      rrules = Fill(Gridap.Adaptivity.RefinementRule(reffe,2),length(fcell_to_child_id))
 
-      AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,ref_cell_map)
+      AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
 end
