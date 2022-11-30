@@ -114,6 +114,18 @@ module GMGLinearSolverPoissonTests
                          reltol=1.0e-06,
                          Pl=ns)
 
+    fill!(x,0.0)
+    sA = A.values.part
+    sx = x.values.part
+    sb = b.values.part
+
+    IterativeSolvers.cg!(sx,
+                         sA,
+                         sb;
+                         verbose=i_am_main(parts),
+                         reltol=1.0e-06,
+                         Pl=ns)
+
     uh=FEFunction(Uh,x)
     # Error norms and print solution
     e = u-uh
@@ -130,7 +142,7 @@ module GMGLinearSolverPoissonTests
   end
 
   order=1
-  num_parts_x_level=[4,4,2,2]
+  num_parts_x_level=[1,1,1,1]
   ranks=num_parts_x_level[1]
   coarse_grid_partition=(2,2)
   prun(run,mpi,ranks,coarse_grid_partition,num_parts_x_level,order)

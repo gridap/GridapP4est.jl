@@ -228,6 +228,21 @@ function apply_GMG_level!(xh,
 end
 
 function Gridap.Algebra.solve!(
+  x::Vector,ns::GMGNumericalSetup,b::Vector)
+  smatrices = ns.solver.smatrices
+  Ah        = smatrices[1]
+  px        = PVector(0.0, Ah.cols)
+  pb        = PVector(0.0, Ah.rows)
+  Gridap.Helpers.@check num_parts(pb.values) == 1
+  Gridap.Helpers.@check num_parts(px.values) == 1
+  px.values.part .= x
+  pb.values.part .= b
+  Gridap.Algebra.solve!(px,ns,pb)
+  x .= px.values.part
+end
+
+
+function Gridap.Algebra.solve!(
   x::AbstractVector,ns::GMGNumericalSetup,b::AbstractVector)
 
   smatrices      = ns.solver.smatrices
