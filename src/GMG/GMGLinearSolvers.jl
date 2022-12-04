@@ -179,6 +179,7 @@ function apply_GMG_level!(xh,
                    xh.owned_values,
                    rh.owned_values) do Ah, xh, rh
             solve!(xh,coarsest_solver_cache,rh)
+            rh .= rh - Ah*xh
          end
       else
         solve!(xh,coarsest_solver_cache,rh)
