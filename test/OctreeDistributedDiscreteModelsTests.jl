@@ -32,6 +32,11 @@ module OctreeDistributedDiscreteModelsTests
     reffe = ReferenceFE(lagrangian,Float64,1)
     test  = TestFESpace(dfmodel, reffe; conformity=:H1)
     trial = TrialFESpace(sol,test)
+ 
+    # Refining and distributing
+    fmodel , rglue  = refine(model)
+    dfmodel, dglue  = redistribute(fmodel,level_parts[1])
+
 
     # Destroy models
     octree_distributed_discrete_model_free!(model)

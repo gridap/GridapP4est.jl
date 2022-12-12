@@ -492,18 +492,27 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
   lst_ranks,PartitionedArrays.Table(local_ids,ptr_ranks),old2new
 end
 
-function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
-  parts = model.parts
-  if (i_am_in(parts.comm))
-    ptr_pXest_old = model.ptr_pXest
-    ptr_pXest     = pXest_copy(Val{Dc}, model.ptr_pXest)
-    p4est_partition(ptr_pXest, 0, C_NULL)
+function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model=nothing) where {Dc,Dp}
+  parts = (parts_redistributed_model == nothing) ? model.parts : parts_redistributed_model
+  comm  = parts.comm
+  if (i_am_in(comm))
+    if (parts_redistributed_model == nothing)
+      ptr_pXest_old = model.ptr_pXest
+    else
+      ptr_pXest_old = _p4est_to_new_comm(model.ptr_pXest,
+                                         model.ptr_pXest_connectivity,
+                                         model.parts.comm,
+                                         parts.comm)
+    end
+    ptr_pXest_new = pXest_copy(Val{Dc}, ptr_pXest_old)
+    p4est_partition(ptr_pXest_new, 0, C_NULL)
 
     # Compute RedistributeGlue
-    parts_snd, lids_snd, old2new = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,ptr_pXest)
-    parts_rcv, lids_rcv, new2old = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest,ptr_pXest_old)
+    parts_snd, lids_snd, old2new = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,ptr_pXest_new)
+    parts_rcv, lids_rcv, new2old = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_new,ptr_pXest_old)
+
     lids_rcv, parts_rcv = map_parts(parts) do _
-      lids_rcv, parts_rcv
+       lids_rcv, parts_rcv
     end
     lids_snd, parts_snd = map_parts(parts) do _
       lids_snd, parts_snd
@@ -514,27 +523,27 @@ function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp
     glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
 
     # Extract ghost and lnodes
-    ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest)
-    ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
+    ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest_new)
+    ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_pXest_new, ptr_pXest_ghost)
 
     # Build fine-grid mesh
     fmodel = setup_distributed_discrete_model(Val{Dc},
-                                            model.parts,
-                                            model.coarse_model,
-                                            model.ptr_pXest_connectivity,
-                                            ptr_pXest,
-                                            ptr_pXest_ghost,
-                                            ptr_pXest_lnodes)
+                                             parts,
+                                             model.coarse_model,
+                                             model.ptr_pXest_connectivity,
+                                             ptr_pXest_new,
+                                             ptr_pXest_ghost,
+                                             ptr_pXest_lnodes)
 
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
     red_model = OctreeDistributedDiscreteModel(Dc,Dp,
-                                    parts,
-                                    fmodel,
-                                    model.coarse_model,
-                                    model.ptr_pXest_connectivity,
-                                    ptr_pXest)
+                                               parts,
+                                               fmodel,
+                                               model.coarse_model,
+                                               model.ptr_pXest_connectivity,
+                                               ptr_pXest_new)
     return red_model, glue
   else
     return _create_void_octree_model(model,model.parts), nothing
