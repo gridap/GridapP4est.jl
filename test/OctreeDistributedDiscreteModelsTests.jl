@@ -34,14 +34,17 @@ module OctreeDistributedDiscreteModelsTests
     trial = TrialFESpace(sol,test)
  
     # Refining and distributing
-    fmodel , rglue  = refine(model)
-    dfmodel, dglue  = redistribute(fmodel,level_parts[1])
+    fmodel_tasks_L2, rglue  = refine(model)
+    fmodel_tasks_L1, dglueL2toL1  = redistribute(fmodel_tasks_L2,level_parts[1])
 
+    # # Coarsening 
+    f_model_tasks_L2_back, dglueL1toL2 = redistribute(fmodel_tasks_L1,level_parts[2])
+    # model_back = coarsen(f_model_tasks_L2_back)
 
     # Destroy models
     octree_distributed_discrete_model_free!(model)
-    octree_distributed_discrete_model_free!(fmodel)
-    octree_distributed_discrete_model_free!(dfmodel)
+    octree_distributed_discrete_model_free!(fmodel_tasks_L2)
+    octree_distributed_discrete_model_free!(fmodel_tasks_L1)
   end
 
   prun(run,mpi,4,(2,2),[4,2])
