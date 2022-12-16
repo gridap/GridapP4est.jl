@@ -155,7 +155,7 @@ function pXest_coarsen!(::Type{Val{Dc}}, ptr_pXest) where Dc
     return Cint(1)
   end
   # C-callable coasen callback
-  coarse_fn_c=@cfunction($coarsen_fn,
+  coarsen_fn_c=@cfunction($coarsen_fn,
                          Cint,
                          (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
   if (Dc==2)
@@ -403,7 +403,7 @@ function coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
 
      # Build coarse-grid mesh
      cmodel = setup_distributed_discrete_model(Val{Dc},
-                                             parts,
+                                             model.parts,
                                              model.coarse_model,
                                              model.ptr_pXest_connectivity,
                                              ptr_new_pXest,
@@ -418,7 +418,7 @@ function coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
                                                 model.dmodel)
 
      c_octree_model = OctreeDistributedDiscreteModel(Dc,Dp,
-                                    parts,
+                                    model.parts,
                                     cmodel,
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
@@ -485,8 +485,14 @@ function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
 end 
 
 function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
+  @assert GridapP4est.i_am_in(old_comm)
+  pXest = ptr_pXest[]
+  pXest_conn = ptr_pXest_conn[]
+
+  pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
+  p4est_comm_count_pertree(ptr_pXest,pertree)
+
   if (GridapP4est.i_am_in(new_comm))
-    @assert GridapP4est.i_am_in(old_comm)
     new_comm_num_parts = GridapP4est.num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
     pXest=ptr_pXest[]
@@ -494,12 +500,7 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
     old_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
                                             old_comm_num_parts+1)
-
-    pXest_conn = ptr_pXest_conn[]
-    pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
     
-    pXest = ptr_pXest[]
-    new_comm_num_parts = GridapP4est.num_parts(new_comm)
     new_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
                                             new_comm_num_parts+1)
@@ -507,17 +508,19 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
     for i = 1:length(new_global_first_quadrant)
       global_first_quadrant[i] = old_global_first_quadrant[i]
     end
-    p4est_comm_count_pertree(ptr_pXest,pertree)
+    quadrants = P4est_wrapper.p4est_deflate_quadrants(ptr_pXest,C_NULL)
+
+    #print("$(global_first_quadrant) " * " \n")
     return P4est_wrapper.p4est_inflate(new_comm,
-                                       ptr_pXest_conn,
-                                       global_first_quadrant,
-                                       pertree,
-                                       quadrants,
-                                       C_NULL,
-                                       C_NULL)
-  else
-    return nothing
-  end                                     
+                                      ptr_pXest_conn,
+                                      global_first_quadrant,
+                                      pertree,
+                                      quadrants,
+                                      C_NULL,
+                                      C_NULL)
+  else 
+    return nothing 
+  end                                  
 end 
 
 
@@ -728,7 +731,7 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
     Psub=num_parts(subset_comm)
     first_global_quadrant=Int64((Float64(N)*Float64(psub-1))/(Float64(Psub)))
     @assert first_global_quadrant>=0 && first_global_quadrant<N
-    print("$(N) $(Psub) $(psub): $(first_global_quadrant)","\n")
+    # print("$(N) $(Psub) $(psub): $(first_global_quadrant)","\n")
   else 
     first_global_quadrant=N
   end
@@ -741,11 +744,13 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
   num_cells_per_part[end]=N
   for i=1:length(num_cells_per_part)-1
     num_cells_per_part[i]=num_cells_per_part[i+1]-num_cells_per_part[i]
-  end 
-  print("$(psub): $(num_cells_per_part) ", "\n")
-  
+  end
+  # p4est_vtk_write_file(model.ptr_pXest, C_NULL, "model.ptr_pXest")
+
   ptr_pXest_old=pXest_copy(Val{Dc},model.ptr_pXest)
   pXest_partition_given!(Val{Dc}, ptr_pXest_old, num_cells_per_part)
+
+  # p4est_vtk_write_file(ptr_pXest_old, C_NULL, "ptr_pXest_old")
 
   # ptr_pXest_old is distributed over supset_comm
   # once created, ptr_pXest_new is distributed over subset_comm
@@ -769,13 +774,15 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
 
 
   if (i_am_in(subset_comm))
+    # p4est_vtk_write_file(ptr_pXest_new, C_NULL, "ptr_pXest_new")
+
     # Extract ghost and lnodes
     ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest_new)
     ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_pXest_new, ptr_pXest_ghost)
 
     # # Build fine-grid mesh
     fmodel = setup_distributed_discrete_model(Val{Dc},
-                                              parts,
+                                              parts_redistributed_model,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
                                               ptr_pXest_new,
@@ -786,15 +793,15 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
     red_model = OctreeDistributedDiscreteModel(Dc,Dp,
-                                              parts,
-                                              fmodel,
-                                              model.coarse_model,
-                                              model.ptr_pXest_connectivity,
-                                              ptr_pXest_new) 
+                                               parts_redistributed_model,
+                                               fmodel,
+                                               model.coarse_model,
+                                               model.ptr_pXest_connectivity,
+                                               ptr_pXest_new)
+    return red_model, glue 
   else
-    red_model = _create_void_octree_model(model,model.parts), nothing
-  end 
-  #return red_model, glue
+    return _create_void_octree_model(model,parts_redistributed_model), nothing
+  end
 end
 
 function _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
