@@ -37,16 +37,8 @@ function run_tests(testdir)
         if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl"]
           np = 4
           extra_args = "-s 2 2 -r 2"
-        elseif f in ["MeshHierarchiesTests.jl",
-                     "RedistributeToolsTests.jl",
-                     "GMGLinearSolversPoissonTests.jl",
-                     "OctreeDistributedDiscreteModelsTests.jl"]
+        elseif f in ["OctreeDistributedDiscreteModelsTests.jl"]
           np = 6
-          extra_args = ""
-        elseif f in ["GMGLinearSolversHDivRTTests.jl",
-                     "GMGLinearSolversLaplacianTests.jl",
-                     "GMGLinearSolversVectorLaplacianTests.jl"]
-          np = 1
           extra_args = ""
         else
           np = nprocs
