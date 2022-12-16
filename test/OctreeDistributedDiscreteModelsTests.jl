@@ -38,6 +38,9 @@ module OctreeDistributedDiscreteModelsTests
     
     # Redistribute L2 -> L1 
     fmodel_tasks_L1, dglueL2toL1  = redistribute(fmodel_tasks_L2,level_parts[1])
+    if GridapP4est.i_am_in(level_parts[1])
+      @test fmodel_tasks_L1.parts === PartitionedArrays.get_part_ids(dglueL2toL1.parts_rcv)
+    end
 
     # Redistribute L1 -> L2
     f_model_tasks_L2_back, dglueL1toL2 = redistribute(fmodel_tasks_L1,level_parts[2])
@@ -48,10 +51,10 @@ module OctreeDistributedDiscreteModelsTests
     if (GridapP4est.i_am_in(level_parts[2]))
       @test num_cells(model_back)==num_cells(model)
       map_parts(model.dmodel.models,model_back.dmodel.models) do m1, m2 
-        Ωh1=Triangulation(m1)
-        dΩh1=Measure(Ωh1,2)
-        Ωh2=Triangulation(m2)
-        dΩh2=Measure(Ωh2,2)
+        Ωh1  = Triangulation(m1)
+        dΩh1 = Measure(Ωh1,2)
+        Ωh2  = Triangulation(m2)
+        dΩh2 = Measure(Ωh2,2)
         sum(∫(1)dΩh1) ≈ sum(∫(1)dΩh2)
       end 
     end  

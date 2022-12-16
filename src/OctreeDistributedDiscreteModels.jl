@@ -689,7 +689,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   parts_rcv, lids_rcv, new2old = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_new,ptr_pXest_old)
 
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old = 
-       _to_pdata(model.parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
+       _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
 
   glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
 
@@ -771,7 +771,6 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
        _to_pdata(model.parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
 
   glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
-
 
   if (i_am_in(subset_comm))
     # p4est_vtk_write_file(ptr_pXest_new, C_NULL, "ptr_pXest_new")
