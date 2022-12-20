@@ -386,7 +386,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
    end
 end
 
-function coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
+function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
   comm = model.parts.comm
   if (i_am_in(comm))
     # Copy and refine input p4est
@@ -652,7 +652,7 @@ end
 # Assumptions. Either:
 # A) model.parts MPI tasks are included in parts_redistributed_model MPI tasks; or 
 # B) model.parts MPI tasks include parts_redistributed_model MPI tasks
-function redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model=model.parts) where {Dc,Dp}
+function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model=model.parts) where {Dc,Dp}
   parts = (parts_redistributed_model === model.parts) ? model.parts : parts_redistributed_model
   comm  = parts.comm
   if (i_am_in(model.parts.comm) || i_am_in(parts.comm))
