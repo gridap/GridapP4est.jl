@@ -9,6 +9,9 @@ module OctreeDistributedDiscreteModelsTests
   using GridapP4est
   using P4est_wrapper
 
+  import Gridap.Adaptivity: refine 
+  import GridapDistributed: redistribute
+
   function run(parts,subdomains,num_parts_x_level)
     if length(subdomains) == 2
       domain=(0,1,0,1)
