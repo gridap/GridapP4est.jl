@@ -97,6 +97,7 @@ Gridap.Geometry.get_grid(model::OctreeDistributedDiscreteModel) = Gridap.Geometr
 Gridap.Geometry.get_grid_topology(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_grid_topology(model.dmodel)
 Gridap.Geometry.get_face_labeling(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_face_labeling(model.dmodel)
 
+GridapDistributed.get_parts(model::OctreeDistributedDiscreteModel) = model.parts
 GridapDistributed.local_views(model::OctreeDistributedDiscreteModel) = GridapDistributed.local_views(model.dmodel)
 GridapDistributed.get_cell_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_cell_gids(model.dmodel)
 GridapDistributed.get_face_gids(model::OctreeDistributedDiscreteModel,dim::Integer) = GridapDistributed.get_face_gids(model.dmodel,dim)
