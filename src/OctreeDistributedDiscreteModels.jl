@@ -81,13 +81,12 @@ function OctreeDistributedDiscreteModel(
   OctreeDistributedDiscreteModel(parts,coarse_model,0; p4est_verbosity_level=p4est_verbosity_level)
 end
 
-function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscreteModel{Dc}) where Dc
-  if i_am_in(model.parts.comm)
-    pXest_destroy(Val{Dc},model.ptr_pXest)
-  end
+function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+  OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
 end
 
 # AbstractDistributedDiscreteModel API implementation
+
 Gridap.Geometry.num_cells(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_cells(model.dmodel)
 Gridap.Geometry.num_facets(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_facets(model.dmodel)
 Gridap.Geometry.num_edges(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_edges(model.dmodel)
@@ -102,6 +101,30 @@ GridapDistributed.local_views(model::OctreeDistributedDiscreteModel) = GridapDis
 GridapDistributed.get_cell_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_cell_gids(model.dmodel)
 GridapDistributed.get_face_gids(model::OctreeDistributedDiscreteModel,dim::Integer) = GridapDistributed.get_face_gids(model.dmodel,dim)
 GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel,spaces) = GridapDistributed.generate_gids(model.dmodel,spaces)
+
+# Garbage collection
+
+function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscreteModel{Dc}) where Dc
+  parts = get_parts(model)
+  if i_am_in(parts)
+    pXest_destroy(Val{Dc},model.ptr_pXest)
+  end
+end
+
+function Init(a::OctreeDistributedDiscreteModel)
+  # @assert Threads.threadid() == 1
+  _NREFS[] += 1
+  finalizer(Finalize,a)
+end
+
+function Finalize(a::OctreeDistributedDiscreteModel)
+  if GridapP4est.Initialized()
+    octree_distributed_discrete_model_free!(a)
+    # @assert Threads.threadid() == 1
+    _NREFS[] -= 1
+  end
+  return nothing
+end
 
 ###################################################################
 # Private methods 
@@ -183,11 +206,6 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
    [[0,1,1,2], [1,0,2,1], [1,2,0,1], [2,1,1,0]],  # c
    [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
   ])
-
-
-function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
-  OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
-end
 
 
 function _compute_fine_to_coarse_model_glue(
