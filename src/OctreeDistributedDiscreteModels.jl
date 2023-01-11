@@ -69,8 +69,7 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
 
     return OctreeDistributedDiscreteModel(Dc,Dp,parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
   else
-    ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
-    return OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
+    return VoidOctreeDistributedDiscreteModel(coarse_model,parts)
   end
 end
 
@@ -81,7 +80,14 @@ function OctreeDistributedDiscreteModel(
   OctreeDistributedDiscreteModel(parts,coarse_model,0; p4est_verbosity_level=p4est_verbosity_level)
 end
 
-function _create_void_octree_model(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+# Void models
+
+function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+  ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
+  OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
+end
+
+function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
   OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
 end
 
@@ -403,7 +409,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
       return ref_model, dglue
    else
     parts = (parts == nothing) ? model.parts : parts
-    return _create_void_octree_model(model,parts), nothing
+    return VoidOctreeDistributedDiscreteModel(model,parts), nothing
    end
 end
 
@@ -446,7 +452,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                     ptr_new_pXest)
      return c_octree_model, dglue
   else
-     return _create_void_octree_model(model,model.parts), nothing
+     return VoidOctreeDistributedDiscreteModel(model,model.parts), nothing
   end
 end
 
@@ -688,7 +694,7 @@ function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc
       _redistribute_parts_supset_parts_redistributed(model, parts_redistributed_model)
     end 
   else
-    _create_void_octree_model(model,model.parts), nothing
+    VoidOctreeDistributedDiscreteModel(model,model.parts), nothing
   end
 end
 
@@ -820,7 +826,7 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
                                                ptr_pXest_new)
     return red_model, glue 
   else
-    return _create_void_octree_model(model,parts_redistributed_model), nothing
+    return VoidOctreeDistributedDiscreteModel(model,parts_redistributed_model), nothing
   end
 end
 
