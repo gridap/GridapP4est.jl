@@ -84,6 +84,8 @@ end
 
 # Void models
 
+const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscreteModel{Dc,Dp,A,Nothing,C,D,Nothing}
+
 function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},parts) where {Dc,Dp}
   ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
   OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
@@ -112,11 +114,16 @@ GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel,spaces) = 
 
 # Garbage collection
 
+function octree_distributed_discrete_model_free!(::VoidOctreeDistributedDiscreteModel)
+  return nothing
+end
+
 function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscreteModel{Dc}) where Dc
   parts = get_parts(model)
   if i_am_in(parts)
     pXest_destroy(Val{Dc},model.ptr_pXest)
   end
+  return nothing
 end
 
 function Init(a::OctreeDistributedDiscreteModel)

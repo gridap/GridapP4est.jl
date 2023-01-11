@@ -25,7 +25,7 @@ module OctreeDistributedDiscreteModelsTests
       level_parts  = GridapP4est.generate_level_parts(parts,num_parts_x_level)
       coarse_model = CartesianDiscreteModel(domain,subdomains)
       model        = OctreeDistributedDiscreteModel(level_parts[2],coarse_model,1)
-      #vmodel       = GridapP4est.VoidOctreeDistributedDiscreteModel(model,parts)
+      vmodel       = GridapP4est.VoidOctreeDistributedDiscreteModel(model,parts)
 
       # Refining and distributing
       fmodel , rglue  = refine(model,level_parts[1])
