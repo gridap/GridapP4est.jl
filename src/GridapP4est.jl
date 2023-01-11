@@ -19,6 +19,7 @@ module GridapP4est
   const PArrays = PartitionedArrays
 
   include("PartitionedArraysExtensions.jl")
+  include("Environment.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
   

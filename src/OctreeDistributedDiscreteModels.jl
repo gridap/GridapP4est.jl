@@ -1,6 +1,6 @@
 
 
-struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp}
+mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp}
   parts                  :: A
   dmodel                 :: B
   coarse_model           :: C
@@ -26,7 +26,9 @@ struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.Abst
     C = typeof(coarse_model)
     D = typeof(ptr_pXest_connectivity)
     E = typeof(ptr_pXest)
-    return new{Dc,Dp,A,B,C,D,E}(parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
+    model = new{Dc,Dp,A,B,C,D,E}(parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
+    Init(model)
+    return model
   end
 end
 
