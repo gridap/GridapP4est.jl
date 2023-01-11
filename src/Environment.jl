@@ -6,12 +6,13 @@ function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT,f
   if !MPI.Initialized()
       MPI.Init()
   end
+
   if finalize_atexit
     atexit(Finalize)
   end
   Finalize()
 
-  sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
+  # sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
   p4est_init(C_NULL, p4est_verbosity_level)
   _INITIALIZED[] = true
 
@@ -19,7 +20,7 @@ function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT,f
 end
 
 function Initialized()
-  return _INITIALIZED[]
+  return _INITIALIZED[] == true
 end
 
 function Finalize()
@@ -30,7 +31,7 @@ function Finalize()
     end
     _NREFS[] = 0
     _INITIALIZED[] = false
-    sc_finalize()
+    #sc_finalize()
   end
   return nothing
 end
