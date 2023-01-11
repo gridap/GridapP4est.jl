@@ -2,7 +2,7 @@
 const _NREFS = Ref(0)
 const _INITIALIZED = Ref(false)
 
-function Init(;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT,finalize_atexit=true)
+function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT,finalize_atexit=true)
   if !MPI.Initialized()
       MPI.Init()
   end
@@ -29,13 +29,14 @@ function Finalize()
       @warn "$(_NREFS[]) objects still not finalized before calling GridapP4est.Finalize()"
     end
     _NREFS[] = 0
+    _INITIALIZED[] = false
     sc_finalize()
   end
   return nothing
 end
 
-function with(f;kwargs...)
-  Init(;kwargs...)
+function with(f,parts::MPIData;kwargs...)
+  Init(parts;kwargs...)
   out = f()
   Finalize()
   return out
