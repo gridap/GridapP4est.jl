@@ -27,7 +27,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistribu
     D = typeof(ptr_pXest_connectivity)
     E = typeof(ptr_pXest)
     model = new{Dc,Dp,A,B,C,D,E}(parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
-    Init(model)
+    #Init(model)
     return model
   end
 end
@@ -127,17 +127,13 @@ function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscret
 end
 
 function Init(a::OctreeDistributedDiscreteModel)
-  # @assert Threads.threadid() == 1
   _NREFS[] += 1
   finalizer(Finalize,a)
 end
 
 function Finalize(a::OctreeDistributedDiscreteModel)
-  if GridapP4est.Initialized()
-    octree_distributed_discrete_model_free!(a)
-    # @assert Threads.threadid() == 1
-    _NREFS[] -= 1
-  end
+  octree_distributed_discrete_model_free!(a)
+  _NREFS[] -= 1
   return nothing
 end
 

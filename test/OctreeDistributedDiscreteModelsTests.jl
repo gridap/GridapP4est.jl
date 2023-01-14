@@ -61,7 +61,7 @@ module OctreeDistributedDiscreteModelsTests
           dΩh2 = Measure(Ωh2,2)
           sum(∫(1)dΩh1) ≈ sum(∫(1)dΩh2)
         end 
-      end  
+      end
 
       model  = OctreeDistributedDiscreteModel(level_parts[1],coarse_model,3)
       imodel = model
