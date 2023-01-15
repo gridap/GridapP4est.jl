@@ -6,7 +6,7 @@ function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
     @error "MPI not Initialized!"
   end
 
-  # sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
+  sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
   p4est_init(C_NULL, p4est_verbosity_level)
 
   return nothing
