@@ -3,7 +3,7 @@ const _NREFS = Ref(0)
 
 function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
   if !MPI.Initialized()
-      MPI.Init()
+    @error "MPI not Initialized!"
   end
 
   # sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
