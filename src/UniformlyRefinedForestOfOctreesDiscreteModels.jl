@@ -919,17 +919,11 @@ end
 
 
 """
-  See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
-  argument values for the p4est_verbosity_level parameter
 """
 function UniformlyRefinedForestOfOctreesDiscreteModel(
     parts::MPIData{<:Integer},
     coarse_discrete_model::DiscreteModel{Dc,Dp},
-    num_uniform_refinements::Int;
-    p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
-
-  sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
-  p4est_init(C_NULL, p4est_verbosity_level)
+    num_uniform_refinements::Int) where {Dc,Dp}
 
   comm = parts.comm
   ptr_pXest_connectivity,
@@ -954,7 +948,5 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
   pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
   pXest_destroy(Val{Dc},ptr_pXest)
   pXest_connectivity_destroy(Val{Dc},ptr_pXest_connectivity)
-
-  sc_finalize()
   dmodel
 end

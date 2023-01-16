@@ -1,33 +1,49 @@
 
 
 mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp}
-  parts                  :: A
-  dmodel                 :: B
-  coarse_model           :: C
-  ptr_pXest_connectivity :: D
-  ptr_pXest              :: E
+  parts                       :: A
+  dmodel                      :: B
+  coarse_model                :: C
+  ptr_pXest_connectivity      :: D
+  ptr_pXest                   :: E
 
+  # The model for which this variable is true, is the one
+  # ultimately responsible for deallocating the pXest_connectivity
+  # info
+  owns_ptr_pXest_connectivity :: Bool
+
+  # Might be optionally be used, e.g., to enforce that this
+  # model is GCed after another existing model
+  gc_ref                      :: Any
   function OctreeDistributedDiscreteModel(
-    Dc::Int, 
+    Dc::Int,
     Dp::Int,
     parts,
     dmodel::Union{GridapDistributed.AbstractDistributedDiscreteModel,Nothing},
     coarse_model,
     ptr_pXest_connectivity,
-    ptr_pXest)
+    ptr_pXest,
+    owns_ptr_pXest_connectivity::Bool,
+    gc_ref)
 
     if (isa(dmodel,GridapDistributed.AbstractDistributedDiscreteModel))
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_point_dims(dmodel)
     end
-  
+
     A = typeof(parts)
     B = typeof(dmodel)
     C = typeof(coarse_model)
     D = typeof(ptr_pXest_connectivity)
     E = typeof(ptr_pXest)
-    model = new{Dc,Dp,A,B,C,D,E}(parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
-    #Init(model)
+    model = new{Dc,Dp,A,B,C,D,E}(parts,
+                                 dmodel,
+                                 coarse_model,
+                                 ptr_pXest_connectivity,
+                                 ptr_pXest,
+                                 owns_ptr_pXest_connectivity,
+                                 gc_ref)
+    Init(model)
     return model
   end
 end
@@ -37,19 +53,25 @@ function OctreeDistributedDiscreteModel(
   dmodel::GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp},
   coarse_model,
   ptr_pXest_connectivity,
-  ptr_pXest) where {Dc,Dp}
+  ptr_pXest,
+  owns_ptr_pXest_connectivity,
+  gc_ref) where {Dc,Dp}
 
-  return OctreeDistributedDiscreteModel(Dc,Dp,parts, dmodel, coarse_model,ptr_pXest_connectivity, ptr_pXest)
+  return OctreeDistributedDiscreteModel(Dc,
+                                        Dp,
+                                        parts,
+                                        dmodel,
+                                        coarse_model,
+                                        ptr_pXest_connectivity,
+                                        ptr_pXest,
+                                        owns_ptr_pXest_connectivity,
+                                        gc_ref)
 end
 
-"""
-See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
-argument values for the p4est_verbosity_level parameter
-"""
+
 function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
-                                        num_uniform_refinements;
-                                        p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
+                                        num_uniform_refinements) where {Dc,Dp}
   comm = parts.comm
   if i_am_in(parts.comm)
     ptr_pXest_connectivity,
@@ -69,17 +91,27 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
-    return OctreeDistributedDiscreteModel(Dc,Dp,parts,dmodel,coarse_model,ptr_pXest_connectivity,ptr_pXest)
+    return OctreeDistributedDiscreteModel(Dc,
+                                          Dp,
+                                          parts,
+                                          dmodel,
+                                          coarse_model,
+                                          ptr_pXest_connectivity,
+                                          ptr_pXest,
+                                          true,
+                                          nothing)
   else
+    ## HUGE WARNING: Shouldn't we provide here the complementary of parts
+    ##               instead of parts? Otherwise, when calling _free!(...)
+    ##               we cannot trust on parts.
     return VoidOctreeDistributedDiscreteModel(coarse_model,parts)
   end
 end
 
 function OctreeDistributedDiscreteModel(
     parts::MPIData{<:Integer},
-    coarse_model::DiscreteModel{Dc,Dp};
-    p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
-  OctreeDistributedDiscreteModel(parts,coarse_model,0; p4est_verbosity_level=p4est_verbosity_level)
+    coarse_model::DiscreteModel{Dc,Dp}) where {Dc,Dp}
+  OctreeDistributedDiscreteModel(parts,coarse_model,0)
 end
 
 # Void models
@@ -88,11 +120,27 @@ const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscret
 
 function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},parts) where {Dc,Dp}
   ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
-  OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,coarse_model,ptr_pXest_connectivity,nothing)
+  OctreeDistributedDiscreteModel(Dc,
+                                 Dp,
+                                 parts,
+                                 nothing,
+                                 coarse_model,
+                                 ptr_pXest_connectivity,
+                                 nothing,
+                                 true,
+                                 nothing)
 end
 
 function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
-  OctreeDistributedDiscreteModel(Dc,Dp,parts,nothing,model.coarse_model,model.ptr_pXest_connectivity,nothing)
+  OctreeDistributedDiscreteModel(Dc,
+                                 Dp,
+                                 parts,
+                                 nothing,
+                                 model.coarse_model,
+                                 model.ptr_pXest_connectivity,
+                                 nothing,
+                                 false,
+                                 model)
 end
 
 # AbstractDistributedDiscreteModel API implementation
@@ -114,7 +162,13 @@ GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel,spaces) = 
 
 # Garbage collection
 
-function octree_distributed_discrete_model_free!(::VoidOctreeDistributedDiscreteModel)
+function octree_distributed_discrete_model_free!(model::VoidOctreeDistributedDiscreteModel{Dc}) where Dc
+  # parts = get_parts(model)
+  # if i_am_in(parts)
+    if (model.owns_ptr_pXest_connectivity)
+      pXest_connectivity_destroy(Val{Dc},model.ptr_pXest_connectivity)
+    end
+  # end
   return nothing
 end
 
@@ -122,23 +176,24 @@ function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscret
   parts = get_parts(model)
   if i_am_in(parts)
     pXest_destroy(Val{Dc},model.ptr_pXest)
+    if (model.owns_ptr_pXest_connectivity)
+      pXest_connectivity_destroy(Val{Dc},model.ptr_pXest_connectivity)
+    end
   end
   return nothing
 end
 
 function Init(a::OctreeDistributedDiscreteModel)
-  _NREFS[] += 1
   finalizer(Finalize,a)
 end
 
 function Finalize(a::OctreeDistributedDiscreteModel)
   octree_distributed_discrete_model_free!(a)
-  _NREFS[] -= 1
   return nothing
 end
 
 ###################################################################
-# Private methods 
+# Private methods
 
 function pXest_copy(::Type{Val{Dc}}, ptr_pXest) where Dc
   if (Dc==2)
@@ -238,7 +293,7 @@ function _compute_fine_to_coarse_model_glue(
         fine_to_coarse_faces_dim,
           fcell_to_child_id =
           _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,fmodel,cpartition,fpartition)
-      
+
       lids_snd    = fgids.exchanger.lids_snd.part
       lids_rcv    = fgids.exchanger.lids_rcv.part
       cgids_data  = cpartition.lid_to_gid[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
@@ -410,7 +465,9 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                      fmodel,
                                      model.coarse_model,
                                      model.ptr_pXest_connectivity,
-                                     ptr_new_pXest)
+                                     ptr_new_pXest,
+                                     false,
+                                     model)
       return ref_model, dglue
    else
     parts = (parts == nothing) ? model.parts : parts
@@ -454,7 +511,9 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                     cmodel,
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
-                                    ptr_new_pXest)
+                                    ptr_new_pXest,
+                                    false,
+                                    model)
      return c_octree_model, dglue
   else
      return VoidOctreeDistributedDiscreteModel(model,model.parts), nothing
@@ -467,10 +526,10 @@ end
 function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   A=is_included(old_comm,new_comm) # old \subset new (smaller to larger nparts)
   B=is_included(new_comm,old_comm) # old \supset new (larger to smaller nparts)
-  @assert xor(A,B) 
+  @assert xor(A,B)
   if (A)
     _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
-  else 
+  else
     _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   end
 end
@@ -513,8 +572,8 @@ function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
                                        C_NULL)
   else
     return nothing
-  end                                     
-end 
+  end
+end
 
 function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   @assert GridapP4est.i_am_in(old_comm)
@@ -532,7 +591,7 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
     old_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
                                             old_comm_num_parts+1)
-    
+
     new_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
                                             new_comm_num_parts+1)
@@ -550,10 +609,10 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
                                       quadrants,
                                       C_NULL,
                                       C_NULL)
-  else 
-    return nothing 
-  end                                  
-end 
+  else
+    return nothing
+  end
+end
 
 
 function _p4est_tree_array_index(::Type{Val{Dc}},trees,itree) where Dc
@@ -662,27 +721,27 @@ function is_included(commA::MPI.Comm,commB::MPI.Comm)
   num_partsB=num_parts(commB)
   if (num_partsA==num_partsB)
     return false
-  end 
+  end
   if (i_am_in(commA) && i_am_in(commB))
     result=num_partsA < num_partsB
     if (result)
       result=MPI.Allreduce(Int8(result),MPI.LOR,commB)
     else
       result=MPI.Allreduce(Int8(result),MPI.LOR,commA)
-    end 
-  else 
+    end
+  else
     result=false
     if (i_am_in(commB))
       result=MPI.Allreduce(Int8(result),MPI.LOR,commB)
-    else 
+    else
       result=MPI.Allreduce(Int8(result),MPI.LOR,commA)
-    end 
+    end
   end
-  Bool(result) 
+  Bool(result)
 end
 
 # Assumptions. Either:
-# A) model.parts MPI tasks are included in parts_redistributed_model MPI tasks; or 
+# A) model.parts MPI tasks are included in parts_redistributed_model MPI tasks; or
 # B) model.parts MPI tasks include parts_redistributed_model MPI tasks
 function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model=model.parts) where {Dc,Dp}
   parts = (parts_redistributed_model === model.parts) ? model.parts : parts_redistributed_model
@@ -697,7 +756,7 @@ function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc
       _redistribute_parts_subseteq_parts_redistributed(model,parts_redistributed_model)
     else
       _redistribute_parts_supset_parts_redistributed(model, parts_redistributed_model)
-    end 
+    end
   else
     VoidOctreeDistributedDiscreteModel(model,model.parts), nothing
   end
@@ -720,7 +779,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   parts_snd, lids_snd, old2new = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,ptr_pXest_new)
   parts_rcv, lids_rcv, new2old = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_new,ptr_pXest_old)
 
-  lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old = 
+  lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old =
        _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
 
   glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
@@ -746,25 +805,27 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
                                               fmodel,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
-                                              ptr_pXest_new)
+                                              ptr_pXest_new,
+                                              false,
+                                              model)
   return red_model, glue
 end
 
 function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model) where {Dc,Dp}
-  @assert model.parts !== parts_redistributed_model 
-  
+  @assert model.parts !== parts_redistributed_model
+
   subset_comm = parts_redistributed_model.comm
   supset_comm = model.parts.comm
   N=num_cells(model)
   if (i_am_in(subset_comm))
-    # This piece of code replicates the logic behind the 
+    # This piece of code replicates the logic behind the
     # "p4est_partition_cut_gloidx" function in the p4est library
     psub=parts_redistributed_model.part
     Psub=num_parts(subset_comm)
     first_global_quadrant=Int64((Float64(N)*Float64(psub-1))/(Float64(Psub)))
     @assert first_global_quadrant>=0 && first_global_quadrant<N
     # print("$(N) $(Psub) $(psub): $(first_global_quadrant)","\n")
-  else 
+  else
     first_global_quadrant=N
   end
 
@@ -786,20 +847,20 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
 
   # ptr_pXest_old is distributed over supset_comm
   # once created, ptr_pXest_new is distributed over subset_comm
-  ptr_pXest_new = _p4est_to_new_comm(ptr_pXest_old, 
+  ptr_pXest_new = _p4est_to_new_comm(ptr_pXest_old,
                                      model.ptr_pXest_connectivity,
                                      supset_comm,
                                      subset_comm)
 
   # Compute RedistributeGlue
-  parts_snd, lids_snd, old2new = 
+  parts_snd, lids_snd, old2new =
       _p4est_compute_migration_control_data(Val{Dc},model.ptr_pXest,ptr_pXest_old)
-  parts_rcv, lids_rcv, new2old = 
+  parts_rcv, lids_rcv, new2old =
       _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,model.ptr_pXest)
 
-  pXest_destroy(Val{Dc},ptr_pXest_old)   
+  pXest_destroy(Val{Dc},ptr_pXest_old)
 
-  lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old = 
+  lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old =
        _to_pdata(model.parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
 
   glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
@@ -828,8 +889,10 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
                                                fmodel,
                                                model.coarse_model,
                                                model.ptr_pXest_connectivity,
-                                               ptr_pXest_new)
-    return red_model, glue 
+                                               ptr_pXest_new,
+                                               false,
+                                               model)
+    return red_model, glue
   else
     return VoidOctreeDistributedDiscreteModel(model,parts_redistributed_model), nothing
   end
@@ -846,4 +909,4 @@ function _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new
     old2new,new2old
   end
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old
-end 
+end
