@@ -73,7 +73,7 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
                                         num_uniform_refinements) where {Dc,Dp}
   comm = parts.comm
-  if i_am_in(parts.comm)
+  if i_am_in(comm)
     ptr_pXest_connectivity,
       ptr_pXest,
         ptr_pXest_ghost,
@@ -280,7 +280,7 @@ function _compute_fine_to_coarse_model_glue(
          fmodel::GridapDistributed.DistributedDiscreteModel{Dc}) where Dc
 
   # Fill data for owned (from coarse cells owned by the processor)
-  fgids    = get_cell_gids(fmodel)
+  fgids = get_cell_gids(fmodel)
   f1,f2,f3, cgids_snd, cgids_rcv = map_parts(fmodel.models,fgids.partition) do fmodel, fpartition
     if (!(GridapP4est.i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
@@ -306,7 +306,7 @@ function _compute_fine_to_coarse_model_glue(
 
   # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
   dfcell_to_child_id = map_parts(f3) do fcell_to_child_id
-    (fcell_to_child_id != nothing) ? fcell_to_child_id : Int[]
+    !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
   end
   exchange!(dfcell_to_child_id, fgids.exchanger)
   tout = PArrays.async_exchange!(cgids_rcv,
@@ -417,24 +417,24 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
 end
 
 function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
-   comm = model.parts.comm
-   if (i_am_in(comm))
+   old_comm = model.parts.comm
+   if (i_am_in(old_comm))
      # Copy and refine input p4est
      ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
      pXest_refine!(Val{Dc}, ptr_new_pXest)
    else
-     ptr_new_pXest=nothing
+     ptr_new_pXest = nothing
    end
 
-   comm = (parts == nothing) ? model.parts.comm : parts.comm
-   if (i_am_in(comm))
-      if (parts != nothing)
+   new_comm = isa(parts,Nothing) ? old_comm : parts.comm
+   if i_am_in(new_comm)
+      if !isa(parts,Nothing)
         aux = ptr_new_pXest
         ptr_new_pXest = _p4est_to_new_comm(ptr_new_pXest,
                                            model.ptr_pXest_connectivity,
                                            model.parts.comm,
                                            parts.comm)
-        if (i_am_in(model.parts.comm))
+        if i_am_in(old_comm)
           pXest_destroy(Val{Dc},aux)
         end
       end
@@ -444,9 +444,9 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
       ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
 
       # Build fine-grid mesh
-      parts  = (parts == nothing) ? model.parts : parts
+      new_parts = isa(parts,Nothing) ? model.parts : parts
       fmodel = setup_distributed_discrete_model(Val{Dc},
-                                              parts,
+                                              new_parts,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
                                               ptr_new_pXest,
@@ -461,7 +461,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                                  fmodel)
 
       ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
-                                     parts,
+                                     new_parts,
                                      fmodel,
                                      model.coarse_model,
                                      model.ptr_pXest_connectivity,
@@ -470,8 +470,8 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                      model)
       return ref_model, dglue
    else
-    parts = (parts == nothing) ? model.parts : parts
-    return VoidOctreeDistributedDiscreteModel(model,parts), nothing
+    new_parts = isa(parts,Nothing) ? model.parts : parts
+    return VoidOctreeDistributedDiscreteModel(model,new_parts), nothing
    end
 end
 
@@ -542,7 +542,7 @@ function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
     pXest_conn = ptr_pXest_conn[]
     pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
     if (GridapP4est.i_am_in(old_comm))
-      pXest          = ptr_pXest[]
+      pXest = ptr_pXest[]
       old_comm_num_parts = GridapP4est.num_parts(old_comm)
       old_global_first_quadrant = unsafe_wrap(Array,
                                               pXest.global_first_quadrant,
