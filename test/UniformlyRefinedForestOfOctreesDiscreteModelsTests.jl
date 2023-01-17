@@ -93,7 +93,7 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
   parsed_args = parse_commandline()
   subdomains = Tuple(parsed_args["subdomains"])
   num_uniform_refinements = parsed_args["num-uniform-refinements"]
-  parts = get_part_ids(mpi,(prod(subdomains)))
+  parts = get_part_ids(MPIBackend(),(prod(subdomains)))
   run(parts,subdomains,num_uniform_refinements)
   MPI.Finalize()
 end # module

@@ -43,7 +43,7 @@ module OctreeDistributedDiscreteModelsTests
 
       # Redistribute L2 -> L1
       fmodel_tasks_L1, dglueL2toL1  = redistribute(fmodel_tasks_L2,level_parts[1])
-      if GridapP4est.i_am_in(level_parts[1])
+      if i_am_in(level_parts[1])
         @test fmodel_tasks_L1.parts === PartitionedArrays.get_part_ids(dglueL2toL1.parts_rcv)
       end
 
@@ -53,7 +53,7 @@ module OctreeDistributedDiscreteModelsTests
       # Coarsening
       model_back,glue = coarsen(f_model_tasks_L2_back)
 
-      if (GridapP4est.i_am_in(level_parts[2]))
+      if i_am_in(level_parts[2])
         @test num_cells(model_back)==num_cells(model)
         map_parts(model.dmodel.models,model_back.dmodel.models) do m1, m2
           Ωh1  = Triangulation(m1)
@@ -75,6 +75,6 @@ module OctreeDistributedDiscreteModelsTests
     end
   end
 
-  prun(run,mpi,4,(2,2),[4,2])
+  with_backend(run,MPIBackend(),4,(2,2),[4,2])
   MPI.Finalize()
 end # module

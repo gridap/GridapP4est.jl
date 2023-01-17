@@ -119,7 +119,7 @@ end
 const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscreteModel{Dc,Dp,A,Nothing,C,D,Nothing}
 
 function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},parts) where {Dc,Dp}
-  ptr_pXest_connectivity = GridapP4est.setup_pXest_connectivity(coarse_model)
+  ptr_pXest_connectivity = setup_pXest_connectivity(coarse_model)
   OctreeDistributedDiscreteModel(Dc,
                                  Dp,
                                  parts,
@@ -282,7 +282,7 @@ function _compute_fine_to_coarse_model_glue(
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
   f1,f2,f3, cgids_snd, cgids_rcv = map_parts(fmodel.models,fgids.partition) do fmodel, fpartition
-    if (!(GridapP4est.i_am_in(cparts)))
+    if (!(i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing, Int[], Int[]
     else
@@ -317,7 +317,7 @@ function _compute_fine_to_coarse_model_glue(
   map_parts(wait,tout)
 
   map_parts(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
-    if (GridapP4est.i_am_in(cparts))
+    if (i_am_in(cparts))
       cgids      = get_cell_gids(cmodel)
       cpartition = cgids.partition.part
       lids_rcv   = fgids.exchanger.lids_rcv.part
@@ -332,7 +332,7 @@ function _compute_fine_to_coarse_model_glue(
 
   # Create distributed glue
   map_parts(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
-    if (!(GridapP4est.i_am_in(cparts)))
+    if (!(i_am_in(cparts)))
       nothing
     else
       cmodel_local = cmodel.models.part
@@ -535,15 +535,15 @@ function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
 end
 
 function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
-  if (GridapP4est.i_am_in(new_comm))
-    new_comm_num_parts    = GridapP4est.num_parts(new_comm)
+  if (i_am_in(new_comm))
+    new_comm_num_parts    = num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
 
     pXest_conn = ptr_pXest_conn[]
     pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
-    if (GridapP4est.i_am_in(old_comm))
+    if (i_am_in(old_comm))
       pXest = ptr_pXest[]
-      old_comm_num_parts = GridapP4est.num_parts(old_comm)
+      old_comm_num_parts = num_parts(old_comm)
       old_global_first_quadrant = unsafe_wrap(Array,
                                               pXest.global_first_quadrant,
                                               old_comm_num_parts+1)
@@ -576,18 +576,18 @@ function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
 end
 
 function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
-  @assert GridapP4est.i_am_in(old_comm)
+  @assert i_am_in(old_comm)
   pXest = ptr_pXest[]
   pXest_conn = ptr_pXest_conn[]
 
   pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
   p4est_comm_count_pertree(ptr_pXest,pertree)
 
-  if (GridapP4est.i_am_in(new_comm))
-    new_comm_num_parts = GridapP4est.num_parts(new_comm)
+  if (i_am_in(new_comm))
+    new_comm_num_parts = num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
     pXest=ptr_pXest[]
-    old_comm_num_parts = GridapP4est.num_parts(old_comm)
+    old_comm_num_parts = num_parts(old_comm)
     old_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
                                             old_comm_num_parts+1)

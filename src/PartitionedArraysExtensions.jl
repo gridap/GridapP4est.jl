@@ -1,58 +1,5 @@
-function PartitionedArrays.num_parts(comm::MPI.Comm)
-  if comm != MPI.COMM_NULL
-    nparts = MPI.Comm_size(comm)
-  else
-    nparts = -1
-  end
-  nparts
-end
 
-function PartitionedArrays.get_part_id(comm::MPI.Comm)
-  if comm != MPI.COMM_NULL
-    id = MPI.Comm_rank(comm)+1
-  else
-    id = -1
-  end
-  id
-end
-
-function i_am_in(comm::MPI.Comm)
-  PartitionedArrays.get_part_id(comm) >=0
-end
-
-function i_am_in(parts)
-  i_am_in(parts.comm)
-end
-
-function PartitionedArrays.get_part_ids(comm::MPI.Comm)
-  rank = PartitionedArrays.get_part_id(comm)
-  nparts = PartitionedArrays.num_parts(comm)
-  PartitionedArrays.MPIData(rank,comm,(nparts,))
-end
-
-
-function PartitionedArrays.get_part_ids(b::MPIBackend,nparts::Union{Int,NTuple{N,Int} where N})
-  root_comm = MPI.Comm_dup(MPI.COMM_WORLD)
-  size = MPI.Comm_size(root_comm)
-  rank = MPI.Comm_rank(root_comm) 
-  need = prod(nparts)
-  if size < need
-    throw("Not enough MPI ranks, please run mpiexec with -n $need (at least)")
-  elseif size > need
-    if rank < need
-      comm=MPI.Comm_split(root_comm, 0, 0)
-      MPIData(PartitionedArrays.get_part_id(comm),comm,Tuple(nparts))
-    else
-      comm=MPI.Comm_split(root_comm, MPI.MPI_UNDEFINED, MPI.MPI_UNDEFINED)
-      MPIData(PartitionedArrays.get_part_id(comm),comm,(-1,))
-    end
-  else
-    comm = root_comm
-    MPIData(PartitionedArrays.get_part_id(comm),comm,Tuple(nparts))
-  end
-end
-
-function PartitionedArrays.prun(driver::Function,b::MPIBackend,nparts::Union{Int,NTuple{N,Int} where N},args...;kwargs...)
+function PartitionedArrays.with_backend(driver::Function,b::MPIBackend,nparts::Union{Int,NTuple{N,Int} where N},args...;kwargs...)
   if !MPI.Initialized()
     MPI.Init()
   end
@@ -83,18 +30,25 @@ function generate_level_parts(parts,num_procs_x_level)
   Gridap.Helpers.@check all(num_procs_x_level .<= size)
   Gridap.Helpers.@check all(num_procs_x_level .>= 1)
 
-  level_parts=Vector{typeof(parts)}(undef,length(num_procs_x_level))
-  for l=1:length(num_procs_x_level)
-    lsize=num_procs_x_level[l]
-    if l>1 && lsize==num_procs_x_level[l-1]
-      level_parts[l]=level_parts[l-1]
+  @static if isdefined(MPI,:MPI_UNDEFINED)
+    mpi_undefined = MPI.MPI_UNDEFINED[]
+  else
+    mpi_undefined = MPI.API.MPI_UNDEFINED[]
+  end
+  
+  nlevs = length(num_procs_x_level)
+  level_parts=Vector{typeof(parts)}(undef,nlevs)
+  for l = 1:nlevs
+    lsize = num_procs_x_level[l]
+    if (l > 1) && (lsize == num_procs_x_level[l-1])
+      level_parts[l] = level_parts[l-1]
     else
       if rank < lsize
-        comm=MPI.Comm_split(root_comm, 0, 0)
+        comm=MPI.Comm_split(root_comm,0,0)
       else
-        comm=MPI.Comm_split(root_comm, MPI.MPI_UNDEFINED, MPI.MPI_UNDEFINED)
+        comm=MPI.Comm_split(root_comm,mpi_undefined,mpi_undefined)
       end
-      level_parts[l]=get_part_ids(comm)
+      level_parts[l] = get_part_ids(comm)
     end
   end
   return level_parts
