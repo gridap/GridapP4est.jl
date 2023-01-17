@@ -6,13 +6,7 @@ module GridapP4est
   using Gridap.Adaptivity
   using Gridap.ReferenceFEs
 
-  # BEG TO-REMOVE
   using MPI
-  using LinearAlgebra
-  using IterativeSolvers
-  using Printf
-  # END TO-REMOVE
-
   using PartitionedArrays
   using GridapDistributed
   using P4est_wrapper
