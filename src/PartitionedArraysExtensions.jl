@@ -1,28 +1,4 @@
 
-function PartitionedArrays.with_backend(driver::Function,b::MPIBackend,nparts::Union{Int,NTuple{N,Int} where N},args...;kwargs...)
-  if !MPI.Initialized()
-    MPI.Init()
-  end
-  if MPI.Comm_size(MPI.COMM_WORLD) == 1
-    part = get_part_ids(b,nparts)
-    driver(part,args...;kwargs...)
-  else
-    try
-       part = get_part_ids(b,nparts)
-       if i_am_in(part) 
-         driver(part,args...;kwargs...)
-       end
-    catch e
-      @error "" exception=(e, catch_backtrace())
-      if MPI.Initialized() && !MPI.Finalized()
-        MPI.Abort(MPI.COMM_WORLD,1)
-      end
-    end
-  end
-  # We are NOT invoking MPI.Finalize() here because we rely on
-  # MPI.jl, which registers MPI.Finalize() in atexit()
-end
-
 function generate_level_parts(parts,num_procs_x_level)
   root_comm = parts.comm
   rank = MPI.Comm_rank(root_comm)
