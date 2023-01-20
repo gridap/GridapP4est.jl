@@ -163,22 +163,18 @@ GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel,spaces) = 
 # Garbage collection
 
 function octree_distributed_discrete_model_free!(model::VoidOctreeDistributedDiscreteModel{Dc}) where Dc
-  # parts = get_parts(model)
-  # if i_am_in(parts)
-    if (model.owns_ptr_pXest_connectivity)
-      pXest_connectivity_destroy(Val{Dc},model.ptr_pXest_connectivity)
-    end
-  # end
+  if (model.owns_ptr_pXest_connectivity)
+    pXest_connectivity_destroy(Val{Dc},model.ptr_pXest_connectivity)
+  end
   return nothing
 end
 
 function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscreteModel{Dc}) where Dc
-  parts = get_parts(model)
-  if i_am_in(parts)
+  if !isa(model.ptr_pXest,Nothing)
     pXest_destroy(Val{Dc},model.ptr_pXest)
-    if (model.owns_ptr_pXest_connectivity)
-      pXest_connectivity_destroy(Val{Dc},model.ptr_pXest_connectivity)
-    end
+  end
+  if (model.owns_ptr_pXest_connectivity)
+    pXest_connectivity_destroy(Val{Dc},model.ptr_pXest_connectivity)
   end
   return nothing
 end
