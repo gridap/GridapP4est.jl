@@ -1,3 +1,6 @@
+# This variable is necessary to avoid libsc being initialized twice
+const _INITIALIZED = Ref(false)
+
 """
 See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
 argument values for the p4est_verbosity_level parameter
@@ -6,8 +9,11 @@ function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
   if !MPI.Initialized()
     @error "MPI not Initialized!"
   end
-  sc_init(parts.comm, Cint(false), Cint(false), C_NULL, p4est_verbosity_level)
-  p4est_init(C_NULL, p4est_verbosity_level)
+  if _INITIALIZED[] == false
+    sc_init(parts.comm, Cint(false), Cint(false), C_NULL, p4est_verbosity_level)
+    p4est_init(C_NULL, p4est_verbosity_level)
+    _INITIALIZED[] = true
+  end
   return nothing
 end
 
