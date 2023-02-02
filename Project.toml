@@ -20,7 +20,7 @@ Gridap = "0.17"
 GridapDistributed = "0.2.0"
 MPI = "0.16, 0.17, 0.18, 0.19"
 P4est_wrapper = "0.1"
-PartitionedArrays = "0.2.4"
+PartitionedArrays = "0.2.4, 0.3"
 julia = "1.5,1.6"
 
 [extras]
