@@ -23,4 +23,8 @@ module GridapP4est
   export coarsen
   export redistribute
   export octree_distributed_discrete_model_free!
+
+  export generate_node_coordinates
+  export setup_cell_prange
+
 end
