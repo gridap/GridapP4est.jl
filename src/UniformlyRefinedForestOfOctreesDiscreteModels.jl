@@ -628,6 +628,8 @@ function generate_face_labeling(parts,
         else
            ref_cell=owned_trees_offset[tree]+data.quadid+1
         end
+        println(ref_cell)
+        println(sides[1])
         face=sides[1].face+1
         if Dc==2
           gridap_facet=P4EST_2_GRIDAP_FACET_2D[face]

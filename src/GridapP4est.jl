@@ -26,5 +26,5 @@ module GridapP4est
 
   export generate_node_coordinates
   export setup_cell_prange
-
+  export generate_grid_and_topology
 end

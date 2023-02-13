@@ -130,58 +130,6 @@ function process_current_face!(gridap_cell_faces,
   return num_regular_faces
 end
 
-# TO-DO: refine and coarsening flags should be an input argument, instead of being hard-coded
-function adapt_non_conforming_work_in_progress(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
-  # Copy and refine input p4est
-  ptr_new_pXest = GridapP4est.pXest_copy(Val{Dc}, model.ptr_pXest)
-
-  user_data = allocate_and_set_refinement_and_coarsening_flags(ptr_new_pXest)
-  p4est_reset_data(ptr_new_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(user_data))
-  p4est_refine_ext(ptr_new_pXest, 0, -1, refine_callback_2d_c, C_NULL, C_NULL)
-  p4est_partition(ptr_new_pXest, 1, C_NULL)
-
-  p4est_vtk_write_file(ptr_new_pXest, C_NULL, string("adapted_forest"))
-
-  ptr_pXest_ghost = GridapP4est.setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-  pXest_lnodes = GridapP4est.p4est_lnodes_new(ptr_new_pXest, ptr_pXest_ghost, -2)
-
-  cell_prange = setup_cell_prange(Val{Dc}, parts, ptr_new_pXest, ptr_pXest_ghost)
-
-  gridap_cells_vertices,
-  num_regular_vertices, num_hanging_vertices,
-  hanging_vertices_owner_cell_and_lface,
-  gridap_cells_faces,
-  num_regular_faces, num_hanging_faces,
-  hanging_faces_owner_cell_and_lface =
-    generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
-
-  println("#### vertices ###")
-  println("num_regular_vertices: $(num_regular_vertices)")
-  println("num_hanging_vertices: $(num_hanging_vertices)")
-  println("gridap_cells_vertices: $(gridap_cells_vertices)")
-  println(hanging_vertices_owner_cell_and_lface)
-
-  println("### faces ###")
-  println("num_regular_faces: $(num_regular_faces)")
-  println("num_hanging_faces: $(num_hanging_faces)")
-  println("gridap_cells_faces: $(gridap_cells_faces)")
-  println(hanging_faces_owner_cell_and_lface)
-
-  @show nlvertices = map_parts(num_regular_vertices,num_hanging_vertices) do i,j
-    i+j
-  end
-
-  node_coordinates=generate_node_coordinates(Val{Dc},
-  gridap_cells_vertices,
-  nlvertices,
-  model.ptr_pXest_connectivity,
-  ptr_new_pXest,
-  ptr_pXest_ghost)
-
-  println("node_coordinates: $(node_coordinates)")
-
-end
-
 function generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
 
   lnodes = pXest_lnodes[]
@@ -221,16 +169,19 @@ function generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
 
     n = length(indices.lid_to_part)
     gridap_cells_vertices_ptrs = Vector{Int32}(undef,n+1)
+    gridap_cells_faces_ptrs = Vector{Int32}(undef,n+1)
     gridap_cells_vertices_ptrs[1]=1
+    gridap_cells_faces_ptrs[1]=1
     for i=1:n
-      gridap_cells_vertices_ptrs[i+1]=gridap_cells_vertices_ptrs[i]+lnodes.vnodes
+      gridap_cells_vertices_ptrs[i+1]=gridap_cells_vertices_ptrs[i]+4
+      gridap_cells_faces_ptrs[i+1]=gridap_cells_faces_ptrs[i]+4
     end
 
     gridap_cells_vertices_data = Vector{Int}(undef, lnodes.num_local_elements * 4)
     gridap_cells_vertices_data .= -1
 
-    gridap_cells_faces = Vector{Int}(undef, lnodes.num_local_elements * 4)
-    gridap_cells_faces .= -1
+    gridap_cells_faces_data = Vector{Int}(undef, lnodes.num_local_elements * 4)
+    gridap_cells_faces_data .= -1
 
     for cell = 1:lnodes.num_local_elements
       start = (cell - 1) * lnodes.vnodes + 1
@@ -242,7 +193,7 @@ function generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
 
       gridap_cell_vertices = view(gridap_cells_vertices_data,
         start_gridap_vertices+1:start_gridap_vertices+num_cell_vertices)
-      gridap_cell_faces = view(gridap_cells_faces,
+      gridap_cell_faces = view(gridap_cells_faces_data,
         start_gridap_faces+1:start_gridap_faces+num_cell_faces)
       has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
       if has_hanging == 0
@@ -357,7 +308,7 @@ function generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
       owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
       num_hanging_faces += 1
       start_gridap_faces = (cell - 1) * num_cell_faces
-      gridap_cells_faces[start_gridap_faces+lface] = num_regular_faces + num_hanging_faces
+      gridap_cells_faces_data[start_gridap_faces+lface] = num_regular_faces + num_hanging_faces
       (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
       hanging_faces_owner_cell_and_lface[num_hanging_faces] =
         (owner_cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])
@@ -390,6 +341,7 @@ function generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
     println(hanging_faces_pairs_to_owner_face)
 
     gridap_cells_vertices = Table(gridap_cells_vertices_data,gridap_cells_vertices_ptrs)
+    gridap_cells_faces = Table(gridap_cells_faces_data,gridap_cells_faces_ptrs)
 
     return gridap_cells_vertices,
     num_regular_vertices, num_hanging_vertices,
@@ -481,8 +433,81 @@ parts = get_part_ids(MPIBackend(), 1)
 # run(parts, (1, 1))
 # MPI.Finalize()
 
+# This is for debuging
+Dc=2
+domain = (0, 1, 0, 1)
+subdomains = (1, 1)
+coarse_model = CartesianDiscreteModel(domain, subdomains)
+model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
 
+# TO-DO: refine and coarsening flags should be an input argument, instead of being hard-coded
+# function adapt_non_conforming_work_in_progress(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
+  # Copy and refine input p4est
+  ptr_new_pXest = GridapP4est.pXest_copy(Val{Dc}, model.ptr_pXest)
 
+  user_data = allocate_and_set_refinement_and_coarsening_flags(ptr_new_pXest)
+  p4est_reset_data(ptr_new_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(user_data))
+  p4est_refine_ext(ptr_new_pXest, 0, -1, refine_callback_2d_c, C_NULL, C_NULL)
+  p4est_partition(ptr_new_pXest, 1, C_NULL)
 
+  p4est_vtk_write_file(ptr_new_pXest, C_NULL, string("adapted_forest"))
 
+  ptr_pXest_ghost = GridapP4est.setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
+  pXest_lnodes = GridapP4est.p4est_lnodes_new(ptr_new_pXest, ptr_pXest_ghost, -2)
 
+  cell_prange = setup_cell_prange(Val{Dc}, parts, ptr_new_pXest, ptr_pXest_ghost)
+
+  gridap_cells_vertices,
+  num_regular_vertices, num_hanging_vertices,
+  hanging_vertices_owner_cell_and_lface,
+  gridap_cells_faces,
+  num_regular_faces, num_hanging_faces,
+  hanging_faces_owner_cell_and_lface =
+    generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
+
+  println("#### vertices ###")
+  println("num_regular_vertices: $(num_regular_vertices)")
+  println("num_hanging_vertices: $(num_hanging_vertices)")
+  println("gridap_cells_vertices: $(gridap_cells_vertices)")
+  println(hanging_vertices_owner_cell_and_lface)
+
+  println("### faces ###")
+  println("num_regular_faces: $(num_regular_faces)")
+  println("num_hanging_faces: $(num_hanging_faces)")
+  println("gridap_cells_faces: $(gridap_cells_faces)")
+  println(hanging_faces_owner_cell_and_lface)
+
+  @show nlvertices = map_parts(num_regular_vertices,num_hanging_vertices) do i,j
+    i+j
+  end
+
+  node_coordinates=generate_node_coordinates(Val{Dc},
+  gridap_cells_vertices,
+  nlvertices,
+  model.ptr_pXest_connectivity,
+  ptr_new_pXest,
+  ptr_pXest_ghost)
+
+  println("node_coordinates: $(node_coordinates)")
+
+  grid,topology=generate_grid_and_topology(Val{Dc},
+  gridap_cells_vertices,
+  nlvertices,
+  node_coordinates)
+
+  map_parts(topology,gridap_cells_faces) do topology,cell_faces
+    cells_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
+    topology.n_m_to_nface_to_mfaces[3,2] = cells_faces_gridap
+    topology.n_m_to_nface_to_mfaces[2,3] = Gridap.Geometry.generate_cells_around(cells_faces_gridap)
+    return nothing
+  end
+
+  # face_labeling=GridapP4est.generate_face_labeling(parts,
+  # cell_prange,
+  # coarse_model,
+  # grid,
+  # topology,
+  # ptr_new_pXest,
+  # ptr_pXest_ghost)
+
+# end
