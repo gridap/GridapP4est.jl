@@ -2,6 +2,7 @@ using P4est_wrapper
 using GridapP4est
 using Gridap
 using PartitionedArrays
+using GridapDistributed
 using MPI
 
 # Generate a local numbering of vertices that includes hanging vertices 
@@ -502,12 +503,17 @@ model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
     return nothing
   end
 
-  # face_labeling=GridapP4est.generate_face_labeling(parts,
-  # cell_prange,
-  # coarse_model,
-  # grid,
-  # topology,
-  # ptr_new_pXest,
-  # ptr_pXest_ghost)
+  face_labeling=GridapP4est.generate_face_labeling(parts,
+  cell_prange,
+  coarse_model,
+  grid,
+  topology,
+  ptr_new_pXest,
+  ptr_pXest_ghost)
+
+  discretemodel=map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
+    Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
+  end
+  distributed_discretemodel=GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange)
 
 # end

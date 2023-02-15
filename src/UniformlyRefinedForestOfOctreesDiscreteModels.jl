@@ -621,16 +621,43 @@ function generate_face_labeling(parts,
 
         nsides=info.sides.elem_count
         tree=sides[1].treeid+1
+        is_boundary=info.tree_boundary
         # We are on the interior of a tree
-        data=sides[1].is.full
+        if sides[1].is_hanging == 0
+          face=sides[1].face+1
+          data=sides[1].is.full
+        else
+          face=sides[2].face+1
+          data=sides[2].is.full
+        end
         if data.is_ghost==1
            ref_cell=pXest.local_num_quadrants+data.quadid+1
         else
            ref_cell=owned_trees_offset[tree]+data.quadid+1
         end
-        println(ref_cell)
-        println(sides[1])
-        face=sides[1].face+1
+        # println("===========================")
+        # println("ref_cell: ",ref_cell)
+        # println("face nsides: ",nsides)
+        # println("is boundary: ",is_boundary)
+        # println("---------------------------")
+        # println("side1 treeid: ",sides[1].treeid+1)
+        # println("side1 face: ",sides[1].face)
+        # println("side1 is_hanging: ",sides[1].is_hanging)
+        # println("side1 is.full is_ghost: ",sides[1].is.full.is_ghost)
+        # println("side1 is.full quadid: ",sides[1].is.full.quadid)
+        # println("side1 is.hanging is_ghost: ",sides[1].is.hanging.is_ghost)
+        # println("side1 is.hanging quadid: ",sides[1].is.hanging.quadid)
+
+        # println("---------------------------")
+        # println("side2 treeid: ",sides[2].treeid+1)
+        # println("side2 face: ",sides[2].face)
+        # println("side2 is_hanging: ",sides[2].is_hanging)
+        # println("side2 is.full is_ghost: ",sides[2].is.full.is_ghost)
+        # println("side2 is.full quadid: ",sides[2].is.full.quadid)
+        # println("side2 is.hanging is_ghost: ",sides[2].is.hanging.is_ghost)
+        # println("side2 is.hanging quadid: ",sides[2].is.hanging.quadid)
+
+
         if Dc==2
           gridap_facet=P4EST_2_GRIDAP_FACET_2D[face]
         else
