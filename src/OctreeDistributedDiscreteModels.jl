@@ -145,20 +145,10 @@ end
 
 # DistributedDiscreteModel API implementation
 
-Gridap.Geometry.num_cells(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_cells(model.dmodel)
-Gridap.Geometry.num_facets(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_facets(model.dmodel)
-Gridap.Geometry.num_edges(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_edges(model.dmodel)
-Gridap.Geometry.num_vertices(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_vertices(model.dmodel)
-Gridap.Geometry.num_faces(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_faces(model.dmodel)
-Gridap.Geometry.get_grid(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_grid(model.dmodel)
-Gridap.Geometry.get_grid_topology(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_grid_topology(model.dmodel)
-Gridap.Geometry.get_face_labeling(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.get_face_labeling(model.dmodel)
-
 GridapDistributed.get_parts(model::OctreeDistributedDiscreteModel) = model.parts
 GridapDistributed.local_views(model::OctreeDistributedDiscreteModel) = GridapDistributed.local_views(model.dmodel)
 GridapDistributed.get_cell_gids(model::OctreeDistributedDiscreteModel) = GridapDistributed.get_cell_gids(model.dmodel)
 GridapDistributed.get_face_gids(model::OctreeDistributedDiscreteModel,dim::Integer) = GridapDistributed.get_face_gids(model.dmodel,dim)
-GridapDistributed.generate_gids(model::OctreeDistributedDiscreteModel,spaces) = GridapDistributed.generate_gids(model.dmodel,spaces)
 
 # Garbage collection
 
