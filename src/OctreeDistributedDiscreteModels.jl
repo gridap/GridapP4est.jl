@@ -1,6 +1,6 @@
 
 
-mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp}
+mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
   parts                       :: A
   dmodel                      :: B
   coarse_model                :: C
@@ -19,14 +19,14 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistribu
     Dc::Int,
     Dp::Int,
     parts,
-    dmodel::Union{GridapDistributed.AbstractDistributedDiscreteModel,Nothing},
+    dmodel::Union{GridapDistributed.DistributedDiscreteModel,Nothing},
     coarse_model,
     ptr_pXest_connectivity,
     ptr_pXest,
     owns_ptr_pXest_connectivity::Bool,
     gc_ref)
 
-    if (isa(dmodel,GridapDistributed.AbstractDistributedDiscreteModel))
+    if (isa(dmodel,GridapDistributed.DistributedDiscreteModel))
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_point_dims(dmodel)
     end
@@ -50,7 +50,7 @@ end
 
 function OctreeDistributedDiscreteModel(
   parts,
-  dmodel::GridapDistributed.AbstractDistributedDiscreteModel{Dc,Dp},
+  dmodel::GridapDistributed.DistributedDiscreteModel{Dc,Dp},
   coarse_model,
   ptr_pXest_connectivity,
   ptr_pXest,
@@ -143,7 +143,7 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
                                  model)
 end
 
-# AbstractDistributedDiscreteModel API implementation
+# DistributedDiscreteModel API implementation
 
 Gridap.Geometry.num_cells(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_cells(model.dmodel)
 Gridap.Geometry.num_facets(model::OctreeDistributedDiscreteModel) = Gridap.Geometry.num_facets(model.dmodel)
