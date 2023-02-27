@@ -22,5 +22,4 @@ module GridapP4est
   export refine
   export coarsen
   export redistribute
-  export octree_distributed_discrete_model_free!
 end
