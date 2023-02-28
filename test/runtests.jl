@@ -53,6 +53,6 @@ function run_tests(testdir)
     end
 end
 
-run_tests(@__DIR__)
+run_tests(joinpath(@__DIR__,"mpi"))
 
 end # module
