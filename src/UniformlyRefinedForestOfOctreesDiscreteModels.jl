@@ -1,3 +1,36 @@
+
+function pXest_lnodes_destroy(::Type{Val{Dc}}, ptr_pXest_lnodes) where Dc
+  if (Dc==2)
+    p4est_lnodes_destroy(ptr_pXest_lnodes)
+  else
+    p8est_lnodes_destroy(ptr_pXest_lnodes)
+  end
+end
+
+function pXest_ghost_destroy(::Type{Val{Dc}}, ptr_pXest_ghost) where Dc
+  if (Dc==2)
+    p4est_ghost_destroy(ptr_pXest_ghost)
+  else
+    p8est_ghost_destroy(ptr_pXest_ghost)
+  end
+end
+
+function pXest_destroy(::Type{Val{Dc}}, ptr_pXest) where Dc
+  if (Dc==2)
+    p4est_destroy(ptr_pXest)
+  else
+    p8est_destroy(ptr_pXest)
+  end
+end
+
+function pXest_connectivity_destroy(::Type{Val{Dc}}, ptr_pXest_connectivity) where Dc
+  if (Dc==2)
+    p4est_connectivity_destroy(ptr_pXest_connectivity)
+  else
+    p8est_connectivity_destroy(ptr_pXest_connectivity)
+  end
+end
+
 const P4EST_2_GRIDAP_FACET_2D  = [ 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_2D  = [ 3, 4, 1, 2 ]
 
@@ -832,84 +865,88 @@ function update_face_to_entity_with_ghost_data!(
              part_to_cell_to_entity)
 end
 
+function setup_ptr_pXest_objects(::Type{Val{Dc}},
+                                 comm,
+                                 coarse_discrete_model,
+                                 num_uniform_refinements) where Dc
+  ptr_pXest_connectivity=setup_pXest_connectivity(coarse_discrete_model)
+  # Create a new forest
+  ptr_pXest = setup_pXest(Val{Dc},comm,ptr_pXest_connectivity,num_uniform_refinements)
+  # Build the ghost layer
+  ptr_pXest_ghost=setup_pXest_ghost(Val{Dc},ptr_pXest)
+  ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
+  ptr_pXest_connectivity, ptr_pXest, ptr_pXest_ghost, ptr_pXest_lnodes
+end
+
+function setup_distributed_discrete_model(::Type{Val{Dc}},
+                                          parts,
+                                          coarse_discrete_model,
+                                          ptr_pXest_connectivity,
+                                          ptr_pXest,
+                                          ptr_pXest_ghost,
+                                          ptr_pXest_lnodes) where Dc
+   cell_prange = setup_cell_prange(Val{Dc},parts,ptr_pXest,ptr_pXest_ghost)
+
+   cell_vertex_gids=generate_cell_vertex_gids(ptr_pXest_lnodes,cell_prange)
+
+   cell_vertex_lids,nlvertices=generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
+
+   node_coordinates=generate_node_coordinates(Val{Dc},
+                                              cell_vertex_lids,
+                                              nlvertices,
+                                              ptr_pXest_connectivity,
+                                              ptr_pXest,
+                                              ptr_pXest_ghost)
+
+   grid,topology=generate_grid_and_topology(Val{Dc},
+                                         cell_vertex_lids,
+                                         nlvertices,
+                                         node_coordinates)
+
+   face_labeling=generate_face_labeling(parts,
+                                        cell_prange,
+                                        coarse_discrete_model,
+                                        grid,
+                                        topology,
+                                        ptr_pXest,
+                                        ptr_pXest_ghost)
+
+   discretemodel=map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
+      Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
+   end
+   GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange)
+end
+
+
 """
-  See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
-  argument values for the p4est_verbosity_level parameter
 """
 function UniformlyRefinedForestOfOctreesDiscreteModel(
     parts::MPIData{<:Integer},
     coarse_discrete_model::DiscreteModel{Dc,Dp},
-    num_uniform_refinements::Int;
-    p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT) where {Dc,Dp}
-
-  sc_init(parts.comm, Cint(true), Cint(true), C_NULL, p4est_verbosity_level)
-  p4est_init(C_NULL, p4est_verbosity_level)
+    num_uniform_refinements::Int) where {Dc,Dp}
 
   comm = parts.comm
-  ptr_pXest_connectivity=setup_pXest_connectivity(coarse_discrete_model)
-
-  # Create a new forest
-  ptr_pXest = setup_pXest(Val{Dc},comm,ptr_pXest_connectivity,num_uniform_refinements)
-
-  # Build the ghost layer
-  ptr_pXest_ghost=setup_pXest_ghost(Val{Dc},ptr_pXest)
-
-  cell_prange = setup_cell_prange(Val{Dc},parts,ptr_pXest,ptr_pXest_ghost)
-
-  ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
-
-  cell_vertex_gids=generate_cell_vertex_gids(ptr_pXest_lnodes,cell_prange)
-
-  cell_vertex_lids,nlvertices=generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
-
-  node_coordinates=generate_node_coordinates(Val{Dc},
-                                             cell_vertex_lids,
-                                             nlvertices,
-                                             ptr_pXest_connectivity,
-                                             ptr_pXest,
-                                             ptr_pXest_ghost)
-
-  grid,topology=generate_grid_and_topology(Val{Dc},
-                                           cell_vertex_lids,
-                                           nlvertices,
-                                           node_coordinates)
-
-  face_labeling=generate_face_labeling(parts,
-                       cell_prange,
-                       coarse_discrete_model,
-                       grid,
-                       topology,
-                       ptr_pXest,
-                       ptr_pXest_ghost)
-
-  discretemodel=
-    map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
-      Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
-    end
+  ptr_pXest_connectivity,
+     ptr_pXest,
+       ptr_pXest_ghost,
+         ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
+                                                    comm,
+                                                    coarse_discrete_model,
+                                                    num_uniform_refinements)
 
   # Write forest to VTK file
   # #p4est_vtk_write_file(unitsquare_forest, C_NULL, "my_step")
+  dmodel=setup_distributed_discrete_model(Val{Dc},
+                                          parts,
+                                          coarse_discrete_model,
+                                          ptr_pXest_connectivity,
+                                          ptr_pXest,
+                                          ptr_pXest_ghost,
+                                          ptr_pXest_lnodes)
 
-  if (Dc==2)
-    # Destroy lnodes
-    p4est_lnodes_destroy(ptr_pXest_lnodes)
-    # Destroy ghost
-    p4est_ghost_destroy(ptr_pXest_ghost)
-    # Destroy the forest
-    p4est_destroy(ptr_pXest)
-    # Destroy the connectivity
-    p4est_connectivity_destroy(ptr_pXest_connectivity)
-  else
-    # Destroy lnodes
-    p8est_lnodes_destroy(ptr_pXest_lnodes)
-    # Destroy ghost
-    p8est_ghost_destroy(ptr_pXest_ghost)
-    # Destroy the forest
-    p8est_destroy(ptr_pXest)
-    # Destroy the connectivity
-    p8est_connectivity_destroy(ptr_pXest_connectivity)
-  end
-  sc_finalize()
-
-  GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange)
+  pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
+  pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
+  pXest_destroy(Val{Dc},ptr_pXest)
+  pXest_connectivity_destroy(Val{Dc},ptr_pXest_connectivity)
+  dmodel
 end
