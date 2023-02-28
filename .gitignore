@@ -4,6 +4,7 @@
 *.jl.mem
 .DS_Store
 /docs/build/
-Manifest.toml
 docs/build/
 tmp/
+.vscode
+Manifest.toml

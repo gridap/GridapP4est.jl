@@ -5,9 +5,6 @@ using MPI
 using ArgParse
 using Test
 
-@time @testset "RichardsonSmoothers" begin include("GMG/seq/RichardsonSmoothersTests.jl") end
-@time @testset "PatchLinearSolverTests" begin include("GMG/seq/PatchLinearSolverTests.jl") end
-
 function parse_commandline()
     s = ArgParseSettings()
     @add_arg_table! s begin
@@ -37,16 +34,9 @@ function run_tests(testdir)
         if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl"]
           np = 4
           extra_args = "-s 2 2 -r 2"
-        elseif f in ["MeshHierarchiesTests.jl",
-                     "RedistributeToolsTests.jl",
-                     "GMGLinearSolversPoissonTests.jl",
-                     "OctreeDistributedDiscreteModelsTests.jl"]
+        elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
+                     "OctreeDistributedDiscreteModelsNoEnvTests.jl"]
           np = 6
-          extra_args = ""
-        elseif f in ["GMGLinearSolversHDivRTTests.jl",
-                     "GMGLinearSolversLaplacianTests.jl",
-                     "GMGLinearSolversVectorLaplacianTests.jl"]
-          np = 1
           extra_args = ""
         else
           np = nprocs
@@ -64,7 +54,6 @@ function run_tests(testdir)
     end
 end
 
-run_tests(@__DIR__)
-run_tests(joinpath(@__DIR__, "GMG/mpi"))
+run_tests(joinpath(@__DIR__,"mpi"))
 
 end # module
