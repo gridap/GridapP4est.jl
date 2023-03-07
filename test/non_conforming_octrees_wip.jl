@@ -28,49 +28,6 @@ function allocate_and_set_refinement_and_coarsening_flags(forest_ptr::Ptr{p4est_
   return [i != 1 ? nothing_flag : refine_flag for i = 1:tree.quadrants.elem_count]
 end
 
-const p4est_corner_faces = [0 2; 1 2; 0 3; 1 3]
-const p4est_corner_face_corners = [0 -1 0 -1; -1 0 1 -1; 1 -1 -1 0; -1 1 -1 1]
-const p4est_face_corners = [0 2; 1 3; 0 1; 2 3]
-const num_cell_vertices = 4
-const num_cell_faces = 4
-const hanging_vertex_code = -2
-
-# To add to P4est_wrapper.jl library
-# I just translated this function to Julia from its p4est counterpart
-# We cannot call it directly because it is declared as static within p4est,
-# and thus it does not belong to the ABI of the dynamic library object.
-
-# /** Decode the face_code into hanging face information.
-#  *
-#  * This is mostly for demonstration purposes.  Applications probably will
-#  * integrate it into their own loop over the face for performance reasons.
-#  *
-#  * \param[in] face_code as in the p4est_lnodes_t structure.
-#  * \param[out] hanging face: if there are hanging faces,
-#  *             hanging_face = -1 if the face is not hanging,
-#  *                          = 0 if the face is the first half,
-#  *                          = 1 if the face is the second half.
-#  *             note: not touched if there are no hanging faces.
-#  * \return              true if any face is hanging, false otherwise.
-#  */
-
-function p4est_lnodes_decode(face_code, hanging_face)
-  @assert face_code >= 0
-  if (face_code != 0)
-    c = face_code & 0x03
-    work = face_code >> 2
-    hanging_face .= -1
-    for i = 0:1
-      f = p4est_corner_faces[c+1, i+1]
-      hanging_face[f+1] = (work & 0x01) != 0 ? p4est_corner_face_corners[c+1, f+1] : -1
-      work >>= 1
-    end
-    return 1
-  else
-    return 0
-  end
-end
-
 ## Global variable which is updated across calls to init_fn_callback_2d
 current_quadrant_index = Cint(0)
 ## Global variable which is updated across calls to refine_replace_callback_2d
@@ -110,325 +67,6 @@ end
 
 const refine_callback_2d_c = @cfunction(refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
 
-
-# In the local scope of this function, the term "face"
-# should be understood as a generic d-face, i.e., 
-# either a vertex, edge, face, etc. 
-function process_current_face!(gridap_cell_faces,
-  regular_face_p4est_to_gridap,
-  num_regular_faces,
-  p4est_faces,
-  p4est_lface,
-  p4est_gface,
-  p4est_lface_to_gridap_lface)
-
-  if !(haskey(regular_face_p4est_to_gridap, p4est_gface))
-    num_regular_faces += 1
-    regular_face_p4est_to_gridap[p4est_gface] = num_regular_faces
-  end
-  gridap_cell_faces[p4est_lface_to_gridap_lface[p4est_lface]] =
-    regular_face_p4est_to_gridap[p4est_gface]
-  return num_regular_faces
-end
-
-function generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
-
-  lnodes = pXest_lnodes[]
-  element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
-  face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
-  hanging_face = Vector{Cint}(undef, 4)
-
-  gridap_cells_vertices,
-  num_regular_vertices, num_hanging_vertices,
-  hanging_vertices_owner_cell_and_lface,
-  gridap_cells_faces,
-  num_regular_faces, num_hanging_faces,
-  hanging_faces_owner_cell_and_lface = map_parts(cell_prange.partition) do indices
-
-    # Count regular vertices
-    num_regular_vertices = 0
-    regular_vertices_p4est_to_gridap = Dict{Int,Int}()
-
-    num_regular_faces = 0
-    regular_faces_p4est_to_gridap = Dict{Int,Int}()
-
-    # Build a map from faces to (cell,lface)
-    p4est_gface_to_gcell_p4est_lface = Dict{Int,Tuple{Int,Int}}()
-    for cell = 1:lnodes.num_local_elements
-      start = (cell - 1) * lnodes.vnodes + 1
-      p4est_cell_faces = view(element_nodes, start:start+3)
-      for (lface, gface) in enumerate(p4est_cell_faces)
-        p4est_gface_to_gcell_p4est_lface[gface] = (cell, lface)
-      end
-    end
-
-    hanging_vertices_pairs_to_owner_face = Dict{Tuple{Int,Int},Int}()
-    hanging_faces_pairs_to_owner_face = Dict{Tuple{Int,Int},Int}()
-
-    P4EST_2_GRIDAP_VERTEX_2D = Gridap.Arrays.IdentityVector(num_cell_vertices)
-
-
-    n = length(indices.lid_to_part)
-    gridap_cells_vertices_ptrs = Vector{Int32}(undef,n+1)
-    gridap_cells_faces_ptrs = Vector{Int32}(undef,n+1)
-    gridap_cells_vertices_ptrs[1]=1
-    gridap_cells_faces_ptrs[1]=1
-    for i=1:n
-      gridap_cells_vertices_ptrs[i+1]=gridap_cells_vertices_ptrs[i]+4
-      gridap_cells_faces_ptrs[i+1]=gridap_cells_faces_ptrs[i]+4
-    end
-
-    gridap_cells_vertices_data = Vector{Int}(undef, lnodes.num_local_elements * 4)
-    gridap_cells_vertices_data .= -1
-
-    gridap_cells_faces_data = Vector{Int}(undef, lnodes.num_local_elements * 4)
-    gridap_cells_faces_data .= -1
-
-    for cell = 1:lnodes.num_local_elements
-      start = (cell - 1) * lnodes.vnodes + 1
-      start_gridap_vertices = (cell - 1) * num_cell_vertices
-      start_gridap_faces = (cell - 1) * num_cell_faces
-      p4est_cell_faces = view(element_nodes, start:start+3)
-      p4est_cell_vertices = view(element_nodes, start+4:start+7)
-
-
-      gridap_cell_vertices = view(gridap_cells_vertices_data,
-        start_gridap_vertices+1:start_gridap_vertices+num_cell_vertices)
-      gridap_cell_faces = view(gridap_cells_faces_data,
-        start_gridap_faces+1:start_gridap_faces+num_cell_faces)
-      has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
-      if has_hanging == 0
-        # All vertices/faces of the current cell are regular 
-        # Process vertices
-        for (p4est_lvertex, p4est_gvertex) in enumerate(p4est_cell_vertices)
-          num_regular_vertices =
-            process_current_face!(gridap_cell_vertices,
-              regular_vertices_p4est_to_gridap,
-              num_regular_vertices,
-              p4est_cell_vertices,
-              p4est_lvertex,
-              p4est_gvertex,
-              P4EST_2_GRIDAP_VERTEX_2D)
-        end
-        # Process faces
-        for (p4est_lface, p4est_gface) in enumerate(p4est_cell_faces)
-          num_regular_faces =
-            process_current_face!(gridap_cell_faces,
-              regular_faces_p4est_to_gridap,
-              num_regular_faces,
-              p4est_cell_faces,
-              p4est_lface,
-              p4est_gface,
-              GridapP4est.P4EST_2_GRIDAP_FACET_2D)
-        end
-      else
-        # "Touch" hanging vertices before processing current cell
-        # This is required as we dont have any means to detect 
-        # a hanging vertex from a non-hanging face
-        for (p4est_lface, half) in enumerate(hanging_face)
-          if (half != -1)
-            hanging_vertex_lvertex_within_face = half == 0 ? 1 : 0
-            p4est_lvertex = p4est_face_corners[p4est_lface,
-              hanging_vertex_lvertex_within_face+1]
-            gridap_cell_vertices[P4EST_2_GRIDAP_VERTEX_2D[p4est_lvertex+1]] = hanging_vertex_code
-          end
-        end
-
-        # Current cell has at least one hanging face 
-        for (p4est_lface, half) in enumerate(hanging_face)
-          # Current face is NOT hanging
-          if (half == -1)
-            # Process vertices on the boundary of p4est_lface
-            for p4est_lvertex in p4est_face_corners[p4est_lface, :]
-              p4est_gvertex = p4est_cell_vertices[p4est_lvertex+1]
-              if (gridap_cell_vertices[p4est_lvertex+1] != hanging_vertex_code)
-                num_regular_vertices =
-                  process_current_face!(gridap_cell_vertices,
-                    regular_vertices_p4est_to_gridap,
-                    num_regular_vertices,
-                    p4est_cell_vertices,
-                    p4est_lvertex + 1,
-                    p4est_gvertex,
-                    P4EST_2_GRIDAP_VERTEX_2D)
-              end
-            end
-            # Process non-hanging face
-            p4est_gface = p4est_cell_faces[p4est_lface]
-            num_regular_faces =
-              process_current_face!(gridap_cell_faces,
-                regular_faces_p4est_to_gridap,
-                num_regular_faces,
-                p4est_cell_faces,
-                p4est_lface,
-                p4est_gface,
-                GridapP4est.P4EST_2_GRIDAP_FACET_2D)
-          else # Current face is hanging
-
-            # Identify regular vertex and hanging vertex 
-            # Repeat code above for regular vertex 
-            # Special treatment for hanging vertex 
-            regular_vertex_lvertex_within_face = half == 0 ? 0 : 1
-            hanging_vertex_lvertex_within_face = half == 0 ? 1 : 0
-
-            # Process regular vertex
-            p4est_regular_lvertex = p4est_face_corners[p4est_lface, regular_vertex_lvertex_within_face+1]
-            p4est_gvertex = p4est_cell_vertices[p4est_regular_lvertex+1]
-            num_regular_vertices =
-              process_current_face!(gridap_cell_vertices,
-                regular_vertices_p4est_to_gridap,
-                num_regular_vertices,
-                p4est_cell_vertices,
-                p4est_regular_lvertex + 1,
-                p4est_gvertex,
-                P4EST_2_GRIDAP_VERTEX_2D)
-            # Process hanging vertex
-            p4est_hanging_lvertex = p4est_face_corners[p4est_lface, hanging_vertex_lvertex_within_face+1]
-            owner_face = p4est_cell_faces[p4est_lface]
-            hanging_vertices_pairs_to_owner_face[(cell, P4EST_2_GRIDAP_VERTEX_2D[p4est_hanging_lvertex+1])] = owner_face
-            # if !(haskey(owner_faces_touched,owner_face))
-            #   num_face_owners += 1
-            #   owner_faces_touched[owner_face]=num_face_owners
-            # end
-
-            # Process hanging face
-            hanging_faces_pairs_to_owner_face[(cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])] = owner_face
-          end
-        end
-      end
-    end
-
-    # Go over all touched hanging faces and start 
-    # assigning IDs from the last num_regular_faces ID
-    # For each hanging face, keep track of (owner_cell,lface)
-    hanging_faces_owner_cell_and_lface =
-      Vector{Tuple{Int,Int}}(undef, length(keys(hanging_faces_pairs_to_owner_face)))
-    num_hanging_faces = 0
-    for key in keys(hanging_faces_pairs_to_owner_face)
-      (cell, lface) = key
-      owner_p4est_gface = hanging_faces_pairs_to_owner_face[key]
-      owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
-      num_hanging_faces += 1
-      start_gridap_faces = (cell - 1) * num_cell_faces
-      gridap_cells_faces_data[start_gridap_faces+lface] = num_regular_faces + num_hanging_faces
-      (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
-      hanging_faces_owner_cell_and_lface[num_hanging_faces] =
-        (owner_cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])
-    end
-
-
-    # Go over all touched hanging vertices and start 
-    # assigning IDs from the last num_regular_vertices ID
-    # For each hanging face, keep track of (owner_cell,lface)
-    num_hanging_vertices = 0
-    hanging_vertices_owner_cell_and_lface = Tuple{Int,Int}[]
-    owner_gridap_gface_to_hanging_vertex = Dict{Int,Int}()
-    for key in keys(hanging_vertices_pairs_to_owner_face)
-      (cell, lvertex) = key
-      owner_p4est_gface = hanging_vertices_pairs_to_owner_face[key]
-      owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
-      if !(haskey(owner_gridap_gface_to_hanging_vertex, owner_gridap_gface))
-        num_hanging_vertices += 1
-        owner_gridap_gface_to_hanging_vertex[owner_gridap_gface] = num_hanging_vertices
-        (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
-        push!(hanging_vertices_owner_cell_and_lface,
-          (owner_cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface]))
-      end
-      start_gridap_vertices = (cell - 1) * num_cell_vertices
-      gridap_cells_vertices_data[start_gridap_vertices+lvertex] = num_regular_vertices +
-                                                             owner_gridap_gface_to_hanging_vertex[owner_gridap_gface]
-    end
-
-    println(hanging_vertices_pairs_to_owner_face)
-    println(hanging_faces_pairs_to_owner_face)
-
-    gridap_cells_vertices = Table(gridap_cells_vertices_data,gridap_cells_vertices_ptrs)
-    gridap_cells_faces = Table(gridap_cells_faces_data,gridap_cells_faces_ptrs)
-
-    return gridap_cells_vertices,
-    num_regular_vertices, num_hanging_vertices,
-    hanging_vertices_owner_cell_and_lface,
-    gridap_cells_faces,
-    num_regular_faces, num_hanging_faces,
-    hanging_faces_owner_cell_and_lface
-
-  end
-end
-
-# Old code
-#
-# old_comm = model.parts.comm
-# if (i_am_in(old_comm))
-#   # Copy and refine input p4est
-#   ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
-#   pXest_refine!(Val{Dc}, ptr_new_pXest)
-# else
-#   ptr_new_pXest = nothing
-# end
-
-# new_comm = isa(parts,Nothing) ? old_comm : parts.comm
-# if i_am_in(new_comm)
-#    if !isa(parts,Nothing)
-#      aux = ptr_new_pXest
-#      ptr_new_pXest = _p4est_to_new_comm(ptr_new_pXest,
-#                                         model.ptr_pXest_connectivity,
-#                                         model.parts.comm,
-#                                         parts.comm)
-#      if i_am_in(old_comm)
-#        pXest_destroy(Val{Dc},aux)
-#      end
-#    end
-
-#    # Extract ghost and lnodes
-#    ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-#    ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
-
-#    # Build fine-grid mesh
-#    new_parts = isa(parts,Nothing) ? model.parts : parts
-#    fmodel = setup_distributed_discrete_model(Val{Dc},
-#                                            new_parts,
-#                                            model.coarse_model,
-#                                            model.ptr_pXest_connectivity,
-#                                            ptr_new_pXest,
-#                                            ptr_pXest_ghost,
-#                                            ptr_pXest_lnodes)
-
-#    pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
-#    pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
-
-#    dglue = _compute_fine_to_coarse_model_glue(model.parts,
-#                                               model.dmodel,
-#                                               fmodel)
-
-#    ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
-#                                   new_parts,
-#                                   fmodel,
-#                                   model.coarse_model,
-#                                   model.ptr_pXest_connectivity,
-#                                   ptr_new_pXest,
-#                                   false,
-#                                   model)
-#    return ref_model, dglue
-# else
-#  new_parts = isa(parts,Nothing) ? model.parts : parts
-#  return VoidOctreeDistributedDiscreteModel(model,new_parts), nothing
-# end
-
-function run(parts, subdomains)
-  #GridapP4est.with(parts) do
-  if length(subdomains) == 2
-    domain = (0, 1, 0, 1)
-  else
-    @assert length(subdomains) == 3
-    domain = (0, 1, 0, 1, 0, 1)
-  end
-  # Generate model 
-  coarse_model = CartesianDiscreteModel(domain, subdomains)
-
-  model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
-  adapt_non_conforming_work_in_progress(model)
-  #end
-end
-
 MPI.Init()
 parts = get_part_ids(MPIBackend(), 1)
 # run(parts, (1, 1))
@@ -443,77 +81,99 @@ model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
 
 # TO-DO: refine and coarsening flags should be an input argument, instead of being hard-coded
 # function adapt_non_conforming_work_in_progress(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
-  # Copy and refine input p4est
-  ptr_new_pXest = GridapP4est.pXest_copy(Val{Dc}, model.ptr_pXest)
+# Copy and refine input p4est
+ptr_new_pXest = GridapP4est.pXest_copy(Val{Dc}, model.ptr_pXest)
 
-  user_data = allocate_and_set_refinement_and_coarsening_flags(ptr_new_pXest)
-  p4est_reset_data(ptr_new_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(user_data))
-  p4est_refine_ext(ptr_new_pXest, 0, -1, refine_callback_2d_c, C_NULL, C_NULL)
-  p4est_partition(ptr_new_pXest, 1, C_NULL)
+user_data = allocate_and_set_refinement_and_coarsening_flags(ptr_new_pXest)
+p4est_reset_data(ptr_new_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(user_data))
+p4est_refine_ext(ptr_new_pXest, 0, -1, refine_callback_2d_c, C_NULL, C_NULL)
+p4est_partition(ptr_new_pXest, 1, C_NULL)
 
-  p4est_vtk_write_file(ptr_new_pXest, C_NULL, string("adapted_forest"))
+p4est_vtk_write_file(ptr_new_pXest, C_NULL, string("adapted_forest"))
 
-  ptr_pXest_ghost = GridapP4est.setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-  pXest_lnodes = GridapP4est.p4est_lnodes_new(ptr_new_pXest, ptr_pXest_ghost, -2)
+ptr_pXest_ghost = GridapP4est.setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
+ptr_pXest_lnodes = GridapP4est.p4est_lnodes_new(ptr_new_pXest, ptr_pXest_ghost, -2)
 
-  cell_prange = setup_cell_prange(Val{Dc}, parts, ptr_new_pXest, ptr_pXest_ghost)
+dmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{2},
+                                                       parts,
+                                                       coarse_model,
+                                                       model.ptr_pXest_connectivity,
+                                                       ptr_new_pXest,
+                                                       ptr_pXest_ghost,
+                                                       ptr_pXest_lnodes)
 
+
+
+
+# FE Spaces
+order=1
+reffe = ReferenceFE(lagrangian,Float64,order)
+V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
+U = TrialFESpace(V)                                                       
+
+generate_symbolic_constraints(V,reffe,non_conforming_glue)
+
+function generate_symbolic_constraints(V,non_conforming_glue)
   gridap_cells_vertices,
   num_regular_vertices, num_hanging_vertices,
   hanging_vertices_owner_cell_and_lface,
   gridap_cells_faces,
   num_regular_faces, num_hanging_faces,
-  hanging_faces_owner_cell_and_lface =
-    generate_cell_vertices_and_faces(pXest_lnodes, cell_prange)
+  hanging_faces_owner_cell_and_lface = non_conforming_glue
 
-  println("#### vertices ###")
-  println("num_regular_vertices: $(num_regular_vertices)")
-  println("num_hanging_vertices: $(num_hanging_vertices)")
-  println("gridap_cells_vertices: $(gridap_cells_vertices)")
-  println(hanging_vertices_owner_cell_and_lface)
+  map_parts(gridap_cells_vertices,
+            num_regular_vertices,
+            num_hanging_vertices,
+            hanging_vertices_owner_cell_and_lface,
+            gridap_cells_faces,
+            num_regular_faces,
+            num_hanging_faces,
+            hanging_faces_owner_cell_and_lface, V.spaces) do gridap_cells_vertices,
+                                                   num_regular_vertices, num_hanging_vertices,
+                                                   hanging_vertices_owner_cell_and_lface,
+                                                   gridap_cells_faces,
+                                                   num_regular_faces, num_hanging_faces,
+                                                   hanging_faces_owner_cell_and_lface,
+                                                   V 
+   
+      # Locate for each hanging vertex a cell to which it belongs 
+      # and local position within that cell 
+      hanging_vertices_to_cell    = Vector{Int}(undef, num_hanging_vertices) 
+      hanging_vertices_to_lvertex = Vector{Int}(undef, num_hanging_vertices)
+      for cell=1:length(gridap_cells_vertices)
+        s=gridap_cells_vertices.ptrs[cell]
+        e=gridap_cells_vertices.ptrs[cell+1]
+        l=e-s
+        for j=1:l
+          vid=gridap_cells_vertices.data[s+j-1]
+          if vid>num_regular_vertices 
+            vid_hanging=vid-num_regular_vertices
+            hanging_vertices_to_cell[vid_hanging]=cell
+            hanging_vertices_to_lvertex[vid_hanging]=j
+          end 
+        end 
+      end
 
-  println("### faces ###")
-  println("num_regular_faces: $(num_regular_faces)")
-  println("num_hanging_faces: $(num_hanging_faces)")
-  println("gridap_cells_faces: $(gridap_cells_faces)")
-  println(hanging_faces_owner_cell_and_lface)
+      cell_dof_ids=get_cell_dof_ids(V)
+      
+      # Go over the dofs of hanging_vertices_to_cell[vid_hanging]
+      # on hanging_vertices_to_lvertex lvertx
+      cell=hanging_vertices_to_cell[vid_hanging]
+      D = num_dims(reffe)
+      face_own_dofs = get_face_own_dofs(reffe)
+      for dof in face_own_dofs[hanging_vertices_to_lvertex[vid_hanging]]
+        cell_dof_ids[cell][dof] depends on ...
+      end 
 
-  @show nlvertices = map_parts(num_regular_vertices,num_hanging_vertices) do i,j
-    i+j
+      face_dofs = get_face_dofs(reffe)
+      (ocell,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
+      for dof in face_dofs[ocell_lface]
+        cell_dof_ids[ocell][dof]
+      end
+
   end
+end 
 
-  node_coordinates=generate_node_coordinates(Val{Dc},
-  gridap_cells_vertices,
-  nlvertices,
-  model.ptr_pXest_connectivity,
-  ptr_new_pXest,
-  ptr_pXest_ghost)
 
-  println("node_coordinates: $(node_coordinates)")
-
-  grid,topology=generate_grid_and_topology(Val{Dc},
-  gridap_cells_vertices,
-  nlvertices,
-  node_coordinates)
-
-  map_parts(topology,gridap_cells_faces) do topology,cell_faces
-    cells_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
-    topology.n_m_to_nface_to_mfaces[3,2] = cells_faces_gridap
-    topology.n_m_to_nface_to_mfaces[2,3] = Gridap.Geometry.generate_cells_around(cells_faces_gridap)
-    return nothing
-  end
-
-  face_labeling=GridapP4est.generate_face_labeling(parts,
-  cell_prange,
-  coarse_model,
-  grid,
-  topology,
-  ptr_new_pXest,
-  ptr_pXest_ghost)
-
-  discretemodel=map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
-    Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
-  end
-  distributed_discretemodel=GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange)
 
 # end

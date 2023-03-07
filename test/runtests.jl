@@ -34,7 +34,8 @@ function run_tests(testdir)
         if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl"]
           np = 4
           extra_args = "-s 2 2 -r 2"
-        elseif f in ["OctreeDistributedDiscreteModelsTests.jl"]
+        elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
+                     "OctreeDistributedDiscreteModelsNoEnvTests.jl"]
           np = 6
           extra_args = ""
         else
@@ -53,6 +54,6 @@ function run_tests(testdir)
     end
 end
 
-run_tests(@__DIR__)
+run_tests(joinpath(@__DIR__,"mpi"))
 
 end # module

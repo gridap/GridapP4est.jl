@@ -12,7 +12,6 @@ module GridapP4est
   using P4est_wrapper
   const PArrays = PartitionedArrays
 
-  include("PartitionedArraysExtensions.jl")
   include("Environment.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
@@ -22,9 +21,6 @@ module GridapP4est
   export refine
   export coarsen
   export redistribute
-  export octree_distributed_discrete_model_free!
-
-  export generate_node_coordinates
-  export setup_cell_prange
-  export generate_grid_and_topology
+  export setup_non_conforming_distributed_discrete_model
+  
 end
