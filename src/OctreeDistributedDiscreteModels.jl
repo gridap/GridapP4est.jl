@@ -1218,7 +1218,7 @@ function generate_cell_vertices_and_faces(ptr_pXest_lnodes, cell_prange)
       gridap_cells_faces_data[start_gridap_faces+lface] = num_regular_faces + num_hanging_faces
       (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
       hanging_faces_owner_cell_and_lface[num_hanging_faces] =
-        (owner_cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])
+        (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])
     end
 
 
@@ -1237,7 +1237,7 @@ function generate_cell_vertices_and_faces(ptr_pXest_lnodes, cell_prange)
         owner_gridap_gface_to_hanging_vertex[owner_gridap_gface] = num_hanging_vertices
         (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
         push!(hanging_vertices_owner_cell_and_lface,
-          (owner_cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface]))
+          (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface]))
       end
       start_gridap_vertices = (cell - 1) * num_cell_vertices
       gridap_cells_vertices_data[start_gridap_vertices+lvertex] = num_regular_vertices +

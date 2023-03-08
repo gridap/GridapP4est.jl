@@ -102,18 +102,17 @@ dmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{2
                                                        ptr_pXest_ghost,
                                                        ptr_pXest_lnodes)
 
-
-
-
 # FE Spaces
 order=1
 reffe = ReferenceFE(lagrangian,Float64,order)
 V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
-U = TrialFESpace(V)                                                       
+U = TrialFESpace(V)   
 
-generate_symbolic_constraints(V,reffe,non_conforming_glue)
+sDOF_to_dof, sDOF_to_dofs=generate_symbolic_constraints(model.dmodel, V, reffe, non_conforming_glue)
+println(sDOF_to_dof)
+println(sDOF_to_dofs)
 
-function generate_symbolic_constraints(V,non_conforming_glue)
+function generate_symbolic_constraints(dmodel, V,reffe,non_conforming_glue)
   gridap_cells_vertices,
   num_regular_vertices, num_hanging_vertices,
   hanging_vertices_owner_cell_and_lface,
@@ -121,20 +120,20 @@ function generate_symbolic_constraints(V,non_conforming_glue)
   num_regular_faces, num_hanging_faces,
   hanging_faces_owner_cell_and_lface = non_conforming_glue
 
-  map_parts(gridap_cells_vertices,
+  sDOF_to_dof, sDOF_to_dofs = map_parts(gridap_cells_vertices,
             num_regular_vertices,
             num_hanging_vertices,
             hanging_vertices_owner_cell_and_lface,
             gridap_cells_faces,
             num_regular_faces,
             num_hanging_faces,
-            hanging_faces_owner_cell_and_lface, V.spaces) do gridap_cells_vertices,
+            hanging_faces_owner_cell_and_lface, model.dmodel.models, V.spaces) do gridap_cells_vertices,
                                                    num_regular_vertices, num_hanging_vertices,
                                                    hanging_vertices_owner_cell_and_lface,
                                                    gridap_cells_faces,
                                                    num_regular_faces, num_hanging_faces,
                                                    hanging_faces_owner_cell_and_lface,
-                                                   V 
+                                                   model, V
    
       # Locate for each hanging vertex a cell to which it belongs 
       # and local position within that cell 
@@ -154,26 +153,46 @@ function generate_symbolic_constraints(V,non_conforming_glue)
         end 
       end
 
-      cell_dof_ids=get_cell_dof_ids(V)
-      
-      # Go over the dofs of hanging_vertices_to_cell[vid_hanging]
-      # on hanging_vertices_to_lvertex lvertx
-      cell=hanging_vertices_to_cell[vid_hanging]
-      D = num_dims(reffe)
-      face_own_dofs = get_face_own_dofs(reffe)
-      for dof in face_own_dofs[hanging_vertices_to_lvertex[vid_hanging]]
-        cell_dof_ids[cell][dof] depends on ...
+      basis, reffe_args,reffe_kwargs = reffe
+      cell_reffe = ReferenceFE(model,basis,reffe_args...;reffe_kwargs...)
+      reffe_cell = first(cell_reffe)
+
+      cell_dof_ids  = get_cell_dof_ids(V)
+      face_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(reffe_cell)
+      face_dofs     = Gridap.ReferenceFEs.get_face_dofs(reffe_cell)
+
+
+      ptrs=Vector{Int}(undef, num_hanging_vertices+1)
+      ptrs[1]=1
+      for vid_hanging=1:num_hanging_vertices
+        (_,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
+        ptrs[vid_hanging+1] = ptrs[vid_hanging] + length(face_dofs[ocell_lface])
       end 
+      data=Vector{Int}(undef, ptrs[num_hanging_vertices+1]-1)
+      for vid_hanging=1:num_hanging_vertices
+        (ocell,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
+        s=ptrs[vid_hanging]
+        e=ptrs[vid_hanging+1]-1
+        for (j,ldof) in enumerate(face_dofs[ocell_lface])
+          data[s+j-1]=cell_dof_ids[ocell][ldof]
+        end
+      end 
+      hanging_vertices_owner_face_dofs=Gridap.Arrays.Table(data,ptrs)
 
-      face_dofs = get_face_dofs(reffe)
-      (ocell,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
-      for dof in face_dofs[ocell_lface]
-        cell_dof_ids[ocell][dof]
+      sDOF_to_dof  = Int[]
+      sDOF_to_dofs = Vector{Int}[]
+      for vid_hanging=1:num_hanging_vertices
+         # Go over the dofs of hanging_vertices_to_cell[vid_hanging]
+         # on hanging_vertices_to_lvertex lvertx
+         cell=hanging_vertices_to_cell[vid_hanging]
+         lvertex=hanging_vertices_to_lvertex[vid_hanging]
+         for ldof in face_own_dofs[lvertex]
+           push!(sDOF_to_dof,cell_dof_ids[cell][ldof])
+           push!(sDOF_to_dofs,hanging_vertices_owner_face_dofs[vid_hanging])
+         end 
       end
-
-  end
-end 
-
-
+      sDOF_to_dof, sDOF_to_dofs
+    end 
+end
 
 # end
