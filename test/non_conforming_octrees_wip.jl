@@ -196,3 +196,28 @@ function generate_symbolic_constraints(dmodel, V,reffe,non_conforming_glue)
 end
 
 # end
+
+
+using Gridap
+using Gridap.ReferenceFEs
+function _h_refined_reffe(reffe::Tuple{<:Lagrangian,Any,Any})
+  (reffe[1],(reffe[2][1],2*reffe[2][2]),reffe[3])
+end
+
+order=2
+reffe = ReferenceFE(lagrangian,Float64,order)
+basis, reffe_args,reffe_kwargs = reffe
+cell_reffe = ReferenceFE(model,basis,reffe_args...;reffe_kwargs...)
+reffe_cell = first(cell_reffe)
+
+h_refined_reffe = _h_refined_reffe(reffe)
+model = Gridap.Geometry.CartesianDiscreteModel((0,1,0,1),(10,10))
+
+
+basis, reffe_args,reffe_kwargs = h_refined_reffe
+cell_reffe_h_refined = ReferenceFE(model,basis,reffe_args...;reffe_kwargs...)
+reffe_cell_h_refined = first(cell_reffe_h_refined)
+dof_basis_h_refined = get_dof_basis(reffe_cell_h_refined)
+
+sfuns=Gridap.ReferenceFEs.get_shapefuns(reffe_cell)
+evaluate(dof_basis_h_refined,sfuns)
