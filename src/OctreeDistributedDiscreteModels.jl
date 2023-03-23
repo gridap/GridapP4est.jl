@@ -1069,7 +1069,7 @@ function generate_cell_vertices_and_faces(ptr_pXest_lnodes, cell_prange)
     end
 
     hanging_vertices_pairs_to_owner_face = Dict{Tuple{Int,Int},Int}()
-    hanging_faces_pairs_to_owner_face = Dict{Tuple{Int,Int},Int}()
+    hanging_faces_pairs_to_owner_face = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
 
     P4EST_2_GRIDAP_VERTEX_2D = Gridap.Arrays.IdentityVector(num_cell_vertices)
 
@@ -1197,7 +1197,8 @@ function generate_cell_vertices_and_faces(ptr_pXest_lnodes, cell_prange)
             # end
 
             # Process hanging face
-            hanging_faces_pairs_to_owner_face[(cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])] = owner_face
+            hanging_faces_pairs_to_owner_face[(cell, GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])] = 
+                (owner_face,half+1)
           end
         end
       end
@@ -1207,18 +1208,18 @@ function generate_cell_vertices_and_faces(ptr_pXest_lnodes, cell_prange)
     # assigning IDs from the last num_regular_faces ID
     # For each hanging face, keep track of (owner_cell,lface)
     hanging_faces_owner_cell_and_lface =
-      Vector{Tuple{Int,Int}}(undef, length(keys(hanging_faces_pairs_to_owner_face)))
+      Vector{Tuple{Int,Int,Int}}(undef, length(keys(hanging_faces_pairs_to_owner_face)))
     num_hanging_faces = 0
     for key in keys(hanging_faces_pairs_to_owner_face)
       (cell, lface) = key
-      owner_p4est_gface = hanging_faces_pairs_to_owner_face[key]
+      (owner_p4est_gface, half) = hanging_faces_pairs_to_owner_face[key]
       owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
       num_hanging_faces += 1
       start_gridap_faces = (cell - 1) * num_cell_faces
       gridap_cells_faces_data[start_gridap_faces+lface] = num_regular_faces + num_hanging_faces
       (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
       hanging_faces_owner_cell_and_lface[num_hanging_faces] =
-        (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface])
+        (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface], half)
     end
 
 
