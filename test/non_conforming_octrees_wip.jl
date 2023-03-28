@@ -95,7 +95,7 @@ p4est_vtk_write_file(ptr_new_pXest, C_NULL, string("adapted_forest"))
 ptr_pXest_ghost = GridapP4est.setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
 ptr_pXest_lnodes = GridapP4est.p4est_lnodes_new(ptr_new_pXest, ptr_pXest_ghost, -2)
 
-dmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{2},
+dmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{Dc},
                                                        parts,
                                                        coarse_model,
                                                        model.ptr_pXest_connectivity,
@@ -136,27 +136,26 @@ function generate_constraints(dmodel,
                               non_conforming_glue,
                               ref_constraints, 
                               face_subface_ldof_to_cell_ldof)
-  gridap_cells_vertices,
-  num_regular_vertices, num_hanging_vertices,
-  hanging_vertices_owner_cell_and_lface,
-  gridap_cells_faces,
-  num_regular_faces, num_hanging_faces,
-  hanging_faces_owner_cell_and_lface = non_conforming_glue
+  num_regular_faces,
+  num_hanging_faces,
+  gridap_cell_faces,
+  hanging_faces_glue = non_conforming_glue
 
-  sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs = map_parts(gridap_cells_vertices,
-            num_regular_vertices,
-            num_hanging_vertices,
-            hanging_vertices_owner_cell_and_lface,
-            gridap_cells_faces,
-            num_regular_faces,
-            num_hanging_faces,
-            hanging_faces_owner_cell_and_lface, model.dmodel.models, V.spaces) do gridap_cells_vertices,
-                                                   num_regular_vertices, num_hanging_vertices,
-                                                   hanging_vertices_owner_cell_and_lface,
-                                                   gridap_cells_faces,
-                                                   num_regular_faces, num_hanging_faces,
-                                                   hanging_faces_owner_cell_and_lface,
-                                                   model, V
+  sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs = map_parts(gridap_cell_faces[1],
+                                                        num_regular_faces[1],
+                                                        num_hanging_faces[1],
+                                                        hanging_faces_glue[1],
+                                                        gridap_cell_faces[2],
+                                                        num_regular_faces[2],
+                                                        num_hanging_faces[2],
+                                                        hanging_faces_glue[2], 
+                                                        model.dmodel.models, V.spaces) do gridap_cells_vertices,
+                                                        num_regular_vertices, num_hanging_vertices,
+                                                        hanging_vertices_owner_cell_and_lface,
+                                                        gridap_cells_faces,
+                                                        num_regular_faces, num_hanging_faces,
+                                                        hanging_faces_owner_cell_and_lface,
+                                                        model, V
    
       # Locate for each hanging vertex a cell to which it belongs 
       # and local position within that cell 
@@ -241,7 +240,7 @@ end
 
 sDOF_to_dof, sDOF_to_dofs,sDOF_to_coeffs=
     generate_constraints(model.dmodel, V, reffe, 
-                                  non_conforming_glue, ref_constraints, face_subface_ldof_to_cell_ldof)
+                        non_conforming_glue, ref_constraints, face_subface_ldof_to_cell_ldof)
 println(sDOF_to_dof)
 println(sDOF_to_dofs)
 println(sDOF_to_coeffs)
