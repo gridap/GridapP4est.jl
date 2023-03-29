@@ -130,6 +130,65 @@ ref_constraints=evaluate(dof_basis_h_refined,coarse_shape_funs)
 rr = Gridap.Adaptivity.RedRefinementRule(QUAD)
 face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.coarse_nodes_above_fine_nodes(rr,(2*order-1,2*order-1),order)
 
+
+# To-think: might this info go to the glue? 
+# If it is required in different scenarios, I would say it may make sense
+function _generate_hanging_faces_to_cell_and_lface(num_regular_faces, 
+                                                   num_hanging_faces, 
+                                                   gridap_cell_faces)
+  # Locate for each hanging vertex a cell to which it belongs 
+  # and local position within that cell 
+  hanging_faces_to_cell = Vector{Int}(undef, num_hanging_faces) 
+  hanging_faces_to_lface = Vector{Int}(undef, num_hanging_faces)
+  for cell=1:length(gridap_cell_faces)
+    s=gridap_cell_faces.ptrs[cell]
+    e=gridap_cell_faces.ptrs[cell+1]
+    l=e-s
+    for j=1:l
+      fid=gridap_cell_faces.data[s+j-1]
+      if fid>num_regular_faces
+        fid_hanging=fid-num_regular_faces
+        hanging_faces_to_cell[fid_hanging]=cell
+        hanging_faces_to_lface[fid_hanging]=j
+      end 
+    end 
+  end
+  hanging_faces_to_cell, hanging_faces_to_lface
+end
+
+
+function _generate_hanging_faces_owner_face_dofs(num_hanging_faces, 
+                                                 face_dofs,
+                                                 hanging_faces_glue,
+                                                 cell_dof_ids)
+  
+  cache = array_cache(cell_dof_ids)
+
+  ptrs=Vector{Int}(undef, num_hanging_faces+1)
+  ptrs[1]=1
+  for fid_hanging=1:num_hanging_faces
+    glue=hanging_faces_glue[fid_hanging]
+    ocell_lface=glue[2]
+    ptrs[fid_hanging+1] = ptrs[fid_hanging] + length(face_dofs[ocell_lface])
+  end 
+  data_owner_face_dofs=Vector{Int}(undef, ptrs[num_hanging_faces+1]-1)
+  data_owner_face_ldofs=Vector{Int}(undef, ptrs[num_hanging_faces+1]-1)
+  for fid_hanging=1:num_hanging_faces
+    glue=hanging_faces_glue[fid_hanging]
+    ocell=glue[1]
+    ocell_lface=glue[2]
+    s=ptrs[fid_hanging]
+    e=ptrs[fid_hanging+1]-1
+    current_cell_dof_ids = getindex!(cache, cell_dof_ids, ocell)
+    for (j,ldof) in enumerate(face_dofs[ocell_lface])
+      data_owner_face_dofs[s+j-1]=current_cell_dof_ids[ldof]
+      data_owner_face_ldofs[s+j-1]=ldof
+    end
+  end 
+  Gridap.Arrays.Table(data_owner_face_dofs , ptrs), 
+     Gridap.Arrays.Table(data_owner_face_ldofs, ptrs)
+end
+
 function generate_constraints(dmodel, 
                               V,
                               reffe,
@@ -149,31 +208,28 @@ function generate_constraints(dmodel,
                                                         num_regular_faces[2],
                                                         num_hanging_faces[2],
                                                         hanging_faces_glue[2], 
-                                                        model.dmodel.models, V.spaces) do gridap_cells_vertices,
+                                                        model.dmodel.models, V.spaces) do gridap_cell_vertices,
                                                         num_regular_vertices, num_hanging_vertices,
                                                         hanging_vertices_owner_cell_and_lface,
-                                                        gridap_cells_faces,
+                                                        gridap_cell_faces,
                                                         num_regular_faces, num_hanging_faces,
                                                         hanging_faces_owner_cell_and_lface,
                                                         model, V
    
       # Locate for each hanging vertex a cell to which it belongs 
       # and local position within that cell 
-      hanging_vertices_to_cell    = Vector{Int}(undef, num_hanging_vertices) 
-      hanging_vertices_to_lvertex = Vector{Int}(undef, num_hanging_vertices)
-      for cell=1:length(gridap_cells_vertices)
-        s=gridap_cells_vertices.ptrs[cell]
-        e=gridap_cells_vertices.ptrs[cell+1]
-        l=e-s
-        for j=1:l
-          vid=gridap_cells_vertices.data[s+j-1]
-          if vid>num_regular_vertices 
-            vid_hanging=vid-num_regular_vertices
-            hanging_vertices_to_cell[vid_hanging]=cell
-            hanging_vertices_to_lvertex[vid_hanging]=j
-          end 
-        end 
-      end
+      hanging_vertices_to_cell,    
+      hanging_vertices_to_lvertex = _generate_hanging_faces_to_cell_and_lface(num_regular_vertices, 
+                                                                              num_hanging_vertices, 
+                                                                              gridap_cell_vertices)
+
+
+      # Locate for each hanging facet a cell to which it belongs 
+      # and local position within that cell 
+      hanging_faces_to_cell,    
+      hanging_faces_to_lvertex = _generate_hanging_faces_to_cell_and_lface(num_regular_faces, 
+                                                                           num_hanging_faces, 
+                                                                           gridap_cell_faces)                                                                        
 
       basis, reffe_args,reffe_kwargs = reffe
       cell_reffe = ReferenceFE(QUAD,basis,reffe_args...;reffe_kwargs...)
@@ -183,26 +239,17 @@ function generate_constraints(dmodel,
       face_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(reffe_cell)
       face_dofs     = Gridap.ReferenceFEs.get_face_dofs(reffe_cell)
 
+      hanging_vertices_owner_face_dofs, 
+      hanging_vertices_owner_face_ldofs = _generate_hanging_faces_owner_face_dofs(num_hanging_vertices, 
+                                              face_dofs,
+                                              hanging_vertices_owner_cell_and_lface,
+                                              cell_dof_ids)
 
-      ptrs=Vector{Int}(undef, num_hanging_vertices+1)
-      ptrs[1]=1
-      for vid_hanging=1:num_hanging_vertices
-        (_,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
-        ptrs[vid_hanging+1] = ptrs[vid_hanging] + length(face_dofs[ocell_lface])
-      end 
-      data_owner_face_dofs=Vector{Int}(undef, ptrs[num_hanging_vertices+1]-1)
-      data_owner_face_ldofs=Vector{Int}(undef, ptrs[num_hanging_vertices+1]-1)
-      for vid_hanging=1:num_hanging_vertices
-        (ocell,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
-        s=ptrs[vid_hanging]
-        e=ptrs[vid_hanging+1]-1
-        for (j,ldof) in enumerate(face_dofs[ocell_lface])
-          data_owner_face_dofs[s+j-1]=cell_dof_ids[ocell][ldof]
-          data_owner_face_ldofs[s+j-1]=ldof
-        end
-      end 
-      hanging_vertices_owner_face_dofs  = Gridap.Arrays.Table(data_owner_face_dofs , ptrs)
-      hanging_vertices_owner_face_ldofs = Gridap.Arrays.Table(data_owner_face_ldofs, ptrs)
+      hanging_faces_owner_face_dofs, 
+      hanging_faces_owner_face_ldofs = _generate_hanging_faces_owner_face_dofs(num_hanging_faces, 
+                                              face_dofs,
+                                              hanging_faces_owner_cell_and_lface,
+                                              cell_dof_ids)
 
       sDOF_to_dof    = Int[]
       sDOF_to_dofs   = Vector{Int}[]
