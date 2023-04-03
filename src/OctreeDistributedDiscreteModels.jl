@@ -1,4 +1,9 @@
 
+## Better to use a C-enum. But I did not use it in order to keep the Julia
+## version of this C example as simple as possible
+const nothing_flag = Cint(0)
+const refine_flag  = Cint(1)
+const coarse_flag  = Cint(2)
 
 mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
   parts                       :: A
@@ -205,7 +210,7 @@ function pXest_partition_given!(::Type{Val{Dc}}, ptr_pXest, new_num_cells_per_pa
   end
 end
 
-function pXest_refine!(::Type{Val{Dc}}, ptr_pXest) where Dc
+function pXest_uniformly_refine!(::Type{Val{Dc}}, ptr_pXest) where Dc
   # Refine callback
   function refine_fn(::Ptr{p4est_t},
                      which_tree::p4est_topidx_t,
@@ -223,7 +228,15 @@ function pXest_refine!(::Type{Val{Dc}}, ptr_pXest) where Dc
   end
 end
 
-function pXest_coarsen!(::Type{Val{Dc}}, ptr_pXest) where Dc
+function pXest_refine!(::Type{Val{Dc}}, ptr_pXest, refine_fn_c) where Dc
+  if (Dc==2)
+    p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
+  else
+    @assert false
+  end
+end
+
+function pXest_uniformly_coarsen!(::Type{Val{Dc}}, ptr_pXest) where Dc
   # Coarsen callback
   function coarsen_fn(::Ptr{p4est_t},
                       ::p4est_topidx_t,
@@ -243,6 +256,14 @@ end
 
 function get_num_children(::Type{Val{Dc}}) where Dc
   2^Dc
+end
+
+function pXest_coarsen!(::Type{Val{Dc}}, ptr_pXest, coarsen_fn_c) where Dc
+  if (Dc==2)
+    p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
+  else
+    @assert false
+  end
 end
 
 # [c/e][child_id][flid]->clid
@@ -407,7 +428,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
    if (i_am_in(old_comm))
      # Copy and refine input p4est
      ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
-     pXest_refine!(Val{Dc}, ptr_new_pXest)
+     pXest_uniformly_refine!(Val{Dc}, ptr_new_pXest)
    else
      ptr_new_pXest = nothing
    end
@@ -461,12 +482,104 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
    end
 end
 
+function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+                                  refinement_and_coarsening_flags::MPIData{<:Vector}) where {Dc,Dp}
+
+    # Variables which are updated accross calls to init_fn_callback_2d
+    current_quadrant_index_within_tree = Cint(0)
+    current_quadrant_index_among_trees = Cint(0)
+
+    # This C callback function is called once per quadtree quadrant. Here we are assuming
+    # that p4est->user_pointer has been set prior to the first call to this call
+    # back function to an array of ints with as many entries as forest quadrants. This call back function
+    # initializes the quadrant->p.user_data void * pointer of all quadrants such that it
+    # points to the corresponding entry in the global array mentioned in the previous sentence.
+    function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
+      which_tree::p4est_topidx_t,
+      quadrant_ptr::Ptr{p4est_quadrant_t})
+      # Extract a reference to the tree which_tree
+      forest = forest_ptr[]
+      tree = p4est_tree_array_index(forest.trees, which_tree)[]
+      quadrant = quadrant_ptr[]
+      q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
+      @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
+      user_data = unsafe_wrap(Array, 
+                              Ptr{Cint}(forest.user_pointer), 
+                              current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+      unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+      current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
+      current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+      return nothing
+    end
+
+    init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
+                                       Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+
+
+    map_parts(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
+      # The length of the local flags array has to match the number of 
+      # cells in the model. This includes both owned and ghost cells. 
+      # Only the flags for owned cells is actually taken into account. 
+      @assert num_cells(lmodel)==length(flags)
+      p4est_reset_data(model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(flags))
+    end
+    
+    function refine_callback_2d(::Ptr{p4est_t},
+      which_tree::p4est_topidx_t,
+      quadrant_ptr::Ptr{p4est_quadrant_t})
+      @assert which_tree == 0
+      quadrant = quadrant_ptr[]
+      return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
+    end
+    
+    refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+    
+    # Copy and refine input p4est
+    ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
+    pXest_refine!(Val{Dc}, ptr_new_pXest, refine_callback_2d_c)
+
+    # Extract ghost and lnodes
+    ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
+    ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
+
+    # Build fine-grid mesh
+    fmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{Dc},
+                                                                               model.parts,
+                                                                               model.coarse_model,
+                                                                               model.ptr_pXest_connectivity,
+                                                                               ptr_new_pXest,
+                                                                               ptr_pXest_ghost,
+                                                                               ptr_pXest_lnodes)
+     
+     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
+     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
+
+
+     # To-DO: does not work OK in the non-conforming case 
+     #  dglue = _compute_fine_to_coarse_model_glue(model.parts,
+     #                                             model.dmodel,
+     #                                             fmodel)
+     ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
+                                    model.parts,
+                                    fmodel,
+                                    model.coarse_model,
+                                    model.ptr_pXest_connectivity,
+                                    ptr_new_pXest,
+                                    false,
+                                    model)
+     return ref_model, non_conforming_glue
+  # else
+  #  new_parts = isa(parts,Nothing) ? model.parts : parts
+  #  return VoidOctreeDistributedDiscreteModel(model,new_parts), nothing
+  # end
+end
+
 function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
   comm = model.parts.comm
   if (i_am_in(comm))
     # Copy and refine input p4est
     ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
-    pXest_coarsen!(Val{Dc}, ptr_new_pXest)
+    pXest_uniformly_coarsen!(Val{Dc}, ptr_new_pXest)
   else
     ptr_new_pXest=nothing
   end

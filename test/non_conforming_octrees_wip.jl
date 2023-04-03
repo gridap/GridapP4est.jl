@@ -29,45 +29,6 @@ function allocate_and_set_refinement_and_coarsening_flags(forest_ptr::Ptr{p4est_
   return [i != 1 ? nothing_flag : refine_flag for i = 1:tree.quadrants.elem_count]
 end
 
-## Global variable which is updated across calls to init_fn_callback_2d
-current_quadrant_index = Cint(0)
-## Global variable which is updated across calls to refine_replace_callback_2d
-num_calls = Cint(0)
-
-# This C callback function is called once per quadtree quadrant. Here we are assuming
-# that p4est->user_pointer has been set prior to the first call to this call
-# back function to an array of ints with as many entries as forest quadrants. This call back function
-# initializes the quadrant->p.user_data void * pointer of all quadrants such that it
-# points to the corresponding entry in the global array mentioned in the previous sentence.
-function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
-  which_tree::p4est_topidx_t,
-  quadrant_ptr::Ptr{p4est_quadrant_t})
-  @assert which_tree == 0
-  # Extract a reference to the first (and uniquely allowed) tree
-  forest = forest_ptr[]
-  tree = p4est_tree_array_index(forest.trees, 0)[]
-  quadrant = quadrant_ptr[]
-  q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index)
-  @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
-  user_data = unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer), current_quadrant_index + 1)[current_quadrant_index+1]
-  unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-  global current_quadrant_index = (current_quadrant_index + 1) % (tree.quadrants.elem_count)
-  return nothing
-end
-
-const init_fn_callback_2d_c = @cfunction(init_fn_callback_2d, Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
-
-
-function refine_callback_2d(::Ptr{p4est_t},
-  which_tree::p4est_topidx_t,
-  quadrant_ptr::Ptr{p4est_quadrant_t})
-  @assert which_tree == 0
-  quadrant = quadrant_ptr[]
-  return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
-end
-
-const refine_callback_2d_c = @cfunction(refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
-
 MPI.Init()
 parts = get_part_ids(MPIBackend(), 1)
 # run(parts, (1, 1))
@@ -80,28 +41,12 @@ subdomains = (1, 1)
 coarse_model = CartesianDiscreteModel(domain, subdomains)
 model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
 
-# TO-DO: refine and coarsening flags should be an input argument, instead of being hard-coded
-# function adapt_non_conforming_work_in_progress(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
-# Copy and refine input p4est
-ptr_new_pXest = GridapP4est.pXest_copy(Val{Dc}, model.ptr_pXest)
+ref_coarse_flags=map_parts(parts) do _
+   allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
+end 
+dmodel,non_conforming_glue=refine(model,ref_coarse_flags)   
 
-user_data = allocate_and_set_refinement_and_coarsening_flags(ptr_new_pXest)
-p4est_reset_data(ptr_new_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(user_data))
-p4est_refine_ext(ptr_new_pXest, 0, -1, refine_callback_2d_c, C_NULL, C_NULL)
-p4est_partition(ptr_new_pXest, 1, C_NULL)
-
-p4est_vtk_write_file(ptr_new_pXest, C_NULL, string("adapted_forest"))
-
-ptr_pXest_ghost = GridapP4est.setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-ptr_pXest_lnodes = GridapP4est.p4est_lnodes_new(ptr_new_pXest, ptr_pXest_ghost, -2)
-
-dmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{Dc},
-                                                       parts,
-                                                       coarse_model,
-                                                       model.ptr_pXest_connectivity,
-                                                       ptr_new_pXest,
-                                                       ptr_pXest_ghost,
-                                                       ptr_pXest_lnodes)
+p4est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
 # FE Spaces
 order=1
@@ -296,7 +241,7 @@ println(sDOF_to_coeffs)
 u(x) = x[1]
 f(x) = 0.0
 
-map_parts(dmodel.models,V.spaces,U.spaces,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs) do model,V,U,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs
+map_parts(dmodel.dmodel.models,V.spaces,U.spaces,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs) do model,V,U,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs
   Vc = FESpaceWithLinearConstraints(
     sDOF_to_dof,
     sDOF_to_dofs,

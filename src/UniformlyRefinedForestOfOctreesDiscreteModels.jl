@@ -262,6 +262,14 @@ function setup_pXest_lnodes(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where D
   end
 end
 
+function setup_pXest_lnodes_nonconforming(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where Dc
+  if (Dc==2)
+    p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-2))
+  else
+    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-2))
+  end
+end
+
 function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
   pXest_lnodes=ptr_pXest_lnodes[]
 
