@@ -49,7 +49,7 @@ dmodel,non_conforming_glue=refine(model,ref_coarse_flags)
 p4est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
 # FE Spaces
-order=1
+order=2
 reffe = ReferenceFE(lagrangian,Float64,order)
 V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
 U = TrialFESpace(V)   
@@ -73,7 +73,7 @@ coarse_shape_funs=Gridap.ReferenceFEs.get_shapefuns(reffe_cell)
 ref_constraints=evaluate(dof_basis_h_refined,coarse_shape_funs)
 
 rr = Gridap.Adaptivity.RedRefinementRule(QUAD)
-face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.coarse_nodes_above_fine_nodes(rr,(2*order-1,2*order-1),order)
+face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.coarse_nodes_above_fine_nodes(rr,(order,order),1)
 
 
 # To-think: might this info go to the glue? 
@@ -172,9 +172,9 @@ function generate_constraints(dmodel,
       # Locate for each hanging facet a cell to which it belongs 
       # and local position within that cell 
       hanging_faces_to_cell,    
-      hanging_faces_to_lvertex = _generate_hanging_faces_to_cell_and_lface(num_regular_faces, 
-                                                                           num_hanging_faces, 
-                                                                           gridap_cell_faces)                                                                        
+      hanging_faces_to_lface = _generate_hanging_faces_to_cell_and_lface(num_regular_faces, 
+                                                                         num_hanging_faces, 
+                                                                         gridap_cell_faces)                                                                        
 
       basis, reffe_args,reffe_kwargs = reffe
       cell_reffe = ReferenceFE(QUAD,basis,reffe_args...;reffe_kwargs...)
@@ -205,8 +205,9 @@ function generate_constraints(dmodel,
       Dc = 2
       hanging_lvertex_within_first_subface = 2^(Dc-1)
       subface_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(face_reffe)
-      subface_own_dofs = subface_own_dofs[hanging_lvertex_within_first_subface]
-      num_faces = 2^Dc
+      vertex_subface_own_dofs = subface_own_dofs[hanging_lvertex_within_first_subface]
+      num_vertices = 2^Dc
+      num_faces = 2*Dc
 
       for vid_hanging=1:num_hanging_vertices
          # Go over the dofs of hanging_vertices_to_cell[vid_hanging]
@@ -215,7 +216,7 @@ function generate_constraints(dmodel,
          lvertex=hanging_vertices_to_lvertex[vid_hanging]
          (_,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
          ocell_lface = ocell_lface - num_faces
-         for ((ldof,dof),ldof_subface) in zip(enumerate(face_own_dofs[lvertex]),subface_own_dofs)
+         for ((ldof,dof),ldof_subface) in zip(enumerate(face_own_dofs[lvertex]),vertex_subface_own_dofs)
            push!(sDOF_to_dof,cell_dof_ids[cell][dof])
            push!(sDOF_to_dofs,hanging_vertices_owner_face_dofs[vid_hanging])
            coeffs=Vector{Float64}(undef,length(hanging_vertices_owner_face_ldofs[vid_hanging]))
@@ -225,6 +226,24 @@ function generate_constraints(dmodel,
            push!(sDOF_to_coeffs,coeffs) 
          end 
       end
+
+      subface_own_dofs = subface_own_dofs[end]
+      for fid_hanging=1:num_hanging_faces
+        cell=hanging_faces_to_cell[fid_hanging]
+        lface=hanging_faces_to_lface[fid_hanging]
+        _,ocell_lface,subface=hanging_faces_owner_cell_and_lface[fid_hanging]
+        ocell_lface = ocell_lface - num_faces
+        for ((ldof,dof),ldof_subface) in zip(enumerate(face_own_dofs[num_vertices+lface]),subface_own_dofs)
+          push!(sDOF_to_dof,cell_dof_ids[cell][dof])
+          push!(sDOF_to_dofs,hanging_faces_owner_face_dofs[fid_hanging])
+          coeffs=Vector{Float64}(undef,length(hanging_faces_owner_face_ldofs[fid_hanging]))
+          for (i,ldof_coarse) in enumerate(hanging_faces_owner_face_ldofs[fid_hanging])
+           coeffs[i]=ref_constraints[face_subface_ldof_to_cell_ldof[ocell_lface][subface][ldof_subface],ldof_coarse]
+          end
+          push!(sDOF_to_coeffs,coeffs) 
+        end 
+     end
+
       # TO-DO: the tables can be generated more efficiently
       sDOF_to_dof, Gridap.Arrays.Table(sDOF_to_dofs), Gridap.Arrays.Table(sDOF_to_coeffs)
     end 
@@ -238,8 +257,8 @@ println(sDOF_to_dofs)
 println(sDOF_to_coeffs)
 
 # Define manufactured functions
-u(x) = x[1]
-f(x) = 0.0
+u(x) = x[1]*x[2]+x[2]^2
+f(x) = -Δ(u)(x)
 
 map_parts(dmodel.dmodel.models,V.spaces,U.spaces,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs) do model,V,U,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs
   Vc = FESpaceWithLinearConstraints(
