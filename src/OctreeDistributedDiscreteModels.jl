@@ -527,7 +527,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
     function refine_callback_2d(::Ptr{p4est_t},
       which_tree::p4est_topidx_t,
       quadrant_ptr::Ptr{p4est_quadrant_t})
-      @assert which_tree == 0
       quadrant = quadrant_ptr[]
       return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
     end

@@ -528,10 +528,12 @@ function generate_face_labeling(parts,
         if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P4EST_CONNECT_CORNER)
               # The current corner is also a corner of the coarse mesh
               coarse_cornergid=coarse_cell_vertices[tree][corner]
+              println("AAA vertex_to_entity[$(ref_cornergid)]")
               vertex_to_entity[ref_cornergid]=
                  coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid]
         else
           if vertex_to_entity[ref_cornergid]==0
+            println("BBB vertex_to_entity[$(ref_cornergid)]")
             # We are on the interior of a tree (if we did not touch it yet)
             vertex_to_entity[ref_cornergid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
           end
@@ -627,22 +629,82 @@ function generate_face_labeling(parts,
           sides=Ptr{p8est_iter_face_side_t}(info.sides.array)
         end
 
-        nsides=info.sides.elem_count
-        tree=sides[1].treeid+1
-        is_boundary=info.tree_boundary
-        # We are on the interior of a tree
-        if sides[1].is_hanging == 0
-          face=sides[1].face+1
-          data=sides[1].is.full
-        else
-          face=sides[2].face+1
-          data=sides[2].is.full
+        function process_facet(tree,face,ref_cell)
+          if Dc==2
+            gridap_facet=P4EST_2_GRIDAP_FACET_2D[face]
+          else
+            gridap_facet=P4EST_2_GRIDAP_FACET_3D[face]
+          end
+
+          polytope= Dc==2 ? QUAD : HEX
+          poly_faces=Gridap.ReferenceFEs.get_faces(polytope)
+          poly_facet_range=Gridap.ReferenceFEs.get_dimrange(polytope,Dc-1)
+          poly_first_facet=first(poly_facet_range)
+          poly_facet=poly_first_facet+gridap_facet-1
+
+          # if (MPI.Comm_rank(comm.comm)==0)
+          #   coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
+          #   coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
+          #   println("PPP ", ref_cell, " ", gridap_facet, " ", info.tree_boundary, " ", nsides, " ",coarse_facetgid, " ",  coarse_facetgid_entity)
+          # end
+          if (info.tree_boundary!=0)
+            coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
+            coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
+            # We are on the boundary of coarse mesh or inter-octree boundary
+            for poly_incident_face in poly_faces[poly_facet]
+              if poly_incident_face == poly_facet
+                ref_facetgid=cell_facets[ref_cell][gridap_facet]
+                facet_to_entity[ref_facetgid]=coarse_facetgid_entity
+              elseif (Dc==3 && poly_incident_face in Gridap.ReferenceFEs.get_dimrange(polytope,1))
+                poly_first_edget=first(Gridap.ReferenceFEs.get_dimrange(polytope,1))
+                edget=poly_incident_face-poly_first_edget+1
+                ref_edgetgid=cell_edgets[ref_cell][edget]
+                edget_to_entity[ref_edgetgid]=coarse_facetgid_entity
+              else
+                ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
+                # if (MPI.Comm_rank(comm.comm)==0)
+                #    println("CCC ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides)
+                # end
+                println("CCCC vertex_to_entity[$(ref_cornergid)]")
+                vertex_to_entity[ref_cornergid]=coarse_facetgid_entity
+              end
+            end
+          else
+            # We are on the interior of the domain
+            ref_facegid=cell_facets[ref_cell][gridap_facet]
+            facet_to_entity[ref_facegid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
+          end
+      end 
+
+      nsides=info.sides.elem_count
+      for iside=1:nsides
+        if (iside==2 && 
+          sides[iside].is_hanging == 0 &&
+          sides[1].is_hanging == 0)
+          break
         end
-        if data.is_ghost==1
-           ref_cell=pXest.local_num_quadrants+data.quadid+1
-        else
-           ref_cell=owned_trees_offset[tree]+data.quadid+1
-        end
+        face=sides[iside].face+1
+        tree=sides[iside].treeid+1
+        if (sides[iside].is_hanging == 0)
+          data=sides[iside].is.full
+          if data.is_ghost==1
+            ref_cell=pXest.local_num_quadrants+data.quadid+1
+          else
+            ref_cell=owned_trees_offset[tree]+data.quadid+1
+          end 
+          process_facet(tree,face,ref_cell)
+        else 
+          for i=1:length(sides[iside].is.hanging.quadid)
+            quadid=sides[iside].is.hanging.quadid[i]
+            if (sides[iside].is.hanging.is_ghost[i]==1)
+              ref_cell=pXest.local_num_quadrants+quadid+1
+            else 
+              ref_cell=owned_trees_offset[tree]+quadid+1
+            end 
+            process_facet(tree,face,ref_cell)
+          end 
+        end 
+        # is_boundary=info.tree_boundary
         # println("===========================")
         # println("ref_cell: ",ref_cell)
         # println("face nsides: ",nsides)
@@ -664,53 +726,9 @@ function generate_face_labeling(parts,
         # println("side2 is.full quadid: ",sides[2].is.full.quadid)
         # println("side2 is.hanging is_ghost: ",sides[2].is.hanging.is_ghost)
         # println("side2 is.hanging quadid: ",sides[2].is.hanging.quadid)
-
-
-        if Dc==2
-          gridap_facet=P4EST_2_GRIDAP_FACET_2D[face]
-        else
-          gridap_facet=P4EST_2_GRIDAP_FACET_3D[face]
-        end
-
-        polytope= Dc==2 ? QUAD : HEX
-        poly_faces=Gridap.ReferenceFEs.get_faces(polytope)
-        poly_facet_range=Gridap.ReferenceFEs.get_dimrange(polytope,Dc-1)
-        poly_first_facet=first(poly_facet_range)
-        poly_facet=poly_first_facet+gridap_facet-1
-
-        # if (MPI.Comm_rank(comm.comm)==0)
-        #   coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
-        #   coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
-        #   println("PPP ", ref_cell, " ", gridap_facet, " ", info.tree_boundary, " ", nsides, " ",coarse_facetgid, " ",  coarse_facetgid_entity)
-        # end
-        if (info.tree_boundary!=0)
-          coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
-          coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
-          # We are on the boundary of coarse mesh or inter-octree boundary
-          for poly_incident_face in poly_faces[poly_facet]
-            if poly_incident_face == poly_facet
-              ref_facetgid=cell_facets[ref_cell][gridap_facet]
-              facet_to_entity[ref_facetgid]=coarse_facetgid_entity
-            elseif (Dc==3 && poly_incident_face in Gridap.ReferenceFEs.get_dimrange(polytope,1))
-              poly_first_edget=first(Gridap.ReferenceFEs.get_dimrange(polytope,1))
-              edget=poly_incident_face-poly_first_edget+1
-              ref_edgetgid=cell_edgets[ref_cell][edget]
-              edget_to_entity[ref_edgetgid]=coarse_facetgid_entity
-            else
-              ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
-              # if (MPI.Comm_rank(comm.comm)==0)
-              #    println("CCC ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides)
-              # end
-              vertex_to_entity[ref_cornergid]=coarse_facetgid_entity
-            end
-          end
-        else
-          # We are on the interior of the domain
-          ref_facegid=cell_facets[ref_cell][gridap_facet]
-          facet_to_entity[ref_facegid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
-        end
-        nothing
-     end
+      end 
+      nothing
+    end
 
     #  C-callable face callback
     cface_callback = @cfunction($jface_callback,
