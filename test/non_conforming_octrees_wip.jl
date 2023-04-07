@@ -135,6 +135,56 @@ function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
      Gridap.Arrays.Table(data_owner_face_ldofs, ptrs)
 end
 
+function _generate_constraints!(Df,
+                                Dc,
+                                num_hanging_faces,
+                                hanging_faces_to_cell,
+                                hanging_faces_to_lface,
+                                hanging_faces_owner_face_dofs,
+                                hanging_faces_owner_face_ldofs,
+                                hanging_faces_owner_cell_and_lface,
+                                face_subface_ldof_to_cell_ldof,
+                                face_own_dofs,
+                                subface_own_dofs,
+                                cell_dof_ids,
+                                sDOF_to_dof,
+                                sDOF_to_dofs,
+                                sDOF_to_coeffs)
+
+  @assert Dc==2 || Dc==3
+  @assert 0 ≤ Df < Dc
+  num_vertices = 2^Dc
+  num_edges = (Dc==2 ? 0 : 12)
+  num_faces = (2*Dc)
+  
+  offset=0
+  if (Df ≥ 1)
+    offset+=num_vertices
+    if (Df == 2)
+      offset+=num_edges
+    end 
+  end 
+
+  cache=array_cache(cell_dof_ids)
+    
+  for fid_hanging=1:num_hanging_faces
+    cell=hanging_faces_to_cell[fid_hanging]
+    current_cell_dof_ids=getindex!(cache,cell_dof_ids,cell)
+    lface=hanging_faces_to_lface[fid_hanging]
+    _,ocell_lface,subface=hanging_faces_owner_cell_and_lface[fid_hanging]
+    ocell_lface = ocell_lface - num_faces
+    for ((ldof,dof),ldof_subface) in zip(enumerate(face_own_dofs[offset+lface]),subface_own_dofs)
+      push!(sDOF_to_dof,current_cell_dof_ids[dof])
+      push!(sDOF_to_dofs,hanging_faces_owner_face_dofs[fid_hanging])
+      coeffs=Vector{Float64}(undef,length(hanging_faces_owner_face_ldofs[fid_hanging]))
+      for (i,ldof_coarse) in enumerate(hanging_faces_owner_face_ldofs[fid_hanging])
+      coeffs[i]=ref_constraints[face_subface_ldof_to_cell_ldof[ocell_lface][subface][ldof_subface],ldof_coarse]
+      end
+      push!(sDOF_to_coeffs,coeffs) 
+    end 
+  end
+end
+
 function generate_constraints(dmodel, 
                               V,
                               reffe,
@@ -207,46 +257,38 @@ function generate_constraints(dmodel,
       hanging_lvertex_within_first_subface = 2^(Dc-1)
       subface_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(face_reffe)
       vertex_subface_own_dofs = subface_own_dofs[hanging_lvertex_within_first_subface]
-      num_vertices = 2^Dc
-      num_faces = 2*Dc
-
-      for vid_hanging=1:num_hanging_vertices
-         # Go over the dofs of hanging_vertices_to_cell[vid_hanging]
-         # on hanging_vertices_to_lvertex lvertx
-         cell=hanging_vertices_to_cell[vid_hanging]
-         lvertex=hanging_vertices_to_lvertex[vid_hanging]
-         (_,ocell_lface)=hanging_vertices_owner_cell_and_lface[vid_hanging]
-         ocell_lface = ocell_lface - num_faces
-         for ((ldof,dof),ldof_subface) in zip(enumerate(face_own_dofs[lvertex]),vertex_subface_own_dofs)
-           push!(sDOF_to_dof,cell_dof_ids[cell][dof])
-           push!(sDOF_to_dofs,hanging_vertices_owner_face_dofs[vid_hanging])
-           coeffs=Vector{Float64}(undef,length(hanging_vertices_owner_face_ldofs[vid_hanging]))
-           for (i,ldof_coarse) in enumerate(hanging_vertices_owner_face_ldofs[vid_hanging])
-            coeffs[i]=ref_constraints[face_subface_ldof_to_cell_ldof[ocell_lface][1][ldof_subface],ldof_coarse]
-           end
-           push!(sDOF_to_coeffs,coeffs) 
-         end 
-      end
-
-      subface_own_dofs = subface_own_dofs[end]
-      for fid_hanging=1:num_hanging_faces
-        cell=hanging_faces_to_cell[fid_hanging]
-        lface=hanging_faces_to_lface[fid_hanging]
-        _,ocell_lface,subface=hanging_faces_owner_cell_and_lface[fid_hanging]
-        ocell_lface = ocell_lface - num_faces
-        for ((ldof,dof),ldof_subface) in zip(enumerate(face_own_dofs[num_vertices+lface]),subface_own_dofs)
-          push!(sDOF_to_dof,cell_dof_ids[cell][dof])
-          push!(sDOF_to_dofs,hanging_faces_owner_face_dofs[fid_hanging])
-          coeffs=Vector{Float64}(undef,length(hanging_faces_owner_face_ldofs[fid_hanging]))
-          for (i,ldof_coarse) in enumerate(hanging_faces_owner_face_ldofs[fid_hanging])
-           coeffs[i]=ref_constraints[face_subface_ldof_to_cell_ldof[ocell_lface][subface][ldof_subface],ldof_coarse]
-          end
-          push!(sDOF_to_coeffs,coeffs) 
-        end 
-     end
-
-
-      # TO-DO: the tables can be generated more efficiently
+      _generate_constraints!(0,
+                             Dc,
+                             num_hanging_vertices,
+                             hanging_vertices_to_cell,
+                             hanging_vertices_to_lvertex,
+                             hanging_vertices_owner_face_dofs,
+                             hanging_vertices_owner_face_ldofs,
+                             hanging_vertices_owner_cell_and_lface,
+                             face_subface_ldof_to_cell_ldof,
+                             face_own_dofs,
+                             vertex_subface_own_dofs,
+                             cell_dof_ids,
+                             sDOF_to_dof,
+                             sDOF_to_dofs,
+                             sDOF_to_coeffs)
+      
+      face_subface_own_dofs = subface_own_dofs[end]
+      _generate_constraints!(1,
+                             Dc,
+                             num_hanging_faces,
+                             hanging_faces_to_cell,
+                             hanging_faces_to_lface,
+                             hanging_faces_owner_face_dofs,
+                             hanging_faces_owner_face_ldofs,
+                             hanging_faces_owner_cell_and_lface,
+                             face_subface_ldof_to_cell_ldof,
+                             face_own_dofs,
+                             face_subface_own_dofs,
+                             cell_dof_ids,
+                             sDOF_to_dof,
+                             sDOF_to_dofs,
+                             sDOF_to_coeffs)
       sDOF_to_dof, Gridap.Arrays.Table(sDOF_to_dofs), Gridap.Arrays.Table(sDOF_to_coeffs)
     end 
 end

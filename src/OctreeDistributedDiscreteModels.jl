@@ -1331,13 +1331,13 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
         (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface], half)
     end
 
-
     # Go over all touched hanging vertices and start 
     # assigning IDs from the last num_regular_vertices ID
     # For each hanging face, keep track of (owner_cell,lface)
     num_hanging_faces[1] = 0
-    hanging_vertices_owner_cell_and_lface = Tuple{Int,Int}[]
+    hanging_vertices_owner_cell_and_lface = Tuple{Int,Int,Int}[]
     owner_gridap_gface_to_hanging_vertex = Dict{Int,Int}()
+    half=1
     for key in keys(hanging_vertices_pairs_to_owner_face)
       (cell, lvertex) = key
       owner_p4est_gface = hanging_vertices_pairs_to_owner_face[key]
@@ -1347,7 +1347,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
         owner_gridap_gface_to_hanging_vertex[owner_gridap_gface] = num_hanging_faces[1]
         (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
         push!(hanging_vertices_owner_cell_and_lface,
-          (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface]))
+          (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface],half))
       end
       start_gridap_vertices = (cell - 1) * num_cell_vertices
       gridap_cell_vertices_data[start_gridap_vertices+lvertex] = num_regular_faces[1] +
