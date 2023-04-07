@@ -49,7 +49,7 @@ dmodel,non_conforming_glue=refine(model,ref_coarse_flags)
 p4est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
 # FE Spaces
-order=2
+order=4
 reffe = ReferenceFE(lagrangian,Float64,order)
 V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
 U = TrialFESpace(V)   
@@ -71,6 +71,7 @@ dof_basis_h_refined = Gridap.CellData.get_dof_basis(reffe_cell_h_refined)
 
 coarse_shape_funs=Gridap.ReferenceFEs.get_shapefuns(reffe_cell)
 ref_constraints=evaluate(dof_basis_h_refined,coarse_shape_funs)
+
 
 rr = Gridap.Adaptivity.RedRefinementRule(QUAD)
 face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.coarse_nodes_above_fine_nodes(rr,(order,order),1)
@@ -244,6 +245,7 @@ function generate_constraints(dmodel,
         end 
      end
 
+
       # TO-DO: the tables can be generated more efficiently
       sDOF_to_dof, Gridap.Arrays.Table(sDOF_to_dofs), Gridap.Arrays.Table(sDOF_to_coeffs)
     end 
@@ -269,7 +271,7 @@ map_parts(dmodel.dmodel.models,V.spaces,U.spaces,sDOF_to_dof,sDOF_to_dofs,sDOF_t
   Uc = TrialFESpace(Vc,u)
 
   # Define integration mesh and quadrature
-  degree = 2
+  degree = 2*order+1
   Ω = Triangulation(model)
   dΩ = Measure(Ω,degree)
 
