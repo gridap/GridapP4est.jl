@@ -528,12 +528,12 @@ function generate_face_labeling(parts,
         if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P4EST_CONNECT_CORNER)
               # The current corner is also a corner of the coarse mesh
               coarse_cornergid=coarse_cell_vertices[tree][corner]
-              println("AAA vertex_to_entity[$(ref_cornergid)]")
+              #println("AAA vertex_to_entity[$(ref_cornergid)]")
               vertex_to_entity[ref_cornergid]=
                  coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid]
         else
           if vertex_to_entity[ref_cornergid]==0
-            println("BBB vertex_to_entity[$(ref_cornergid)]")
+            #println("BBB vertex_to_entity[$(ref_cornergid)]")
             # We are on the interior of a tree (if we did not touch it yet)
             vertex_to_entity[ref_cornergid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
           end
@@ -665,7 +665,7 @@ function generate_face_labeling(parts,
                 # if (MPI.Comm_rank(comm.comm)==0)
                 #    println("CCC ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides)
                 # end
-                println("CCCC vertex_to_entity[$(ref_cornergid)]")
+                # println("CCCC vertex_to_entity[$(ref_cornergid)]")
                 vertex_to_entity[ref_cornergid]=coarse_facetgid_entity
               end
             end
