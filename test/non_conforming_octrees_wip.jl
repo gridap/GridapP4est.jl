@@ -57,7 +57,7 @@ function setup_model(perm)
       labels.d_to_dface_to_entity[1]=[7,7,7,7,7,7]
       if (perm==1 || perm==2)
         labels.d_to_dface_to_entity[2]=[7,7,7,0,7,7,7]
-      elseif (perm==1 || perm==2)
+      elseif (perm==3 || perm==4)
         labels.d_to_dface_to_entity[2]=[7,7,0,7,7,7,7] 
       end  
       add_tag!(labels,"boundary",[7])
