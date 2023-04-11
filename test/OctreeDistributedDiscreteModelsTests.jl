@@ -94,7 +94,7 @@ module OctreeDistributedDiscreteModelsTests
       map_parts(model.dmodel.models,model_back.dmodel.models) do m1, m2
         Ωh1  = Triangulation(m1)
         dΩh1 = Measure(Ωh1,2)
-        Ωh2  = Triangulation(m2)
+        Ωh2OctreeDistributedDiscreteModelsTests.jl  = Triangulation(m2)
         dΩh2 = Measure(Ωh2,2)
         sum(∫(1)dΩh1) ≈ sum(∫(1)dΩh2)
       end

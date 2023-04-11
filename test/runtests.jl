@@ -38,6 +38,9 @@ function run_tests(testdir)
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl"]
           np = 6
           extra_args = ""
+        elseif f in ["NonConformingOctreeDistributedDiscreteModelsTests.jl"]
+          np = 1
+          extra_args = ""
         else
           np = nprocs
           extra_args = ""
