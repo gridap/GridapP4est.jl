@@ -125,7 +125,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
 
 
     rr = Gridap.Adaptivity.RedRefinementRule(QUAD)
-    face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.coarse_nodes_above_fine_nodes(rr,(order,order),1)
+    face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr,(order,order),1)
 
 
     # To-think: might this info go to the glue? 
@@ -518,4 +518,4 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   test(4,2)
   test(4,3)
 
-end 
+end
