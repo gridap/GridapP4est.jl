@@ -1137,13 +1137,27 @@ end
 
 function _build_map_from_faces_to_cell_lface(::Type{Val{Dc}}, lnodes) where Dc
     element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
+    face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
+    hanging_face = Vector{Cint}(undef, Dc*2)
+
     # Build a map from faces to (cell,lface)
     p4est_gface_to_gcell_p4est_lface = Dict{Int,Tuple{Int,Int}}()
     for cell = 1:lnodes.num_local_elements
       start = (cell - 1) * lnodes.vnodes + 1
       p4est_cell_faces = view(element_nodes, start:start+num_cell_faces-1)
-      for (lface, gface) in enumerate(p4est_cell_faces)
-        p4est_gface_to_gcell_p4est_lface[gface] = (cell, lface)
+      has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
+      if (has_hanging==0)
+        for (lface, gface) in enumerate(p4est_cell_faces)
+          p4est_gface_to_gcell_p4est_lface[gface] = (cell, lface)
+        end 
+      else
+        for (lface, half) in enumerate(hanging_face)
+          # Current face is NOT hanging
+          if (half == -1)
+            gface = p4est_cell_faces[lface]
+            p4est_gface_to_gcell_p4est_lface[gface] = (cell, lface)
+          end   
+        end
       end
     end
     p4est_gface_to_gcell_p4est_lface
@@ -1157,7 +1171,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   lnodes = ptr_pXest_lnodes[]
   element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
   face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
-  hanging_face = Vector{Cint}(undef, 4)
+  hanging_face = Vector{Cint}(undef, Dc*2)
 
   num_regular_faces,
   num_hanging_faces,

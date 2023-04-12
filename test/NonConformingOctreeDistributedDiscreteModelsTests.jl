@@ -16,7 +16,53 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   # Generate a global numbering of (regular,hanging) vertices?
   # Generate a global numbering of (regular,hanging) faces?
 
-  function setup_model(perm)
+  function setup_model(::Type{Val{3}}, perm)
+  #               5 +--------+ 7 
+  #                /        /|
+  #               /        / |
+  #            6 +--------+  |
+  #              |        |  |
+  #              |  1     |  + 3 
+  #              |        | /
+  #              |        |/
+  #            2 +--------+ 4
+
+  #     6  +--------+ 8 
+  #       /        /|
+  #      /        / |
+  #  11 +--------+  |
+  #     |        |  |
+  #     |  2     |  + 4
+  #     |        | /
+  #     |        |/
+  #   9 +--------+ 10
+    ptr  = [ 1, 9, 16 ]
+    if (perm==1)
+      data = [ 1,2,3,4,5,6,7,8, 2,9,4,10,6,11,8,12 ]
+    elseif (perm==2)
+      @assert false
+    elseif (perm==3)
+      @assert false
+    elseif (perm==4) 
+      @assert false
+    end  
+    cell_vertex_lids = Gridap.Arrays.Table(data,ptr)
+    node_coordinates = Vector{Point{2,Float64}}(undef,6)
+    node_coordinates[1]=Point{3,Float64}(0.0,0.0,0.0)
+    node_coordinates[2]=Point{3,Float64}(1.0,0.0,0.0)
+    node_coordinates[3]=Point{3,Float64}(0.0,1.0,0.0)
+    node_coordinates[4]=Point{3,Float64}(1.0,1.0,0.0)
+    node_coordinates[5]=Point{3,Float64}(0.0,0.0,1.0)
+    node_coordinates[6]=Point{3,Float64}(1.0,0.0,1.0)
+    node_coordinates[7]=Point{3,Float64}(0.0,1.0,1.0)
+    node_coordinates[8]=Point{3,Float64}(1.0,1.0,1.0)
+    node_coordinates[9]=Point{3,Float64}(2.0,0.0,0.0)
+    node_coordinates[10]=Point{3,Float64}(2.0,1.0,0.0)
+    node_coordinates[11]=Point{3,Float64}(2.0,0.0,1.0)
+    node_coordinates[12]=Point{3,Float64}(2.0,1.0,1.0)
+  end
+
+  function setup_model(::Type{Val{2}}, perm)
     @assert perm ∈ (1,2,3,4)
     #
     #  3-------4-------6
@@ -84,16 +130,13 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   # run(parts, (1, 1))
   # MPI.Finalize()
 
-  function test(perm,order)
+  function test(TVDc::Type{Val{Dc}}, perm, order) where Dc
     # This is for debuging
-    Dc=2
-    domain = (0, 1, 0, 1)
-    subdomains = (1, 1)
-    coarse_model = setup_model(perm)
+    coarse_model = setup_model(TVDc,perm)
     model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
 
     ref_coarse_flags=map_parts(parts) do _
-      [refine_flag,nothing_flag]
+      [nothing_flag,refine_flag]
       #allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
     end 
     dmodel,non_conforming_glue=refine(model,ref_coarse_flags)   
@@ -378,7 +421,6 @@ module NonConformingOctreeDistributedDiscreteModelsTests
           sDOF_to_dofs   = Vector{Int}[]
           sDOF_to_coeffs = Vector{Float64}[]
 
-          Dc = 2
           facet_polytope = Dc==2 ? SEGMENT : QUAD
           basis, reffe_args,reffe_kwargs = reffe
           face_reffe = ReferenceFE(facet_polytope,basis,reffe_args...;reffe_kwargs...)
@@ -502,20 +544,20 @@ module NonConformingOctreeDistributedDiscreteModelsTests
 
   end 
 
-  test(1,1)
-  test(1,2)
-  test(1,3)
+  test(Val{2},1,1)
+  test(Val{2},1,2)
+  test(Val{2},1,3)
 
-  test(2,1)
-  test(2,2)
-  test(2,3)
+  test(Val{2},2,1)
+  test(Val{2},2,2)
+  test(Val{2},2,3)
 
-  test(3,1)
-  test(3,2)
-  test(3,3)
+  test(Val{2},3,1)
+  test(Val{2},3,2)
+  test(Val{2},3,3)
 
-  test(4,1)
-  test(4,2)
-  test(4,3)
+  test(Val{2},4,1)
+  test(Val{2},4,2)
+  test(Val{2},4,3)
 
 end
