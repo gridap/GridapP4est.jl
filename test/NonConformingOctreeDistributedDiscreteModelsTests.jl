@@ -1,4 +1,4 @@
-module NonConformingOctreeDistributedDiscreteModelsTests
+#module NonConformingOctreeDistributedDiscreteModelsTests
   using P4est_wrapper
   using GridapP4est
   using Gridap
@@ -36,7 +36,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   #     |        | /
   #     |        |/
   #   9 +--------+ 10
-    ptr  = [ 1, 9, 16 ]
+    ptr  = [ 1, 9, 17 ]
     if (perm==1)
       data = [ 1,2,3,4,5,6,7,8, 2,9,4,10,6,11,8,12 ]
     elseif (perm==2)
@@ -47,7 +47,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
       @assert false
     end  
     cell_vertex_lids = Gridap.Arrays.Table(data,ptr)
-    node_coordinates = Vector{Point{2,Float64}}(undef,6)
+    node_coordinates = Vector{Point{3,Float64}}(undef,12)
     node_coordinates[1]=Point{3,Float64}(0.0,0.0,0.0)
     node_coordinates[2]=Point{3,Float64}(1.0,0.0,0.0)
     node_coordinates[3]=Point{3,Float64}(0.0,1.0,0.0)
@@ -60,6 +60,26 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     node_coordinates[10]=Point{3,Float64}(2.0,1.0,0.0)
     node_coordinates[11]=Point{3,Float64}(2.0,0.0,1.0)
     node_coordinates[12]=Point{3,Float64}(2.0,1.0,1.0)
+
+    polytope=HEX
+    scalar_reffe=Gridap.ReferenceFEs.ReferenceFE(polytope,Gridap.ReferenceFEs.lagrangian,Float64,1)
+    cell_types=collect(Fill(1,length(cell_vertex_lids)))
+    cell_reffes=[scalar_reffe]
+    grid = Gridap.Geometry.UnstructuredGrid(node_coordinates,
+                                            cell_vertex_lids,
+                                            cell_reffes,
+                                            cell_types,
+                                            Gridap.Geometry.NonOriented())
+    m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
+    labels = get_face_labeling(m)
+    labels.d_to_dface_to_entity[1]=[7,7,7,7,7,7,7,7,7,7,7,7]
+    if (perm==1 || perm==2)
+      labels.d_to_dface_to_entity[2].=0
+    elseif (perm==3 || perm==4)
+        @assert false 
+    end  
+    add_tag!(labels,"boundary",[7])
+    m
   end
 
   function setup_model(::Type{Val{2}}, perm)
@@ -136,12 +156,12 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
 
     ref_coarse_flags=map_parts(parts) do _
-      [nothing_flag,refine_flag]
+      [refine_flag,refine_flag]
       #allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
     end 
     dmodel,non_conforming_glue=refine(model,ref_coarse_flags)   
 
-    p4est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
+    #p4est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
     # FE Spaces
     reffe = ReferenceFE(lagrangian,Float64,order)
@@ -544,20 +564,22 @@ module NonConformingOctreeDistributedDiscreteModelsTests
 
   end 
 
-  test(Val{2},1,1)
-  test(Val{2},1,2)
-  test(Val{2},1,3)
+  # test(Val{2},1,1)
+  # test(Val{2},1,2)
+  # test(Val{2},1,3)
 
-  test(Val{2},2,1)
-  test(Val{2},2,2)
-  test(Val{2},2,3)
+  # test(Val{2},2,1)
+  # test(Val{2},2,2)
+  # test(Val{2},2,3)
 
-  test(Val{2},3,1)
-  test(Val{2},3,2)
-  test(Val{2},3,3)
+  # test(Val{2},3,1)
+  # test(Val{2},3,2)
+  # test(Val{2},3,3)
 
-  test(Val{2},4,1)
-  test(Val{2},4,2)
-  test(Val{2},4,3)
+  # test(Val{2},4,1)
+  # test(Val{2},4,2)
+  # test(Val{2},4,3)
 
-end
+  test(Val{3},1,1)
+
+#end

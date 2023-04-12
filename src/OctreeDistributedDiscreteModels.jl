@@ -1,6 +1,4 @@
 
-## Better to use a C-enum. But I did not use it in order to keep the Julia
-## version of this C example as simple as possible
 const nothing_flag = Cint(0)
 const refine_flag  = Cint(1)
 const coarse_flag  = Cint(2)
@@ -190,7 +188,7 @@ function pXest_copy(::Type{Val{Dc}}, ptr_pXest) where Dc
   if (Dc==2)
     p4est_copy(ptr_pXest, Cint(0))
   else
-    @assert false
+    p8est_copy(ptr_pXest, Cint(0))
   end
 end
 
@@ -232,7 +230,7 @@ function pXest_refine!(::Type{Val{Dc}}, ptr_pXest, refine_fn_c) where Dc
   if (Dc==2)
     p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
   else
-    @assert false
+    p8est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
   end
 end
 
@@ -265,6 +263,16 @@ function pXest_coarsen!(::Type{Val{Dc}}, ptr_pXest, coarsen_fn_c) where Dc
     @assert false
   end
 end
+
+
+function pXest_reset_data!(::Type{Val{Dc}}, ptr_pXest, data_size, init_fn_c, user_pointer) where Dc
+  if (Dc==2)
+    p4est_reset_data(ptr_pXest, data_size, init_fn_c, user_pointer)
+  else
+    p8est_reset_data(ptr_pXest, data_size, init_fn_c, user_pointer)
+  end
+end
+
 
 # [c/e][child_id][flid]->clid
 const rrule_f_to_c_lid_2D=Vector{Vector{Vector{UInt8}}}(
@@ -494,34 +502,57 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
     # back function to an array of ints with as many entries as forest quadrants. This call back function
     # initializes the quadrant->p.user_data void * pointer of all quadrants such that it
     # points to the corresponding entry in the global array mentioned in the previous sentence.
-    function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
-      which_tree::p4est_topidx_t,
-      quadrant_ptr::Ptr{p4est_quadrant_t})
-      # Extract a reference to the tree which_tree
-      forest = forest_ptr[]
-      tree = p4est_tree_array_index(forest.trees, which_tree)[]
-      quadrant = quadrant_ptr[]
-      q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-      @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
-      user_data = unsafe_wrap(Array, 
-                              Ptr{Cint}(forest.user_pointer), 
-                              current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-      unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-      current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-      current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-      return nothing
-    end
-
-    init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
-                                       Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
-
+    if (Dc==2)
+      function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
+        which_tree::p4est_topidx_t,
+        quadrant_ptr::Ptr{p4est_quadrant_t})
+        # Extract a reference to the tree which_tree
+        forest = forest_ptr[]
+        tree = p4est_tree_array_index(forest.trees, which_tree)[]
+        quadrant = quadrant_ptr[]
+        q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
+        @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
+        user_data = unsafe_wrap(Array, 
+                                Ptr{Cint}(forest.user_pointer), 
+                                current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+        unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+        current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
+        current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+        return nothing
+      end
+      init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
+                                        Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+      init_fn_callback_c = init_fn_callback_2d_c
+    else
+      @assert Dc==3
+      function init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
+        which_tree::p4est_topidx_t,
+        quadrant_ptr::Ptr{p8est_quadrant_t})
+        # Extract a reference to the tree which_tree
+        forest = forest_ptr[]
+        tree = p8est_tree_array_index(forest.trees, which_tree)[]
+        quadrant = quadrant_ptr[]
+        q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
+        @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
+        user_data = unsafe_wrap(Array, 
+                                Ptr{Cint}(forest.user_pointer), 
+                                current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+        unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+        current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
+        current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+        return nothing
+      end
+      init_fn_callback_3d_c = @cfunction($init_fn_callback_3d, 
+                                        Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+      init_fn_callback_c = init_fn_callback_3d_c
+    end                                     
 
     map_parts(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
       # The length of the local flags array has to match the number of 
       # cells in the model. This includes both owned and ghost cells. 
       # Only the flags for owned cells is actually taken into account. 
       @assert num_cells(lmodel)==length(flags)
-      p4est_reset_data(model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_2d_c, pointer(flags))
+      pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
     end
     
     function refine_callback_2d(::Ptr{p4est_t},
@@ -1029,12 +1060,21 @@ function process_current_face!(gridap_cell_faces,
   return num_regular_faces
 end
 
-const p4est_corner_faces = [0 2; 1 2; 0 3; 1 3]
-const p4est_corner_face_corners = [0 -1 0 -1; -1 0 1 -1; 1 -1 -1 0; -1 1 -1 1]
+
 const p4est_face_corners = [0 2; 1 3; 0 1; 2 3]
-const num_cell_vertices = 4
-const num_cell_faces = 4
 const hanging_vertex_code = -2
+function num_cell_vertices(::Type{Val{Dc}}) where Dc
+  2^Dc
+end 
+
+function num_cell_edges(::Type{Val{Dc}}) where Dc 
+  Dc==2 ? 0 : 12
+end 
+
+function num_cell_faces(::Type{Val{Dc}}) where Dc
+  2*Dc
+end 
+
 
 # To add to P4est_wrapper.jl library
 # I just translated this function to Julia from its p4est counterpart
@@ -1055,6 +1095,8 @@ const hanging_vertex_code = -2
 #  * \return              true if any face is hanging, false otherwise.
 #  */
 
+const p4est_corner_faces = [0 2; 1 2; 0 3; 1 3]
+const p4est_corner_face_corners = [0 -1 0 -1; -1 0 1 -1; 1 -1 -1 0; -1 1 -1 1]
 function p4est_lnodes_decode(face_code, hanging_face)
   @assert face_code >= 0
   if (face_code != 0)
@@ -1065,6 +1107,55 @@ function p4est_lnodes_decode(face_code, hanging_face)
       f = p4est_corner_faces[c+1, i+1]
       hanging_face[f+1] = (work & 0x01) != 0 ? p4est_corner_face_corners[c+1, f+1] : -1
       work >>= 1
+    end
+    return 1
+  else
+    return 0
+  end
+end
+
+const p8est_corner_faces = [0 2 4; 1 2 4; 0 3 4; 1 3 4; 0 2 5; 1 2 5; 0 3 5; 1 3 5]
+
+const p8est_face_edges = [ 4 6 8 10; 5 7 9 11; 0 2 8 9; 1 3 10 11; 0 1 4 5; 2 3 6 7]
+
+const p8est_corner_face_corners = [0 -1  0 -1  0 -1; -1  0  1 -1  1 -1 ; 1 -1 -1  0  2 -1 ; -1  1 -1  1  3 -1 ;
+                                   2 -1  2 -1 -1  0; -1  2  3 -1 -1  1 ; 3 -1 -1  2 -1  2 ; -1  3 -1  3 -1  3 ]
+
+const p8est_corner_edges = [ 0 4 8; 0 5 9; 1 4 10; 1 5 11; 2 6 8; 2 7 9; 3 6 10; 3 7 11 ]
+
+# To add to p8est_wrapper.jl library
+# I just translated this function to Julia from its p4est counterpart
+# We cannot call it directly because it is declared as static within p4est,
+# and thus it does not belong to the ABI of the dynamic library object.
+function p8est_lnodes_decode(face_code,
+                             hanging_face,
+                             hanging_edge)
+  @assert face_code >= 0
+  if (face_code!=0)
+    c = face_code & 0x0007
+    work = face_code >> 3
+    hanging_face .= -1
+    hanging_edge .= -1
+    cwork = c
+    for i=0:2
+      if ((work & 0x0001)!=0)
+        f = p8est_corner_faces[c+1,i+1]
+        hanging_face[f+1] = p8est_corner_face_corners[c+1,f+1]
+        for j=0:3
+          e = p8est_face_edges[f+1,j+1]
+          hanging_edge[e+1] = 4
+        end
+      end
+      work >>= 1
+    end
+    for i=0:3
+      if ((work & 0x0001)!=0)
+        e = p8est_corner_edges[c+1,i+1]
+        hanging_edge[e+1] = (hanging_edge[e] == -1) ? 0 : 2
+        hanging_edge[e+1] += (cwork & 0x0001)
+      end
+      cwork >>= 1
+      work  >>= 1
     end
     return 1
   else
@@ -1136,15 +1227,17 @@ end
 
 
 function _build_map_from_faces_to_cell_lface(::Type{Val{Dc}}, lnodes) where Dc
+    n_cell_faces    = num_cell_faces(Val{Dc})
+
     element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
     face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
-    hanging_face = Vector{Cint}(undef, Dc*2)
+    hanging_face = Vector{Cint}(undef, n_cell_faces)
 
     # Build a map from faces to (cell,lface)
     p4est_gface_to_gcell_p4est_lface = Dict{Int,Tuple{Int,Int}}()
     for cell = 1:lnodes.num_local_elements
       start = (cell - 1) * lnodes.vnodes + 1
-      p4est_cell_faces = view(element_nodes, start:start+num_cell_faces-1)
+      p4est_cell_faces = view(element_nodes, start:start+n_cell_faces-1)
       has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
       if (has_hanging==0)
         for (lface, gface) in enumerate(p4est_cell_faces)
@@ -1163,15 +1256,39 @@ function _build_map_from_faces_to_cell_lface(::Type{Val{Dc}}, lnodes) where Dc
     p4est_gface_to_gcell_p4est_lface
 end 
 
+function pXest_2_gridap_vertex(::Type{Val{Dc}}) where Dc
+  Gridap.Arrays.IdentityVector(num_cell_vertices(Val{Dc}))
+end
+
+function p8est_2_gridap_edge()
+  Gridap.Arrays.IdentityVector(num_cell_edges(Val{3}))
+end
+
+function pXest_2_gridap_facet(::Type{Val{Dc}}) where Dc
+  if (Dc==2)
+    GridapP4est.P4EST_2_GRIDAP_FACET_2D
+  else
+    @assert Dc==3 
+    GridapP4est.P4EST_2_GRIDAP_FACET_3D
+  end 
+end
 
 function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}}, 
                                                      ptr_pXest_lnodes, 
                                                      cell_prange) where Dc
   
+  n_cell_vertices = num_cell_vertices(Val{Dc})
+  n_cell_edges    = num_cell_edges(Val{Dc})
+  n_cell_faces    = num_cell_faces(Val{Dc})
+  
   lnodes = ptr_pXest_lnodes[]
   element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
   face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
-  hanging_face = Vector{Cint}(undef, Dc*2)
+  hanging_face = Vector{Cint}(undef, n_cell_faces)
+  
+  if (Dc==3)
+    hanging_edge = Vector{Cint}(undef, n_cell_edges)
+  end
 
   num_regular_faces,
   num_hanging_faces,
@@ -1190,7 +1307,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
 
     p4est_gface_to_gcell_p4est_lface = _build_map_from_faces_to_cell_lface(Val{Dc},lnodes)
 
-    P4EST_2_GRIDAP_VERTEX_2D = Gridap.Arrays.IdentityVector(num_cell_vertices)
+    P4EST_2_GRIDAP_VERTEX_2D = Gridap.Arrays.IdentityVector(n_cell_vertices)
 
     n = length(indices.lid_to_part)
     gridap_cell_vertices_ptrs = Vector{Int32}(undef,n+1)
@@ -1202,31 +1319,56 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     hanging_faces_pairs_to_owner_face = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
 
     for i=1:n
-      gridap_cell_vertices_ptrs[i+1]=gridap_cell_vertices_ptrs[i]+num_cell_vertices
-      gridap_cell_faces_ptrs[i+1]=gridap_cell_faces_ptrs[i]+num_cell_faces
+      gridap_cell_vertices_ptrs[i+1]=gridap_cell_vertices_ptrs[i]+n_cell_vertices
+      gridap_cell_faces_ptrs[i+1]=gridap_cell_faces_ptrs[i]+n_cell_faces
     end
 
-    gridap_cell_vertices_data = Vector{Int}(undef, lnodes.num_local_elements * num_cell_vertices)
+    gridap_cell_vertices_data = Vector{Int}(undef, lnodes.num_local_elements * n_cell_vertices)
     gridap_cell_vertices_data .= -1
 
-    gridap_cell_faces_data = Vector{Int}(undef, lnodes.num_local_elements * num_cell_faces)
+    gridap_cell_faces_data = Vector{Int}(undef, lnodes.num_local_elements * n_cell_faces)
     gridap_cell_faces_data .= -1
 
-    for cell = 1:lnodes.num_local_elements
-      start = (cell - 1) * lnodes.vnodes + 1
-      start_gridap_vertices = (cell - 1) * num_cell_vertices
-      start_gridap_faces = (cell - 1) * num_cell_faces
-      p4est_cell_faces = view(element_nodes, start:start+3)
-      p4est_cell_vertices = view(element_nodes, start+4:start+7)
+    if (Dc==3)
+      num_regular_edges = Vector{Int}(undef, Dc)
+      num_hanging_edges = Vector{Int}(undef, Dc)
 
+      gridap_cell_edges_ptrs = Vector{Int32}(undef,n+1)
+      gridap_cell_edges_ptrs[1]=1
+      for i=1:n
+        gridap_cell_edges_ptrs[i+1]=gridap_cell_edges_ptrs[i]+n_cell_edges
+      end
+      gridap_cell_edges_data = Vector{Int}(undef, lnodes.num_local_elements * n_cell_edges)
+      gridap_cell_edges_data .= -1
+      hanging_edges_pairs_to_owner_face = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
+      regular_edges_p4est_to_gridap = Dict{Int,Int}()
+    end 
+
+    for cell = 1:lnodes.num_local_elements
+      start                 = (cell - 1) * lnodes.vnodes + 1
+      start_gridap_vertices = (cell - 1) * n_cell_vertices
+      start_gridap_faces    = (cell - 1) * n_cell_faces
+
+      p4est_cell_faces = view(element_nodes, start:start+n_cell_faces-1)
+      p4est_cell_vertices = view(element_nodes, 
+                                 start+n_cell_faces+n_cell_edges:start+n_cell_faces+n_cell_edges+n_cell_vertices-1)
 
       gridap_cell_vertices = view(gridap_cell_vertices_data,
-        start_gridap_vertices+1:start_gridap_vertices+num_cell_vertices)
+        start_gridap_vertices+1:start_gridap_vertices+n_cell_vertices)
       gridap_cell_faces = view(gridap_cell_faces_data,
-        start_gridap_faces+1:start_gridap_faces+num_cell_faces)
-      has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
+        start_gridap_faces+1:start_gridap_faces+n_cell_faces)
+
+      if (Dc==2)  
+        has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
+      else
+        has_hanging = p8est_lnodes_decode(face_code[cell], hanging_face, hanging_edge)
+        start_gridap_edges = (cell-1)*n_cell_edges
+        gridap_cell_edges = view(gridap_cell_edges_data, start_gridap_edges+1:start_gridap_edges+n_cell_edges)
+        p4est_cell_edges = view(element_nodes, 
+                                start+n_cell_faces:start+n_cell_faces+n_cell_edges-1)
+      end
       if has_hanging == 0
-        # All vertices/faces of the current cell are regular 
+        # All vertices/edges/faces of the current cell are regular 
         # Process vertices
         for (p4est_lvertex, p4est_gvertex) in enumerate(p4est_cell_vertices)
           num_regular_faces[1] =
@@ -1236,8 +1378,22 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
               p4est_cell_vertices,
               p4est_lvertex,
               p4est_gvertex,
-              P4EST_2_GRIDAP_VERTEX_2D)
+              pXest_2_gridap_vertex(Val{Dc}))
         end
+        
+        if (Dc==3)
+          for (p4est_ledge, p4est_gedge) in enumerate(p4est_cell_edges)
+            num_regular_faces[2] =
+              process_current_face!(gridap_cell_edges,
+                regular_edges_p4est_to_gridap,
+                num_regular_faces[2],
+                p4est_cell_edges,
+                p4est_ledge,
+                p4est_gedge,
+                p8est_2_gridap_edge())
+          end
+        end 
+
         # Process faces
         for (p4est_lface, p4est_gface) in enumerate(p4est_cell_faces)
           num_regular_faces[Dc] =
@@ -1247,7 +1403,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
               p4est_cell_faces,
               p4est_lface,
               p4est_gface,
-              GridapP4est.P4EST_2_GRIDAP_FACET_2D)
+              pXest_2_gridap_facet(Val{Dc}))
         end
       else
         # "Touch" hanging vertices before processing current cell
@@ -1337,11 +1493,11 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       (owner_p4est_gface, half) = hanging_faces_pairs_to_owner_face[key]
       owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
       num_hanging_faces[Dc] += 1
-      start_gridap_faces = (cell - 1) * num_cell_faces
+      start_gridap_faces = (cell - 1) * n_cell_faces
       gridap_cell_faces_data[start_gridap_faces+lface] = num_regular_faces[Dc] + num_hanging_faces[Dc]
       (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
       hanging_faces_owner_cell_and_lface[num_hanging_faces[Dc]] =
-        (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface], half)
+        (owner_cell, n_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface], half)
     end
 
     # Go over all touched hanging vertices and start 
@@ -1360,20 +1516,26 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
         owner_gridap_gface_to_hanging_vertex[owner_gridap_gface] = num_hanging_faces[1]
         (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
         push!(hanging_vertices_owner_cell_and_lface,
-          (owner_cell, num_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface],half))
+          (owner_cell, n_cell_vertices+GridapP4est.P4EST_2_GRIDAP_FACET_2D[p4est_lface],half))
       end
-      start_gridap_vertices = (cell - 1) * num_cell_vertices
+      start_gridap_vertices = (cell - 1) * n_cell_vertices
       gridap_cell_vertices_data[start_gridap_vertices+lvertex] = num_regular_faces[1] +
                                                              owner_gridap_gface_to_hanging_vertex[owner_gridap_gface]
     end
 
     gridap_cell_faces = Vector{Table}(undef,Dc)
     gridap_cell_faces[1] = Table(gridap_cell_vertices_data,gridap_cell_vertices_ptrs)
+    if (Dc==3)
+      gridap_cell_faces[2] = Table(gridap_cell_edges_data,gridap_cell_edges_ptrs)
+    end   
     gridap_cell_faces[Dc] = Table(gridap_cell_faces_data,gridap_cell_faces_ptrs)
 
-    hanging_faces_glue = Vector{Vector{Tuple}}(undef,Dc)
-    hanging_faces_glue[1] = hanging_vertices_owner_cell_and_lface
-    hanging_faces_glue[Dc] = hanging_faces_owner_cell_and_lface
+    hanging_faces_glue      = Vector{Vector{Tuple}}(undef,Dc)
+    hanging_faces_glue[1]   = hanging_vertices_owner_cell_and_lface
+    if (Dc==3)
+      hanging_faces_glue[2] = Tuple{Int,Int,Int}[]
+    end 
+    hanging_faces_glue[Dc]  = hanging_faces_owner_cell_and_lface
 
 
     return num_regular_faces, 

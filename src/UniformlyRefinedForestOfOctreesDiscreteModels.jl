@@ -266,7 +266,7 @@ function setup_pXest_lnodes_nonconforming(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_
   if (Dc==2)
     p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-2))
   else
-    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-2))
+    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-3))
   end
 end
 
