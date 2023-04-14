@@ -1330,8 +1330,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     gridap_cell_faces_data .= -1
 
     if (Dc==3)
-      num_regular_edges = Vector{Int}(undef, Dc)
-      num_hanging_edges = Vector{Int}(undef, Dc)
+      num_regular_faces[2] = 0
 
       gridap_cell_edges_ptrs = Vector{Int32}(undef,n+1)
       gridap_cell_edges_ptrs[1]=1

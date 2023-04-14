@@ -508,8 +508,10 @@ function generate_face_labeling(parts,
         info=pinfo[]
         if (Dc==2)
           sides=Ptr{p4est_iter_corner_side_t}(info.sides.array)
+          CONNECT_CORNER=P4est_wrapper.P4EST_CONNECT_CORNER
         else
           sides=Ptr{p8est_iter_corner_side_t}(info.sides.array)
+          CONNECT_CORNER=P4est_wrapper.P8EST_CONNECT_CORNER
         end
         nsides=info.sides.elem_count
         tree=sides[1].treeid+1
@@ -522,13 +524,13 @@ function generate_face_labeling(parts,
         end
         corner=sides[1].corner+1
         ref_cornergid=cell_vertices[ref_cell][corner]
-        # if (MPI.Comm_rank(comm.comm)==0)
-        #   println("XXX ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides, " ", corner)
-        # end
-        if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P4EST_CONNECT_CORNER)
+        if (MPI.Comm_rank(parts.comm)==0)
+          println("XXX ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides, " ", corner)
+        end
+        if (info.tree_boundary!=0 && info.tree_boundary==CONNECT_CORNER)
               # The current corner is also a corner of the coarse mesh
               coarse_cornergid=coarse_cell_vertices[tree][corner]
-              #println("AAA vertex_to_entity[$(ref_cornergid)]")
+              println("AAA vertex_to_entity[$(ref_cornergid)]")
               vertex_to_entity[ref_cornergid]=
                  coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid]
         else
@@ -740,7 +742,7 @@ function generate_face_labeling(parts,
     num_cells=Gridap.Geometry.num_faces(topology,Dc)
     cell_to_entity=zeros(Int,num_cells)
 
-    # Face iterator callback
+    # Cell iterator callback
     function jcell_callback(pinfo     :: Ptr{p8est_iter_volume_info_t},
                             user_data :: Ptr{Cvoid})
       info=pinfo[]
@@ -990,7 +992,7 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
                                                     num_uniform_refinements)
 
   # Write forest to VTK file
-  # #p4est_vtk_write_file(unitsquare_forest, C_NULL, "my_step")
+  # p4est_vtk_write_file(unitsquare_forest, C_NULL, "my_step")
   dmodel=setup_distributed_discrete_model(Val{Dc},
                                           parts,
                                           coarse_discrete_model,

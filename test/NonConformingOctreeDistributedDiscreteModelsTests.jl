@@ -72,9 +72,10 @@
                                             Gridap.Geometry.NonOriented())
     m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
     labels = get_face_labeling(m)
-    labels.d_to_dface_to_entity[1]=[7,7,7,7,7,7,7,7,7,7,7,7]
+    labels.d_to_dface_to_entity[1].=7
     if (perm==1 || perm==2)
-      labels.d_to_dface_to_entity[2].=0
+      labels.d_to_dface_to_entity[2].=7
+      labels.d_to_dface_to_entity[3].=[7,0,7,7,7,7,7,7,7,7,7]
     elseif (perm==3 || perm==4)
         @assert false 
     end  
@@ -161,7 +162,7 @@
     end 
     dmodel,non_conforming_glue=refine(model,ref_coarse_flags)   
 
-    #p4est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
+    p8est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
     # FE Spaces
     reffe = ReferenceFE(lagrangian,Float64,order)
@@ -377,12 +378,12 @@
       owner_faces_pindex, owner_faces_lids
     end 
 
-    function generate_constraints(dmodel, 
+    function generate_constraints(dmodel::GridapDistributed.DistributedDiscreteModel{Dc}, 
                                   V,
                                   reffe,
                                   non_conforming_glue,
                                   ref_constraints, 
-                                  face_subface_ldof_to_cell_ldof)
+                                  face_subface_ldof_to_cell_ldof) where Dc
       num_regular_faces,
       num_hanging_faces,
       gridap_cell_faces,
@@ -392,10 +393,10 @@
                                                             num_regular_faces[1],
                                                             num_hanging_faces[1],
                                                             hanging_faces_glue[1],
-                                                            gridap_cell_faces[2],
-                                                            num_regular_faces[2],
-                                                            num_hanging_faces[2],
-                                                            hanging_faces_glue[2], 
+                                                            gridap_cell_faces[Dc],
+                                                            num_regular_faces[Dc],
+                                                            num_hanging_faces[Dc],
+                                                            hanging_faces_glue[Dc], 
                                                             dmodel.dmodel.models, V.spaces) do gridap_cell_vertices,
                                                             num_regular_vertices, num_hanging_vertices,
                                                             hanging_vertices_owner_cell_and_lface,
@@ -457,7 +458,7 @@
                                       lface_to_cvertices, 
                                       pindex_to_cfvertex_to_fvertex)
           
-          nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope,[reffe_args[2]])
+          nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope,[reffe_args[2] for i=1:Dc-1])
           node_permutations=Gridap.ReferenceFEs._compute_node_permutations(facet_polytope,nodes)
 
           hanging_lvertex_within_first_subface = 2^(Dc-1)
