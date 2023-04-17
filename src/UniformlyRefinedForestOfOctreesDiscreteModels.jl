@@ -761,7 +761,7 @@ function generate_face_labeling(parts,
        p4est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,ccell_callback,C_NULL,ccorner_callback)
     else
        p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,C_NULL,cface_callback,C_NULL,C_NULL)
-       p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,C_NULL,C_NULL,cedge_callback,C_NULL)
+       #p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,C_NULL,C_NULL,cedge_callback,C_NULL)
        p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,ccell_callback,C_NULL,C_NULL,ccorner_callback)
     end
     if (Dc==2)

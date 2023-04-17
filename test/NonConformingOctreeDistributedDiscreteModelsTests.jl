@@ -157,7 +157,7 @@
     model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
 
     ref_coarse_flags=map_parts(parts) do _
-      [refine_flag,refine_flag]
+      [refine_flag,nothing_flag]
       #allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
     end 
     dmodel,non_conforming_glue=refine(model,ref_coarse_flags)   
@@ -173,13 +173,16 @@
       (reffe[1],(reffe[2][1],2*reffe[2][2]),reffe[3])
     end
 
+    cell_polytope = Dc==2 ? QUAD : HEX
+
+
     basis, reffe_args,reffe_kwargs = reffe
-    cell_reffe = ReferenceFE(QUAD,basis,reffe_args...;reffe_kwargs...)
+    cell_reffe = ReferenceFE(cell_polytope, basis,reffe_args...;reffe_kwargs...)
     reffe_cell = cell_reffe
 
     h_refined_reffe = _h_refined_reffe(reffe)
     basis, reffe_args,reffe_kwargs = h_refined_reffe
-    cell_reffe_h_refined = ReferenceFE(QUAD,basis,reffe_args...;reffe_kwargs...)
+    cell_reffe_h_refined = ReferenceFE(cell_polytope,basis,reffe_args...;reffe_kwargs...)
     reffe_cell_h_refined = cell_reffe_h_refined
 
     dof_basis_h_refined = Gridap.CellData.get_dof_basis(reffe_cell_h_refined)
@@ -188,8 +191,7 @@
     ref_constraints=evaluate(dof_basis_h_refined,coarse_shape_funs)
 
 
-    rr = Gridap.Adaptivity.RedRefinementRule(QUAD)
-    face_subface_ldof_to_cell_ldof = Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr,(order,order),1)
+
 
 
     # To-think: might this info go to the glue? 
@@ -287,7 +289,7 @@
         current_cell_dof_ids=getindex!(cache_dof_ids,cell_dof_ids,cell)
         lface=hanging_faces_to_lface[fid_hanging]
         ocell,ocell_lface,subface=hanging_faces_glue[fid_hanging]
-        ocell_lface = ocell_lface - num_vertices
+        ocell_lface = ocell_lface - num_vertices - num_edges
         oface=getindex!(cache_faces,cell_faces,ocell)[ocell_lface]
         oface_lid,_=owner_faces_lids[oface]
         pindex=owner_faces_pindex[oface_lid]
@@ -296,10 +298,10 @@
           push!(sDOF_to_dofs,hanging_faces_owner_face_dofs[fid_hanging])
           coeffs=Vector{Float64}(undef,length(hanging_faces_owner_face_dofs[fid_hanging]))
           # Go over dofs of ocell_lface
-          for (ifdof,icdof) in enumerate(face_dofs[ocell_lface+num_vertices])
+          for (ifdof,icdof) in enumerate(face_dofs[ocell_lface+num_vertices+num_edges])
             pifdof=node_permutations[pindex][ifdof]
             println("XXXX: $(ifdof) $(pifdof)")
-            ldof_coarse=face_dofs[ocell_lface+num_vertices][pifdof]
+            ldof_coarse=face_dofs[ocell_lface+num_vertices+num_edges][pifdof]
             coeffs[ifdof]=ref_constraints[face_subface_ldof_to_cell_ldof[ocell_lface][subface][ldof_subface],ldof_coarse]
           end 
           push!(sDOF_to_coeffs,coeffs) 
@@ -322,12 +324,13 @@
                                         cell_faces,
                                         lface_to_cvertices,
                                         pindex_to_cfvertex_to_fvertex)
-      num_vertices=2^Dc
+      num_vertices= GridapP4est.num_cell_vertices(Val{Dc})
+      num_edges   = GridapP4est.num_cell_edges(Val{Dc})
       num_owner_faces=0
       owner_faces_lids=Dict{Int,Tuple{Int,Int,Int}}()
       for fid_hanging=1:num_hanging_faces
         ocell,ocell_lface,_=hanging_faces_glue[fid_hanging]
-        owner_face=cell_faces[ocell][ocell_lface-num_vertices]
+        owner_face=cell_faces[ocell][ocell_lface-num_vertices-num_edges]
         if !(haskey(owner_faces_lids,owner_face))
           num_owner_faces+=1
           owner_faces_lids[owner_face]=(num_owner_faces,ocell,ocell_lface)
@@ -343,7 +346,7 @@
         lface=hanging_faces_to_lface[fid_hanging]
         cvertex=lface_to_cvertices[lface][subface]
         vertex=cell_vertices[cell][cvertex]
-        owner_face=cell_faces[ocell][ocell_lface-num_vertices]
+        owner_face=cell_faces[ocell][ocell_lface-num_vertices-num_edges]
         owner_face_lid,_=owner_faces_lids[owner_face]
         owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+subface]=vertex    
       end
@@ -355,7 +358,7 @@
         #  1. cell_vertices[ocell][ocell_lface]
         #  2. owner_face_vertex_ids 
         pindexfound = false
-        cfvertex_to_cvertex = lface_to_cvertices[ocell_lface-num_vertices]
+        cfvertex_to_cvertex = lface_to_cvertices[ocell_lface-num_vertices-num_edges]
         for (pindex, cfvertex_to_fvertex) in enumerate(pindex_to_cfvertex_to_fvertex)
           found = true
           for (cfvertex,fvertex) in enumerate(cfvertex_to_fvertex)
@@ -421,7 +424,7 @@
                                                                             gridap_cell_faces)                                                                        
 
           basis, reffe_args,reffe_kwargs = reffe
-          cell_reffe = ReferenceFE(QUAD,basis,reffe_args...;reffe_kwargs...)
+          cell_reffe = ReferenceFE(Dc==2 ? QUAD : HEX, basis,reffe_args...;reffe_kwargs...)
           reffe_cell = cell_reffe
 
           cell_dof_ids  = get_cell_dof_ids(V)
@@ -447,7 +450,7 @@
           face_reffe = ReferenceFE(facet_polytope,basis,reffe_args...;reffe_kwargs...)
           pindex_to_cfvertex_to_fvertex = Gridap.ReferenceFEs.get_vertex_permutations(facet_polytope)
 
-          lface_to_cvertices = Gridap.ReferenceFEs.get_faces(QUAD,Dc-1,0)
+          lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc==2 ? QUAD : HEX, Dc-1, 0)
           owner_faces_pindex, owner_faces_lids=_compute_owner_faces_pindex_and_lids(Dc,
                                       num_hanging_faces, 
                                       hanging_faces_owner_cell_and_lface,
@@ -565,21 +568,21 @@
 
   end 
 
-  # test(Val{2},1,1)
-  # test(Val{2},1,2)
-  # test(Val{2},1,3)
+  test(Val{2},1,1)
+  test(Val{2},1,2)
+  test(Val{2},1,3)
 
-  # test(Val{2},2,1)
-  # test(Val{2},2,2)
-  # test(Val{2},2,3)
+  test(Val{2},2,1)
+  test(Val{2},2,2)
+  test(Val{2},2,3)
 
-  # test(Val{2},3,1)
-  # test(Val{2},3,2)
-  # test(Val{2},3,3)
+  test(Val{2},3,1)
+  test(Val{2},3,2)
+  test(Val{2},3,3)
 
-  # test(Val{2},4,1)
-  # test(Val{2},4,2)
-  # test(Val{2},4,3)
+  test(Val{2},4,1)
+  test(Val{2},4,2)
+  test(Val{2},4,3)
 
   test(Val{3},1,1)
 
