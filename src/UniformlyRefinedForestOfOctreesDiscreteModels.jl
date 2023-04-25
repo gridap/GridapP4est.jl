@@ -515,7 +515,6 @@ function generate_face_labeling(parts,
         end
         nsides=info.sides.elem_count
         tree=sides[1].treeid+1
-        # We are on the interior of a tree
         data=sides[1]
         if data.is_ghost==1
            ref_cell=pXest.local_num_quadrants+data.quadid+1
@@ -560,51 +559,65 @@ function generate_face_labeling(parts,
                                user_data :: Ptr{Cvoid})
          info=pinfo[]
          sides=Ptr{p8est_iter_edge_side_t}(info.sides.array)
+         function process_edget(tree,edge,ref_cell)
+            polytope=HEX
+            poly_faces=Gridap.ReferenceFEs.get_faces(polytope)
+            poly_edget_range=Gridap.ReferenceFEs.get_dimrange(polytope,1)
+            poly_first_edget=first(poly_edget_range)
+            poly_facet=poly_first_edget+edge-1
 
-         nsides=info.sides.elem_count
-         tree=sides[1].treeid+1
-         # We are on the interior of a tree
-         data=sides[1].is.full
-         if data.is_ghost==1
-           ref_cell=pXest.local_num_quadrants+data.quadid+1
-         else
-           ref_cell=owned_trees_offset[tree]+data.quadid+1
-         end
-         edge=sides[1].edge+1
-
-         polytope=HEX
-         poly_faces=Gridap.ReferenceFEs.get_faces(polytope)
-         poly_edget_range=Gridap.ReferenceFEs.get_dimrange(polytope,1)
-         poly_first_edget=first(poly_edget_range)
-         poly_facet=poly_first_edget+edge-1
-
-        #  if (MPI.Comm_rank(comm.comm)==0)
-        #    coarse_edgetgid=coarse_cell_edgets[tree][edge]
-        #    coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
-        #    println("PPP ", ref_cell, " ", edge, " TB ", info.tree_boundary, " ", nsides, " ",coarse_edgetgid, " ",  coarse_edgetgid_entity)
-        #  end
-         if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P8EST_CONNECT_EDGE)
-          coarse_edgetgid=coarse_cell_edgets[tree][edge]
-          coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
-          # We are on the boundary of coarse mesh or inter-octree boundary
-          for poly_incident_face in poly_faces[poly_facet]
-            if poly_incident_face == poly_facet
-              ref_edgetgid=cell_edgets[ref_cell][edge]
-              edget_to_entity[ref_edgetgid]=coarse_edgetgid_entity
+            #  if (MPI.Comm_rank(comm.comm)==0)
+            #    coarse_edgetgid=coarse_cell_edgets[tree][edge]
+            #    coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
+            #    println("PPP ", ref_cell, " ", edge, " TB ", info.tree_boundary, " ", nsides, " ",coarse_edgetgid, " ",  coarse_edgetgid_entity)
+            #  end
+            if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P8EST_CONNECT_EDGE)
+              coarse_edgetgid=coarse_cell_edgets[tree][edge]
+              coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
+              # We are on the boundary of coarse mesh or inter-octree boundary
+              for poly_incident_face in poly_faces[poly_facet]
+                if poly_incident_face == poly_facet
+                  ref_edgetgid=cell_edgets[ref_cell][edge]
+                  edget_to_entity[ref_edgetgid]=coarse_edgetgid_entity
+                else
+                  println("CCC ", ref_cell, " ", poly_incident_face)
+                  println("DDD ", cell_vertices[ref_cell])
+                  ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
+                  vertex_to_entity[ref_cornergid]=coarse_edgetgid_entity
+                end
+              end
             else
-              ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
-              # if (MPI.Comm_rank(comm.comm)==0)
-              #    println("CCC ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides)
-              # end
-              vertex_to_entity[ref_cornergid]=coarse_edgetgid_entity
+              # We are on the interior of the domain if we did not touch the edge yet
+              ref_edgetgid=cell_edgets[ref_cell][edge]
+              if (edget_to_entity[ref_edgetgid]==0)
+                edget_to_entity[ref_edgetgid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
+              end
             end
-          end
-         else
-          # We are on the interior of the domain if we did not touch the edge yet
-          ref_edgetgid=cell_edgets[ref_cell][edge]
-          if (edget_to_entity[ref_edgetgid]==0)
-            edget_to_entity[ref_edgetgid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
-          end
+         end 
+  
+         nsides=info.sides.elem_count
+         for iside=1:nsides
+          edge=sides[iside].edge+1
+          tree=sides[iside].treeid+1
+          if (sides[iside].is_hanging == 0)
+            data=sides[iside].is.full
+            if data.is_ghost==1
+              ref_cell=pXest.local_num_quadrants+data.quadid+1
+            else
+              ref_cell=owned_trees_offset[tree]+data.quadid+1
+            end 
+            process_edget(tree,edge,ref_cell)
+          else 
+            for i=1:length(sides[iside].is.hanging.quadid)
+              quadid=sides[iside].is.hanging.quadid[i]
+              if (sides[iside].is.hanging.is_ghost[i]==1)
+                ref_cell=pXest.local_num_quadrants+quadid+1
+              else 
+                ref_cell=owned_trees_offset[tree]+quadid+1
+              end 
+              process_edget(tree,edge,ref_cell)
+            end 
+          end 
          end
          nothing
        end
@@ -761,7 +774,7 @@ function generate_face_labeling(parts,
        p4est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,ccell_callback,C_NULL,ccorner_callback)
     else
        p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,C_NULL,cface_callback,C_NULL,C_NULL)
-       #p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,C_NULL,C_NULL,cedge_callback,C_NULL)
+       p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,C_NULL,C_NULL,cedge_callback,C_NULL)
        p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,ccell_callback,C_NULL,C_NULL,ccorner_callback)
     end
     if (Dc==2)

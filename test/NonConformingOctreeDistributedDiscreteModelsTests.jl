@@ -72,14 +72,15 @@
                                             Gridap.Geometry.NonOriented())
     m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
     labels = get_face_labeling(m)
-    labels.d_to_dface_to_entity[1].=7
+    labels.d_to_dface_to_entity[1].=2
     if (perm==1 || perm==2)
-      labels.d_to_dface_to_entity[2].=7
-      labels.d_to_dface_to_entity[3].=[7,7,7,7,7,0,7,7,7,7,7]
+      labels.d_to_dface_to_entity[2].=2
+      labels.d_to_dface_to_entity[3].=[2,2,2,2,2,1,2,2,2,2,2]
     elseif (perm==3 || perm==4)
         @assert false 
     end  
-    add_tag!(labels,"boundary",[7])
+    add_tag!(labels,"boundary",[2])
+    add_tag!(labels,"interior",[1])
     m
   end
 
@@ -122,13 +123,14 @@
                                                 Gridap.Geometry.NonOriented())
         m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
         labels = get_face_labeling(m)
-        labels.d_to_dface_to_entity[1]=[7,7,7,7,7,7]
+        labels.d_to_dface_to_entity[1].=2
         if (perm==1 || perm==2)
-          labels.d_to_dface_to_entity[2]=[7,7,7,0,7,7,7]
+          labels.d_to_dface_to_entity[2].=[2,2,2,1,2,2,2]
         elseif (perm==3 || perm==4)
-          labels.d_to_dface_to_entity[2]=[7,7,0,7,7,7,7] 
+          labels.d_to_dface_to_entity[2].=[2,2,1,2,2,2,2] 
         end  
-        add_tag!(labels,"boundary",[7])
+        add_tag!(labels,"boundary",[2])
+        add_tag!(labels,"interior",[1])
         m
   end
 

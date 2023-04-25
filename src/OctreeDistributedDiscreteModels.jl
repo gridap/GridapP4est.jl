@@ -1250,13 +1250,15 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
     topology.n_m_to_nface_to_mfaces[Dc,Dc+1] = Gridap.Geometry.generate_cells_around(cell_faces_gridap)
   end
 
-  face_labeling=GridapP4est.generate_face_labeling(parts,
-                                                   cell_prange,
-                                                   coarse_discrete_model,
-                                                   grid,
-                                                   topology,
-                                                   ptr_pXest,
-                                                   ptr_pXest_ghost)
+  face_labeling=generate_face_labeling(parts,
+                                       cell_prange,
+                                       coarse_discrete_model,
+                                       grid,
+                                       topology,
+                                       ptr_pXest,
+                                       ptr_pXest_ghost)
+
+  _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
 
   discretemodel=map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
     Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
@@ -1264,6 +1266,33 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange), 
     (num_regular_faces,num_hanging_faces,gridap_cell_faces,hanging_faces_glue)
 end
+
+function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
+  max_entity_ids = map_parts(face_labeling) do face_labeling
+    max_entity_id = typemin(eltype(first(face_labeling.d_to_dface_to_entity))) 
+    for i=1:length(face_labeling.d_to_dface_to_entity)
+      max_entity_id=max(maximum(face_labeling.d_to_dface_to_entity[i]),max_entity_id)
+    end
+    max_entity_id
+  end
+  max_entity_id = MPI.Allreduce(max_entity_ids.part,MPI.MAX,max_entity_ids.comm)
+  
+  hanging_entitity_ids = Dict{Int,Bool}()
+  for i=1:length(num_hanging_faces)
+     map_parts(face_labeling,
+               num_regular_faces[i],
+               num_hanging_faces[i]) do face_labeling, num_regular_faces, num_hanging_faces
+      for j=num_regular_faces+1:num_regular_faces+num_hanging_faces
+        hanging_entity_id = max_entity_id + face_labeling.d_to_dface_to_entity[i][j]
+        face_labeling.d_to_dface_to_entity[i][j]=hanging_entity_id
+        hanging_entitity_ids[hanging_entity_id]=true
+      end
+     end
+  end
+  map_parts(face_labeling) do face_labeling 
+    add_tag!(face_labeling,"hanging",collect(keys(hanging_entitity_ids)))
+  end
+end 
 
 function _build_map_from_faces_to_cell_lface(lnodes)
   n_cell_faces    = num_cell_faces(Val{2})
