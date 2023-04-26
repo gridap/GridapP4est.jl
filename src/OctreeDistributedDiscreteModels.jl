@@ -1250,6 +1250,14 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
     topology.n_m_to_nface_to_mfaces[Dc,Dc+1] = Gridap.Geometry.generate_cells_around(cell_faces_gridap)
   end
 
+  if (Dc==3)
+    map_parts(topology,gridap_cell_faces[Dc-1]) do topology,cell_edges
+      cell_edges_gridap = Gridap.Arrays.Table(cell_edges.data,cell_edges.ptrs)
+      topology.n_m_to_nface_to_mfaces[Dc+1,Dc-1] = cell_edges_gridap
+      topology.n_m_to_nface_to_mfaces[Dc-1,Dc+1] = Gridap.Geometry.generate_cells_around(cell_edges_gridap)
+    end
+  end 
+
   face_labeling=generate_face_labeling(parts,
                                        cell_prange,
                                        coarse_discrete_model,

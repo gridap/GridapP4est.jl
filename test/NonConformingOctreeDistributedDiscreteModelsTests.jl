@@ -78,7 +78,8 @@
       labels.d_to_dface_to_entity[3].=[2,2,2,2,2,1,2,2,2,2,2]
     elseif (perm==3 || perm==4)
         @assert false 
-    end  
+    end
+    labels.d_to_dface_to_entity[4].=1  
     add_tag!(labels,"boundary",[2])
     add_tag!(labels,"interior",[1])
     m
@@ -128,7 +129,8 @@
           labels.d_to_dface_to_entity[2].=[2,2,2,1,2,2,2]
         elseif (perm==3 || perm==4)
           labels.d_to_dface_to_entity[2].=[2,2,1,2,2,2,2] 
-        end  
+        end
+        labels.d_to_dface_to_entity[3].=1
         add_tag!(labels,"boundary",[2])
         add_tag!(labels,"interior",[1])
         m
@@ -329,6 +331,31 @@
         if (Df==0) # Am I a vertex?
           hanging_lvertex_within_first_subface = 2^oface_dim
           cur_subface_own_dofs=subface_own_dofs[oface_dim][hanging_lvertex_within_first_subface]
+        elseif (Df==1 && Dc==3) # Am I an edge?
+          if (subface<0) # Edge hanging in the interior of a face 
+            @assert subface==-1 || subface==-2 || subface==-3 || subface==-4
+            @assert oface_dim == Dc-1
+            abs_subface=abs(subface)
+            if (abs_subface==1)
+              subface = 1
+              edge    = 4+4 # num_vertices+edge_id
+            elseif (abs_subface==2)
+              subface = 3
+              edge    = 4+4 # num_vertices+edge_id 
+            elseif (abs_subface==3)
+              subface = 3
+              edge    = 4+1 # num_vertices+edge_id 
+            elseif (abs_subface==4)
+              subface = 4
+              edge    = 4+1 # num_vertices+edge_id 
+            end
+            cur_subface_own_dofs=subface_own_dofs[oface_dim][edge]
+          else
+            @assert subface==1 || subface==2
+            @assert oface_dim == 1
+            hanging_lvertex_within_first_subface = 2^oface_dim
+            cur_subface_own_dofs=subface_own_dofs[oface_dim][end]
+          end 
         elseif (Df==Dc-1) # Am I a face?
           @assert oface_dim == Dc-1
           cur_subface_own_dofs=subface_own_dofs[oface_dim][end]
@@ -345,7 +372,7 @@
           # Go over dofs of ocell_lface
           for (ifdof,icdof) in enumerate(face_dofs[ocell_lface])
             pifdof=node_permutations[oface_dim][pindex][ifdof]
-            println("XXXX: $(ifdof) $(pifdof)")
+            #println("XXXX: $(ifdof) $(pifdof)")
             ldof_coarse=face_dofs[ocell_lface][pifdof]
             coeffs[ifdof]=
             ref_constraints[face_subface_ldof_to_cell_ldof[oface_dim][ocell_lface_within_dim][subface][ldof_subface],ldof_coarse]
@@ -600,6 +627,28 @@
                                 sDOF_to_dofs,
                                 sDOF_to_coeffs)
           
+          if (Dc==3)
+            _generate_constraints!(1,
+                      Dc,
+                      [gridap_cell_faces[i] for i=1:Dc],
+                      num_hanging_faces[2],
+                      hanging_faces_to_cell[2],
+                      hanging_faces_to_lface[2],
+                      hanging_faces_owner_face_dofs[2],
+                      hanging_faces_glue[2],
+                      face_subface_ldof_to_cell_ldof,
+                      face_dofs,
+                      face_own_dofs,
+                      subface_own_dofs,
+                      cell_dof_ids,
+                      node_permutations,
+                      owner_faces_pindex,
+                      owner_faces_lids,
+                      ref_constraints,
+                      sDOF_to_dof,
+                      sDOF_to_dofs,
+                      sDOF_to_coeffs)
+          end 
           _generate_constraints!(Dc-1,
                                 Dc,
                                 [gridap_cell_faces[i] for i=1:Dc],
@@ -650,7 +699,7 @@
       println(get_cell_dof_ids(V))
       fl=get_face_labeling(model)
       t=GridapDistributed.get_grid_topology(model)
-      println(Gridap.Geometry.get_faces(t,2,0))
+      println(Gridap.Geometry.get_faces(t,3,1))
 
       for i=1:length(fl.d_to_dface_to_entity)-1
         println(fl.d_to_dface_to_entity[i])
@@ -706,5 +755,6 @@
 
   test(Val{3},1,1)
   test(Val{3},1,2)
+  test(Val{3},1,3)
 
 #end
