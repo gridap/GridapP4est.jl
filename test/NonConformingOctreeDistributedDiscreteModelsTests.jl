@@ -40,11 +40,11 @@
     if (perm==1)
       data = [ 1,2,3,4,5,6,7,8, 2,9,4,10,6,11,8,12 ]
     elseif (perm==2)
-      @assert false
+      data = [ 1,2,3,4,5,6,7,8, 10,12,4,8,9,11,2,6 ]
     elseif (perm==3)
-      @assert false
+      data = [ 1,2,3,4,5,6,7,8, 12,11,8,6,10,9,4,2 ]
     elseif (perm==4) 
-      @assert false
+      data = [ 1,2,3,4,5,6,7,8, 11,9,6,2,12,10,8,4 ]
     end  
     cell_vertex_lids = Gridap.Arrays.Table(data,ptr)
     node_coordinates = Vector{Point{3,Float64}}(undef,12)
@@ -77,7 +77,8 @@
       labels.d_to_dface_to_entity[2].=2
       labels.d_to_dface_to_entity[3].=[2,2,2,2,2,1,2,2,2,2,2]
     elseif (perm==3 || perm==4)
-        @assert false 
+      labels.d_to_dface_to_entity[2].=2
+      labels.d_to_dface_to_entity[3].=[2,2,2,2,2,1,2,2,2,2,2]
     end
     labels.d_to_dface_to_entity[4].=1  
     add_tag!(labels,"boundary",[2])
@@ -372,7 +373,7 @@
           # Go over dofs of ocell_lface
           for (ifdof,icdof) in enumerate(face_dofs[ocell_lface])
             pifdof=node_permutations[oface_dim][pindex][ifdof]
-            #println("XXXX: $(ifdof) $(pifdof)")
+            println("XXXX: $(ifdof) $(pifdof)")
             ldof_coarse=face_dofs[ocell_lface][pifdof]
             coeffs[ifdof]=
             ref_constraints[face_subface_ldof_to_cell_ldof[oface_dim][ocell_lface_within_dim][subface][ldof_subface],ldof_coarse]
@@ -699,7 +700,7 @@
       println(get_cell_dof_ids(V))
       fl=get_face_labeling(model)
       t=GridapDistributed.get_grid_topology(model)
-      println(Gridap.Geometry.get_faces(t,3,1))
+      
 
       for i=1:length(fl.d_to_dface_to_entity)-1
         println(fl.d_to_dface_to_entity[i])
@@ -756,5 +757,17 @@
   test(Val{3},1,1)
   test(Val{3},1,2)
   test(Val{3},1,3)
+
+  test(Val{3},2,1)
+  test(Val{3},2,2)
+  test(Val{3},2,3)
+
+  test(Val{3},3,1)
+  test(Val{3},3,2)
+  test(Val{3},3,3)
+
+  test(Val{3},4,1)
+  test(Val{3},4,2)
+  test(Val{3},4,3)
 
 #end
