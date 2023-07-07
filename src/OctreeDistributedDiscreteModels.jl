@@ -69,7 +69,7 @@ function OctreeDistributedDiscreteModel(
 end
 
 
-function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
+function OctreeDistributedDiscreteModel(parts::MPIArray{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
                                         num_uniform_refinements) where {Dc,Dp}
   comm = parts.comm
@@ -109,7 +109,7 @@ function OctreeDistributedDiscreteModel(parts::MPIData{<:Integer},
 end
 
 function OctreeDistributedDiscreteModel(
-    parts::MPIData{<:Integer},
+    parts::MPIArray{<:Integer},
     coarse_model::DiscreteModel{Dc,Dp}) where {Dc,Dp}
   OctreeDistributedDiscreteModel(parts,coarse_model,0)
 end
@@ -267,7 +267,7 @@ function _compute_fine_to_coarse_model_glue(
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
-  f1,f2,f3, cgids_snd, cgids_rcv = map_parts(fmodel.models,fgids.partition) do fmodel, fpartition
+  f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,fgids.partition) do fmodel, fpartition
     if (!(i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing, Int[], Int[]
@@ -291,7 +291,7 @@ function _compute_fine_to_coarse_model_glue(
   end
 
   # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
-  dfcell_to_child_id = map_parts(f3) do fcell_to_child_id
+  dfcell_to_child_id = map(f3) do fcell_to_child_id
     !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
   end
   exchange!(dfcell_to_child_id, fgids.exchanger)
@@ -299,10 +299,10 @@ function _compute_fine_to_coarse_model_glue(
                          cgids_snd,
                          fgids.exchanger.parts_rcv,
                          fgids.exchanger.parts_snd)
-  map_parts(schedule,tout)
-  map_parts(wait,tout)
+  map(schedule,tout)
+  map(wait,tout)
 
-  map_parts(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
+  map(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
     if (i_am_in(cparts))
       cgids      = get_cell_gids(cmodel)
       cpartition = cgids.partition.part
@@ -317,7 +317,7 @@ function _compute_fine_to_coarse_model_glue(
   end
 
   # Create distributed glue
-  map_parts(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
+  map(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
     if (!(i_am_in(cparts)))
       nothing
     else
@@ -885,13 +885,13 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
 end
 
 function _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
-  lids_rcv, parts_rcv = map_parts(parts) do _
+  lids_rcv, parts_rcv = map(parts) do _
     lids_rcv, parts_rcv
   end
-  lids_snd, parts_snd = map_parts(parts) do _
+  lids_snd, parts_snd = map(parts) do _
     lids_snd, parts_snd
   end
-  old2new, new2old = map_parts(parts) do _
+  old2new, new2old = map(parts) do _
     old2new,new2old
   end
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old

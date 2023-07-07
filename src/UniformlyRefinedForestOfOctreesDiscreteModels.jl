@@ -208,7 +208,7 @@ function setup_pXest_ghost(::Type{Val{Dc}}, ptr_pXest) where Dc
 end
 
 function setup_cell_prange(::Type{Val{Dc}},
-                           parts::MPIData{<:Integer},
+                           parts::MPIArray{<:Integer},
                            ptr_pXest,
                            ptr_pXest_ghost) where Dc
   comm = parts.comm
@@ -228,7 +228,7 @@ function setup_cell_prange(::Type{Val{Dc}},
                                       pXest.global_first_quadrant,
                                       pXest.mpisize+1)
 
-  noids,firstgid,hid_to_gid,hid_to_part=map_parts(parts) do part
+  noids,firstgid,hid_to_gid,hid_to_part=map(parts) do part
     hid_to_gid   = Vector{Int}(undef, pXest_ghost.ghosts.elem_count)
     hid_to_part  = Vector{Int32}(undef, pXest_ghost.ghosts.elem_count)
     k=1
@@ -275,7 +275,7 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
                                pXest_lnodes.num_local_nodes-pXest_lnodes.owned_count)
 
   k = 1
-  cell_vertex_gids = map_parts(cell_prange.partition) do indices
+  cell_vertex_gids = map(cell_prange.partition) do indices
     n = length(indices.lid_to_part)
     ptrs = Vector{Int32}(undef,n+1)
     ptrs[1]=1
@@ -300,8 +300,8 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
     PArrays.Table(data,ptrs)
   end
   t=async_exchange!(PArrays._replace,cell_vertex_gids,cell_prange.exchanger)
-  map_parts(wait∘schedule,t)
-  # map_parts(get_part_ids(cell_vertex_gids)) do part
+  map(wait∘schedule,t)
+  # map(get_part_ids(cell_vertex_gids)) do part
   #   if (part==2)
   #     println(cell_vertex_gids.part)
   #   end
@@ -310,7 +310,7 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
 end
 
 function generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
-  map_parts(cell_vertex_gids) do cell_vertex_gids
+  map(cell_vertex_gids) do cell_vertex_gids
     g2l=Dict{Int,Int}()
     current=1
     data=Vector{Int}(undef,length(cell_vertex_gids.data))
@@ -347,7 +347,7 @@ function generate_node_coordinates(::Type{Val{Dc}},
   end
 
   tree_offsets = unsafe_wrap(Array, pXest_ghost.tree_offsets, pXest_ghost.num_trees+1)
-  dnode_coordinates=map_parts(cell_vertex_lids,nlvertices) do cell_vertex_lids, nl
+  dnode_coordinates=map(cell_vertex_lids,nlvertices) do cell_vertex_lids, nl
      node_coordinates=Vector{Point{Dc,Float64}}(undef,nl)
      current=1
      vxy=Vector{Cdouble}(undef,Dc)
@@ -432,7 +432,7 @@ function generate_grid_and_topology(::Type{Val{Dc}},
                                     nlvertices,
                                     node_coordinates) where {Dc}
   grid,topology=
-  map_parts(cell_vertex_lids,nlvertices,node_coordinates) do cell_vertex_lids, nl, node_coordinates
+  map(cell_vertex_lids,nlvertices,node_coordinates) do cell_vertex_lids, nl, node_coordinates
     polytope= Dc==2 ? QUAD : HEX
     scalar_reffe=Gridap.ReferenceFEs.ReferenceFE(polytope,Gridap.ReferenceFEs.lagrangian,Float64,1)
     cell_types=collect(Fill(1,length(cell_vertex_lids)))
@@ -485,7 +485,7 @@ function generate_face_labeling(parts,
     owned_trees_offset[itree+1]=owned_trees_offset[itree]+tree.quadrants.elem_count
   end
 
- faces_to_entity=map_parts(grid,topology) do grid, topology
+ faces_to_entity=map(grid,topology) do grid, topology
      # Iterate over corners
      num_vertices=Gridap.Geometry.num_faces(topology,0)
      vertex_to_entity=zeros(Int,num_vertices)
@@ -714,15 +714,15 @@ function generate_face_labeling(parts,
     end
  end
 
- vertex_to_entity  = map_parts(x->x[1]   , faces_to_entity)
+ vertex_to_entity  = map(x->x[1]   , faces_to_entity)
  if Dc==3
-   edget_to_entity = map_parts(x->x[2]   , faces_to_entity)
+   edget_to_entity = map(x->x[2]   , faces_to_entity)
  end
- facet_to_entity   = map_parts(x->x[Dc]  , faces_to_entity)
- cell_to_entity    = map_parts(x->x[Dc+1], faces_to_entity)
+ facet_to_entity   = map(x->x[Dc]  , faces_to_entity)
+ cell_to_entity    = map(x->x[Dc+1], faces_to_entity)
 
  function cell_to_faces(grid,topology,cell_dim,face_dim)
-   map_parts(grid,topology) do grid,topology
+   map(grid,topology) do grid,topology
     Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
    end
  end
@@ -758,7 +758,7 @@ function generate_face_labeling(parts,
  end
 
  face_labeling =
-  map_parts(faces_to_entity...) do faces_to_entity...
+  map(faces_to_entity...) do faces_to_entity...
     # if (part == 1)
     #    println("XXX", faces_to_entity[1])
     #    println("XXX", faces_to_entity[2])
@@ -851,15 +851,15 @@ function update_face_to_entity_with_ghost_data!(
    face_to_entity,cell_prange,num_faces_x_cell,cell_to_faces)
 
 
-   part_to_cell_to_entity = map_parts(init_cell_to_face_entity,
-                                      map_parts(x->num_faces_x_cell,cell_prange.partition),
+   part_to_cell_to_entity = map(init_cell_to_face_entity,
+                                      map(x->num_faces_x_cell,cell_prange.partition),
                                       cell_to_faces,
                                       face_to_entity)
 
    t=async_exchange!(PArrays._replace,part_to_cell_to_entity,cell_prange.exchanger)
-   map_parts(wait∘schedule,t)
+   map(wait∘schedule,t)
 
-   map_parts(update_face_to_entity!,
+   map(update_face_to_entity!,
              face_to_entity,
              cell_to_faces,
              part_to_cell_to_entity)
@@ -911,7 +911,7 @@ function setup_distributed_discrete_model(::Type{Val{Dc}},
                                         ptr_pXest,
                                         ptr_pXest_ghost)
 
-   discretemodel=map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
+   discretemodel=map(grid,topology,face_labeling) do grid, topology, face_labeling
       Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
    end
    GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange)
@@ -921,7 +921,7 @@ end
 """
 """
 function UniformlyRefinedForestOfOctreesDiscreteModel(
-    parts::MPIData{<:Integer},
+    parts::MPIArray{<:Integer},
     coarse_discrete_model::DiscreteModel{Dc,Dp},
     num_uniform_refinements::Int) where {Dc,Dp}
 

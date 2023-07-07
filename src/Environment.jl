@@ -5,7 +5,7 @@ const _INITIALIZED = Ref(false)
 See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
 argument values for the p4est_verbosity_level parameter
 """
-function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
+function Init(parts::MPIArray;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
   if !MPI.Initialized()
     @error "MPI not Initialized!"
   end
@@ -36,7 +36,7 @@ function Finalize()
   return nothing
 end
 
-function with(f,parts::MPIData;kwargs...)
+function with(f,parts::MPIArray;kwargs...)
   Init(parts;kwargs...)
   out = f()
   Finalize()

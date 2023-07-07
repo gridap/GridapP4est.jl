@@ -79,7 +79,7 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
       e_l2 = sum(∫(e*e)dΩ)
       tol = 1.0e-9
       @test e_l2 < tol
-      map_parts(parts) do part
+      map(parts) do part
         if (part==1)
           println("$(e_l2) < $(tol)\n")
         end

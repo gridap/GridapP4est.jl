@@ -91,7 +91,7 @@ module OctreeDistributedDiscreteModelsTests
 
     if i_am_in(level_parts[2])
       @test num_cells(model_back)==num_cells(model)
-      map_parts(model.dmodel.models,model_back.dmodel.models) do m1, m2
+      map(model.dmodel.models,model_back.dmodel.models) do m1, m2
         Ωh1  = Triangulation(m1)
         dΩh1 = Measure(Ωh1,2)
         Ωh2  = Triangulation(m2)
