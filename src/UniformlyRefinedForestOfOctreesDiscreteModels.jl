@@ -147,7 +147,6 @@ function setup_pXest_connectivity(
       current=current+1
     end
   end
-  #print("XXX", vertices, "\n")
 
   tree_to_vertex=unsafe_wrap(Array, conn.tree_to_vertex, length(cell_nodes_ids)*(2^Dc))
   c=Gridap.Arrays.array_cache(cell_nodes_ids)
@@ -208,7 +207,7 @@ function setup_pXest_ghost(::Type{Val{Dc}}, ptr_pXest) where Dc
 end
 
 function setup_cell_prange(::Type{Val{Dc}},
-                           parts::MPIArray{<:Integer},
+                           parts::AbstractVector{<:Integer},
                            ptr_pXest,
                            ptr_pXest_ghost) where Dc
   comm = parts.comm
@@ -228,30 +227,35 @@ function setup_cell_prange(::Type{Val{Dc}},
                                       pXest.global_first_quadrant,
                                       pXest.mpisize+1)
 
-  noids,firstgid,hid_to_gid,hid_to_part=map(parts) do part
-    hid_to_gid   = Vector{Int}(undef, pXest_ghost.ghosts.elem_count)
-    hid_to_part  = Vector{Int32}(undef, pXest_ghost.ghosts.elem_count)
+  noids,firstgid,gho_to_glo,gho_to_own=map(parts) do part
+    gho_to_glo = Vector{Int}(undef, pXest_ghost.ghosts.elem_count)
+    gho_to_own = Vector{Int32}(undef, pXest_ghost.ghosts.elem_count)
     k=1
     for i=1:pXest_ghost.mpisize
       for j=proc_offsets[i]:proc_offsets[i+1]-1
         quadrant       = ptr_ghost_quadrants[j+1]
         piggy3         = quadrant.p.piggy3
-        hid_to_gid[k]  = global_first_quadrant[i]+piggy3.local_num+1
-        hid_to_part[k] = Int32(i)
+        gho_to_glo[k]  = global_first_quadrant[i]+piggy3.local_num+1
+        gho_to_own[k] = Int32(i)
         k=k+1
       end
     end
-    pXest.local_num_quadrants,global_first_quadrant[part]+1,hid_to_gid,hid_to_part
-  end
+    pXest.local_num_quadrants,global_first_quadrant[part]+1,gho_to_glo,gho_to_own
+  end |> tuple_of_arrays
   ngids = pXest.global_num_quadrants
-  PRange(
-    parts,
-    ngids,
-    noids,
-    firstgid,
-    hid_to_gid,
-    hid_to_part;
-    reuse_parts_rcv=true) # Symmetric communication pattern
+
+  partition=map(parts,noids,firstgid,gho_to_glo,gho_to_own) do part, noids, firstgid, gho_to_glo, gho_to_own
+    owner = part
+    own_indices=OwnIndices(ngids,owner,(collect(firstgid:firstgid+noids-1)))
+    ghost_indices=GhostIndices(ngids,gho_to_glo,gho_to_own)
+    OwnAndGhostIndices(own_indices,ghost_indices)
+  end
+  # This is required to provide the hint that the communication 
+  # pattern underlying partition is symmetric, so that we do not have 
+  # to execute the algorithm the reconstructs the reciprocal in the 
+  # communication graph
+  assembly_neighbors(partition;symmetric=true)
+  PRange(partition)
 end
 
 function setup_pXest_lnodes(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where Dc
@@ -260,6 +264,15 @@ function setup_pXest_lnodes(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where D
   else
     p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))
   end
+end
+
+function fetch_vector_ghost_values_cache(vector_partition,partition)
+  cache = PArrays.p_vector_cache(vector_partition,partition)
+  map(reverse,cache)
+end 
+
+function fetch_vector_ghost_values!(vector_partition,cache)
+  assemble!((a,b)->b, vector_partition, cache) 
 end
 
 function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
@@ -275,8 +288,8 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
                                pXest_lnodes.num_local_nodes-pXest_lnodes.owned_count)
 
   k = 1
-  cell_vertex_gids = map(cell_prange.partition) do indices
-    n = length(indices.lid_to_part)
+  cell_vertex_gids = map(partition(cell_prange)) do indices
+    n = length(local_to_own(indices))
     ptrs = Vector{Int32}(undef,n+1)
     ptrs[1]=1
     for i=1:n
@@ -297,15 +310,10 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
       end
       k=k+nvertices
     end
-    PArrays.Table(data,ptrs)
+    PArrays.JaggedArray(data,ptrs)
   end
-  t=async_exchange!(PArrays._replace,cell_vertex_gids,cell_prange.exchanger)
-  map(wait∘schedule,t)
-  # map(get_part_ids(cell_vertex_gids)) do part
-  #   if (part==2)
-  #     println(cell_vertex_gids.part)
-  #   end
-  # end
+  fetch_cache=fetch_vector_ghost_values_cache(cell_vertex_gids,partition(cell_prange))
+  fetch_vector_ghost_values!(cell_vertex_gids,fetch_cache) |> wait
   cell_vertex_gids
 end
 
@@ -323,8 +331,8 @@ function generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
         current=current+1
       end
     end
-    (PArrays.Table(data,cell_vertex_gids.ptrs), current-1)
-  end
+    (PArrays.JaggedArray(data,cell_vertex_gids.ptrs), current-1)
+  end |> tuple_of_arrays
 end
 
 function generate_node_coordinates(::Type{Val{Dc}},
@@ -450,7 +458,7 @@ function generate_grid_and_topology(::Type{Val{Dc}},
                                       map(Gridap.ReferenceFEs.get_polytope, cell_reffes),
                                       Gridap.Geometry.NonOriented())
     grid,topology
-  end
+  end |> tuple_of_arrays
   grid,topology
 end
 
@@ -832,7 +840,7 @@ function init_cell_to_face_entity(num_faces_x_cell,
       k=_fill_data!(data,cell_to_face_entity[i][j],k)
     end
   end
-  return PArrays.Table(data, ptrs)
+  return PArrays.JaggedArray(data, ptrs)
 end
 
 function update_face_to_entity!(face_to_entity, cell_to_faces, cell_to_face_entity)
@@ -855,10 +863,9 @@ function update_face_to_entity_with_ghost_data!(
                                       map(x->num_faces_x_cell,cell_prange.partition),
                                       cell_to_faces,
                                       face_to_entity)
-
-   t=async_exchange!(PArrays._replace,part_to_cell_to_entity,cell_prange.exchanger)
-   map(wait∘schedule,t)
-
+   fetch_cache = fetch_vector_ghost_values_cache(part_to_cell_to_entity,
+                                                 partition(cell_prange))
+   fetch_vector_ghost_values!(part_to_cell_to_entity,fetch_cache) |> wait
    map(update_face_to_entity!,
              face_to_entity,
              cell_to_faces,
@@ -921,7 +928,7 @@ end
 """
 """
 function UniformlyRefinedForestOfOctreesDiscreteModel(
-    parts::MPIArray{<:Integer},
+    parts::AbstractVector{<:Integer},
     coarse_discrete_model::DiscreteModel{Dc,Dp},
     num_uniform_refinements::Int) where {Dc,Dp}
 

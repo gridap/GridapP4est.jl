@@ -69,7 +69,7 @@ function OctreeDistributedDiscreteModel(
 end
 
 
-function OctreeDistributedDiscreteModel(parts::MPIArray{<:Integer},
+function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
                                         num_uniform_refinements) where {Dc,Dp}
   comm = parts.comm
@@ -109,7 +109,7 @@ function OctreeDistributedDiscreteModel(parts::MPIArray{<:Integer},
 end
 
 function OctreeDistributedDiscreteModel(
-    parts::MPIArray{<:Integer},
+    parts::AbstractVector{<:Integer},
     coarse_model::DiscreteModel{Dc,Dp}) where {Dc,Dp}
   OctreeDistributedDiscreteModel(parts,coarse_model,0)
 end
@@ -267,51 +267,53 @@ function _compute_fine_to_coarse_model_glue(
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
-  f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,fgids.partition) do fmodel, fpartition
+  f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,
+                                       partition(fgids)) do fmodel, fpartition
     if (!(i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing, Int[], Int[]
     else
       cgids        = get_cell_gids(cmodel)
-      cmodel_local = cmodel.models.part
-      cpartition   = cgids.partition.part
+      cmodel_local = PArrays.getany(cmodel.models)
+      cpartition   = PArrays.getany(partition(cgids))
       fine_to_coarse_faces_map,
         fine_to_coarse_faces_dim,
           fcell_to_child_id =
           _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,fmodel,cpartition,fpartition)
+      
 
-      lids_snd    = fgids.exchanger.lids_snd.part
-      lids_rcv    = fgids.exchanger.lids_rcv.part
-      cgids_data  = cpartition.lid_to_gid[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
-      cgids_snd   = Table(cgids_data,lids_snd.ptrs)
-      cgids_rcv   = Table(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+      # Note: Reversing snd and rcv    
+      lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(partition(fgids)))
+      cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
+      cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
+      cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
 
       fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id, cgids_snd, cgids_rcv
     end
-  end
+  end |> tuple_of_arrays 
 
   # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
-  dfcell_to_child_id = map(f3) do fcell_to_child_id
-    !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
-  end
-  exchange!(dfcell_to_child_id, fgids.exchanger)
-  tout = PArrays.async_exchange!(cgids_rcv,
-                         cgids_snd,
-                         fgids.exchanger.parts_rcv,
-                         fgids.exchanger.parts_snd)
-  map(schedule,tout)
-  map(wait,tout)
+  # dfcell_to_child_id = map(f3) do fcell_to_child_id
+  #  !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
+  # end
+  # cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
+  # fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
+  
+  # Note: Reversing snd and rcv 
+  parts_rcv, parts_snd = assembly_neighbors(partition(fgids))
+  PArrays.exchange_fetch!(cgids_rcv,cgids_snd,ExchangeGraph(parts_snd,parts_rcv))
 
   map(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
     if (i_am_in(cparts))
-      cgids      = get_cell_gids(cmodel)
-      cpartition = cgids.partition.part
-      lids_rcv   = fgids.exchanger.lids_rcv.part
-
+      cgids=get_cell_gids(cmodel)
+      cpartition = PArrays.getany(partition(cgids))
+      # Note: Reversing snd and rcv
+      lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(fgids)))
+      glo_to_loc = global_to_local(cpartition)
       for i in 1:length(lids_rcv.data)
         lid = lids_rcv.data[i]
         gid = cgids_rcv.data[i]
-        fine_to_coarse_faces_map[Dc+1][lid] = cpartition.gid_to_lid[gid]
+        fine_to_coarse_faces_map[Dc+1][lid] = glo_to_loc[gid]
       end
     end
   end
@@ -321,16 +323,15 @@ function _compute_fine_to_coarse_model_glue(
     if (!(i_am_in(cparts)))
       nothing
     else
-      cmodel_local = cmodel.models.part
+      cmodel_local = PArrays.getany(cmodel.models)
       num_cells_coarse = num_cells(cmodel_local)
       reffe  = LagrangianRefFE(Float64,QUAD,1)
       rrules = Fill(Gridap.Adaptivity.RefinementRule(reffe,2),num_cells_coarse)
-
+      #println("fcell_to_child_id: ", fcell_to_child_id)
       AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
 end
-
 
 function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc},
                                                         fmodel::DiscreteModel{Dc},
@@ -339,8 +340,8 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
   fine_to_coarse_faces_dim = Vector{Vector{Int}}(undef,Dc)
 
-  num_f_cells   = num_cells(fmodel)             # Number of fine cells (owned+ghost)
-  num_o_c_cells = length(cpartition.oid_to_lid) # Number of coarse cells (owned)
+  num_f_cells   = num_cells(fmodel)                # Number of fine cells (owned+ghost)
+  num_o_c_cells = length(own_to_local(cpartition)) # Number of coarse cells (owned)
 
   # Allocate local vector size # local cells
   fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
@@ -587,7 +588,6 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
     end
     quadrants = P4est_wrapper.p4est_deflate_quadrants(ptr_pXest,C_NULL)
 
-    #print("$(global_first_quadrant) " * " \n")
     return P4est_wrapper.p4est_inflate(new_comm,
                                       ptr_pXest_conn,
                                       global_first_quadrant,
@@ -693,7 +693,7 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
      ptr_ranks[i+1]=ptr_ranks[i]+ranks_count[rank]
   end
 
-  lst_ranks,PartitionedArrays.Table(local_ids,ptr_ranks),old2new
+  lst_ranks,PartitionedArrays.JaggedArray(local_ids,ptr_ranks),old2new
 end
 
 function is_included(partsA,partsB)
@@ -797,7 +797,9 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   return red_model, glue
 end
 
-function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model) where {Dc,Dp}
+function _redistribute_parts_supset_parts_redistributed(
+     model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+     parts_redistributed_model) where {Dc,Dp}
   @assert model.parts !== parts_redistributed_model
 
   subset_comm = parts_redistributed_model.comm
@@ -806,7 +808,7 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
   if (i_am_in(subset_comm))
     # This piece of code replicates the logic behind the
     # "p4est_partition_cut_gloidx" function in the p4est library
-    psub=parts_redistributed_model.part
+    psub=PArrays.getany(parts_redistributed_model)
     Psub=num_parts(subset_comm)
     first_global_quadrant=Int64((Float64(N)*Float64(psub-1))/(Float64(Psub)))
     @assert first_global_quadrant>=0 && first_global_quadrant<N
@@ -816,7 +818,7 @@ function _redistribute_parts_supset_parts_redistributed(model::OctreeDistributed
   end
 
   Psup=num_parts(supset_comm)
-  psub=model.parts.part
+  psub=PArrays.getany(model.parts)
   num_cells_per_part=Vector{Cint}(undef, Psup+1)
   parts_offsets=MPI.Allgather(first_global_quadrant,supset_comm)
   num_cells_per_part[1:length(parts_offsets)] .= parts_offsets
@@ -887,12 +889,12 @@ end
 function _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
   lids_rcv, parts_rcv = map(parts) do _
     lids_rcv, parts_rcv
-  end
+  end |> tuple_of_arrays
   lids_snd, parts_snd = map(parts) do _
     lids_snd, parts_snd
-  end
+  end |> tuple_of_arrays
   old2new, new2old = map(parts) do _
     old2new,new2old
-  end
+  end |> tuple_of_arrays
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old
 end

@@ -21,4 +21,6 @@ module GridapP4est
   export refine
   export coarsen
   export redistribute
+  export MPIVoidVector
+  export i_am_in
 end

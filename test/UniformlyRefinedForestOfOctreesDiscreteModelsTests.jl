@@ -26,8 +26,9 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
     return parse_args(s)
   end
 
-  function run(parts,subdomains,num_uniform_refinements)
-    GridapP4est.with(parts;p4est_verbosity_level=P4est_wrapper.SC_LP_STATISTICS) do 
+  function run(distribute,subdomains,num_uniform_refinements)
+    ranks=distribute(LinearIndices((prod(subdomains),)))
+    GridapP4est.with(ranks;p4est_verbosity_level=P4est_wrapper.SC_LP_STATISTICS) do 
       # Manufactured solution
       u(x) = x[1] + x[2]
       f(x) = -Δ(u)(x)
@@ -40,9 +41,9 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
       end
 
       coarse_discrete_model=CartesianDiscreteModel(domain,subdomains)
-      model=UniformlyRefinedForestOfOctreesDiscreteModel(parts,
-                                                        coarse_discrete_model,
-                                                        num_uniform_refinements)
+      model=UniformlyRefinedForestOfOctreesDiscreteModel(ranks,
+                                                         coarse_discrete_model,
+                                                         num_uniform_refinements)
 
       # FE Spaces
       order=1
@@ -63,7 +64,11 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
       du = get_trial_fe_basis(U)
       assem = SparseMatrixAssembler(U,V)
 
-      dof_values = PVector(0.0,V.gids)
+      vector_partition = map(partition(V.gids)) do indices
+        zeros(local_length(indices))
+      end 
+
+      dof_values = PVector(vector_partition,partition(V.gids))
       uh = FEFunction(U,dof_values)
       data = collect_cell_matrix_and_vector(U,V,a(du,dv),l(dv),uh)
       A,b = assemble_matrix_and_vector(assem,data)
@@ -79,8 +84,8 @@ module UniformlyRefinedForestOfOctreesDiscreteModelsTests
       e_l2 = sum(∫(e*e)dΩ)
       tol = 1.0e-9
       @test e_l2 < tol
-      map(parts) do part
-        if (part==1)
+      map(ranks) do rank
+        if (rank==1)
           println("$(e_l2) < $(tol)\n")
         end
       end
