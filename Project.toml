@@ -10,7 +10,7 @@ Gridap = "0.17.17"
 PartitionedArrays = "0.3"
 MPI = "0.20"
 P4est_wrapper = "0.2.0"
-julia = "1.5,1.6,1.7,1.8"
+julia = "1.5,1.6,1.7,1.8,1.9"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
