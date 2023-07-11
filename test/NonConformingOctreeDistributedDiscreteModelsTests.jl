@@ -161,7 +161,7 @@
     coarse_model = setup_model(TVDc,perm)
     model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
 
-    ref_coarse_flags=map_parts(parts) do _
+    ref_coarse_flags=map(parts) do _
       [refine_flag,nothing_flag]
       #allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
     end 
@@ -474,19 +474,19 @@
       gridap_cell_faces,
       hanging_faces_glue = non_conforming_glue
 
-      gridap_cell_faces = map_parts(gridap_cell_faces...) do gridap_cell_faces...
+      gridap_cell_faces = map(gridap_cell_faces...) do gridap_cell_faces...
         gridap_cell_faces
       end 
-      num_regular_faces = map_parts(num_regular_faces...) do num_regular_faces...
+      num_regular_faces = map(num_regular_faces...) do num_regular_faces...
         num_regular_faces
       end
-      num_hanging_faces = map_parts(num_hanging_faces...) do num_hanging_faces...
+      num_hanging_faces = map(num_hanging_faces...) do num_hanging_faces...
         num_hanging_faces
       end
-      hanging_faces_glue = map_parts(hanging_faces_glue...) do hanging_faces_glue...
+      hanging_faces_glue = map(hanging_faces_glue...) do hanging_faces_glue...
         hanging_faces_glue
       end
-      sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs = map_parts(gridap_cell_faces,
+      sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs = map(gridap_cell_faces,
                                                             num_regular_faces,
                                                             num_hanging_faces,
                                                             hanging_faces_glue, 
@@ -695,7 +695,7 @@
     u(x) = x[1]+x[2]^order
     f(x) = -Δ(u)(x)
 
-    map_parts(dmodel.dmodel.models,V.spaces,U.spaces,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs) do model,V,U,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs
+    map(dmodel.dmodel.models,V.spaces,U.spaces,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs) do model,V,U,sDOF_to_dof,sDOF_to_dofs,sDOF_to_coeffs
       
       println(get_cell_dof_ids(V))
       fl=get_face_labeling(model)

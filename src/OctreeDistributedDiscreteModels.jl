@@ -492,7 +492,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
 end
 
 function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-                                  refinement_and_coarsening_flags::MPIData{<:Vector}) where {Dc,Dp}
+                                  refinement_and_coarsening_flags::MPIArray{<:Vector}) where {Dc,Dp}
 
     # Variables which are updated accross calls to init_fn_callback_2d
     current_quadrant_index_within_tree = Cint(0)
@@ -548,7 +548,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       init_fn_callback_c = init_fn_callback_3d_c
     end                                     
 
-    map_parts(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
+    map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
       # The length of the local flags array has to match the number of 
       # cells in the model. This includes both owned and ghost cells. 
       # Only the flags for owned cells is actually taken into account. 
@@ -1227,7 +1227,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   println("gridap_cell_faces: $(gridap_cell_faces)")
   println(hanging_faces_glue)
 
-  nlvertices = map_parts(num_regular_faces[1],num_hanging_faces[1]) do nrv,nhv
+  nlvertices = map(num_regular_faces[1],num_hanging_faces[1]) do nrv,nhv
     nrv+nhv
   end
 
@@ -1246,14 +1246,14 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
                                            nlvertices,
                                            node_coordinates)
 
-  map_parts(topology,gridap_cell_faces[Dc]) do topology,cell_faces
+  map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
     cell_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
     topology.n_m_to_nface_to_mfaces[Dc+1,Dc] = cell_faces_gridap
     topology.n_m_to_nface_to_mfaces[Dc,Dc+1] = Gridap.Geometry.generate_cells_around(cell_faces_gridap)
   end
 
   if (Dc==3)
-    map_parts(topology,gridap_cell_faces[Dc-1]) do topology,cell_edges
+    map(topology,gridap_cell_faces[Dc-1]) do topology,cell_edges
       cell_edges_gridap = Gridap.Arrays.Table(cell_edges.data,cell_edges.ptrs)
       topology.n_m_to_nface_to_mfaces[Dc+1,Dc-1] = cell_edges_gridap
       topology.n_m_to_nface_to_mfaces[Dc-1,Dc+1] = Gridap.Geometry.generate_cells_around(cell_edges_gridap)
@@ -1270,7 +1270,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
 
   _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
 
-  discretemodel=map_parts(grid,topology,face_labeling) do grid, topology, face_labeling
+  discretemodel=map(grid,topology,face_labeling) do grid, topology, face_labeling
     Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
   end
   GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange), 
@@ -1278,7 +1278,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
 end
 
 function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
-  max_entity_ids = map_parts(face_labeling) do face_labeling
+  max_entity_ids = map(face_labeling) do face_labeling
     max_entity_id = typemin(eltype(first(face_labeling.d_to_dface_to_entity))) 
     for i=1:length(face_labeling.d_to_dface_to_entity)
       max_entity_id=max(maximum(face_labeling.d_to_dface_to_entity[i]),max_entity_id)
@@ -1289,7 +1289,7 @@ function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
   
   hanging_entitity_ids = Dict{Int,Bool}()
   for i=1:length(num_hanging_faces)
-     map_parts(face_labeling,
+     map(face_labeling,
                num_regular_faces[i],
                num_hanging_faces[i]) do face_labeling, num_regular_faces, num_hanging_faces
       for j=num_regular_faces+1:num_regular_faces+num_hanging_faces
@@ -1299,7 +1299,7 @@ function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
       end
      end
   end
-  map_parts(face_labeling) do face_labeling 
+  map(face_labeling) do face_labeling 
     add_tag!(face_labeling,"hanging",collect(keys(hanging_entitity_ids)))
   end
 end 
@@ -1464,7 +1464,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   num_regular_faces,
   num_hanging_faces,
   gridap_cell_faces,
-  hanging_faces_glue = map_parts(cell_prange.partition) do indices
+  hanging_faces_glue = map(cell_prange.partition) do indices
 
     num_regular_faces = Vector{Int}(undef, Dc)
     num_hanging_faces = Vector{Int}(undef, Dc)
@@ -1870,22 +1870,22 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
 
   end
 
-  num_regular_faces_out  = Vector{MPIData}(undef,Dc)
-  num_hanging_faces_out  = Vector{MPIData}(undef,Dc)
-  gridap_cell_faces_out  = Vector{MPIData}(undef,Dc)
-  hanging_faces_glue_out = Vector{MPIData}(undef,Dc)
+  num_regular_faces_out  = Vector{MPIArray}(undef,Dc)
+  num_hanging_faces_out  = Vector{MPIArray}(undef,Dc)
+  gridap_cell_faces_out  = Vector{MPIArray}(undef,Dc)
+  hanging_faces_glue_out = Vector{MPIArray}(undef,Dc)
 
   for i=1:Dc 
-    num_regular_faces_out[i] = map_parts(num_regular_faces) do  num_regular_faces
+    num_regular_faces_out[i] = map(num_regular_faces) do  num_regular_faces
       num_regular_faces[i]
     end
-    num_hanging_faces_out[i] = map_parts(num_hanging_faces) do  num_hanging_faces
+    num_hanging_faces_out[i] = map(num_hanging_faces) do  num_hanging_faces
       num_hanging_faces[i]
     end
-    gridap_cell_faces_out[i] = map_parts(gridap_cell_faces) do  gridap_cell_faces
+    gridap_cell_faces_out[i] = map(gridap_cell_faces) do  gridap_cell_faces
       gridap_cell_faces[i]
     end
-    hanging_faces_glue_out[i] = map_parts(hanging_faces_glue) do hanging_faces_glue
+    hanging_faces_glue_out[i] = map(hanging_faces_glue) do hanging_faces_glue
       hanging_faces_glue[i]
     end
   end

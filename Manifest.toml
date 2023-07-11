@@ -2,7 +2,7 @@
 
 julia_version = "1.9.1"
 manifest_format = "2.0"
-project_hash = "3f5b4105704342e1b898b27e39d82d03a35637d6"
+project_hash = "bd637f6127db7bac11a859a057c5bf2cd71551c3"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -267,11 +267,11 @@ version = "0.17.17"
 
 [[deps.GridapDistributed]]
 deps = ["FillArrays", "Gridap", "LinearAlgebra", "MPI", "PartitionedArrays", "SparseArrays", "SparseMatricesCSR", "WriteVTK"]
-git-tree-sha1 = "1b8a98aa404a3e913bb3b45934637d1aa7c968da"
+git-tree-sha1 = "028e30e80ceb2b68257d1b3b2a0cebd596d6bb39"
 repo-rev = "partitioned_arrays_v0.3"
 repo-url = "https://github.com/gridap/GridapDistributed.jl.git"
 uuid = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
-version = "0.2.7"
+version = "0.3.0"
 
 [[deps.IntelOpenMP_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -296,9 +296,9 @@ version = "0.9.2"
 
 [[deps.JLD2]]
 deps = ["FileIO", "MacroTools", "Mmap", "OrderedCollections", "Pkg", "Printf", "Reexport", "Requires", "TranscodingStreams", "UUIDs"]
-git-tree-sha1 = "42c17b18ced77ff0be65957a591d34f4ed57c631"
+git-tree-sha1 = "5df8278ad24772c0c6dbbeb97b162ccf29ced2a9"
 uuid = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
-version = "0.4.31"
+version = "0.4.32"
 
 [[deps.JLLWrappers]]
 deps = ["Preferences"]
@@ -387,9 +387,9 @@ version = "2023.1.0+0"
 
 [[deps.MPI]]
 deps = ["Distributed", "DocStringExtensions", "Libdl", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "PkgVersion", "PrecompileTools", "Requires", "Serialization", "Sockets"]
-git-tree-sha1 = "a0f9368f5a98414b7e9874fc04542fe5002ee80e"
+git-tree-sha1 = "98fc280a56d3b5cc218435f82df60e05771fefa6"
 uuid = "da04e1cc-30fd-572f-bb4f-1f8673147195"
-version = "0.20.11"
+version = "0.20.12"
 
     [deps.MPI.extensions]
     AMDGPUExt = "AMDGPU"
