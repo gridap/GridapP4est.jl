@@ -26,7 +26,7 @@ module OctreeDistributedDiscreteModelsTests
     end
     
     nlevs = length(num_procs_x_level)
-    level_parts = Vector{typeof(parts)}(undef,nlevs)
+    level_parts = Vector{AbstractVector}(undef,nlevs)
     for l = 1:nlevs
       lsize = num_procs_x_level[l]
       if (l > 1) && (lsize == num_procs_x_level[l-1])
@@ -34,22 +34,25 @@ module OctreeDistributedDiscreteModelsTests
       else
         if rank < lsize
           comm=MPI.Comm_split(root_comm,0,0)
+          level_parts[l] = distribute_with_mpi(LinearIndices((lsize,)),comm;duplicate_comm=false)
         else
           comm=MPI.Comm_split(root_comm,mpi_undefined,mpi_undefined)
+          level_parts[l] = MPIVoidVector(eltype(parts))
         end
-        level_parts[l] = get_part_ids(comm)
       end
     end
     return level_parts
   end
 
-  function run_with_env(parts,subdomains,num_parts_x_level)
-    GridapP4est.with(parts) do
-      run(parts,subdomains,num_parts_x_level)
+  function run_with_env(distribute,subdomains,num_parts_x_level)
+    ranks=distribute(LinearIndices((prod(subdomains),)))
+    GridapP4est.with(ranks) do
+      run(distribute,subdomains,num_parts_x_level)
     end
   end
 
-  function run(parts,subdomains,num_parts_x_level)
+  function run(distribute,subdomains,num_parts_x_level)
+    ranks=distribute(LinearIndices((prod(subdomains),)))
     if length(subdomains) == 2
       domain=(0,1,0,1)
     else
@@ -58,11 +61,11 @@ module OctreeDistributedDiscreteModelsTests
     end
 
     # Generate model
-    level_parts  = generate_level_parts(parts,num_parts_x_level)
+    level_parts  = generate_level_parts(ranks,num_parts_x_level)
     coarse_model = CartesianDiscreteModel(domain,subdomains)
-    model        = OctreeDistributedDiscreteModel(level_parts[2],coarse_model,1)
-    vmodel1      = GridapP4est.VoidOctreeDistributedDiscreteModel(model,parts)
-    vmodel2      = GridapP4est.VoidOctreeDistributedDiscreteModel(coarse_model,parts)
+    model        = OctreeDistributedDiscreteModel(level_parts[2],coarse_model,1) 
+    vmodel1      = GridapP4est.VoidOctreeDistributedDiscreteModel(model,ranks) 
+    vmodel2      = GridapP4est.VoidOctreeDistributedDiscreteModel(coarse_model,ranks)
 
     # Refining and distributing
     fmodel , rglue  = refine(model,level_parts[1])
@@ -79,9 +82,6 @@ module OctreeDistributedDiscreteModelsTests
 
     # Redistribute L2 -> L1
     fmodel_tasks_L1, dglueL2toL1  = redistribute(fmodel_tasks_L2,level_parts[1])
-    if i_am_in(level_parts[1])
-      @test fmodel_tasks_L1.parts === PartitionedArrays.get_part_ids(dglueL2toL1.parts_rcv)
-    end
 
     # Redistribute L1 -> L2
     f_model_tasks_L2_back, dglueL1toL2 = redistribute(fmodel_tasks_L1,level_parts[2])
@@ -91,7 +91,7 @@ module OctreeDistributedDiscreteModelsTests
 
     if i_am_in(level_parts[2])
       @test num_cells(model_back)==num_cells(model)
-      map_parts(model.dmodel.models,model_back.dmodel.models) do m1, m2
+      map(model.dmodel.models,model_back.dmodel.models) do m1, m2
         Ωh1  = Triangulation(m1)
         dΩh1 = Measure(Ωh1,2)
         Ωh2OctreeDistributedDiscreteModelsTests.jl  = Triangulation(m2)

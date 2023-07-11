@@ -22,5 +22,7 @@ module GridapP4est
   export coarsen
   export redistribute
   export setup_non_conforming_distributed_discrete_model
+  export MPIVoidVector
+  export i_am_in
   
 end

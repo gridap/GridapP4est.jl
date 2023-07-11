@@ -5,5 +5,8 @@ using PartitionedArrays
 include("../OctreeDistributedDiscreteModelsTests.jl")
 import .OctreeDistributedDiscreteModelsTests as TestModule
 
-with_backend(TestModule.run_with_env,MPIBackend(),4,(2,2),[4,2])
+with_mpi() do distribute
+    TestModule.run_with_env(distribute,(2,2),[4,2])
+  end 
+
 MPI.Finalize()

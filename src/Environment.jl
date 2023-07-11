@@ -5,7 +5,7 @@ const _INITIALIZED = Ref(false)
 See P4est_wrapper.jl/src/bindings/sc_common.jl for possible/valid
 argument values for the p4est_verbosity_level parameter
 """
-function Init(parts::MPIData;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
+function Init(parts::MPIArray;p4est_verbosity_level=P4est_wrapper.SC_LP_DEFAULT)
   if !MPI.Initialized()
     @error "MPI not Initialized!"
   end
@@ -36,9 +36,60 @@ function Finalize()
   return nothing
 end
 
-function with(f,parts::MPIData;kwargs...)
+function with(f,parts::MPIArray;kwargs...)
   Init(parts;kwargs...)
   out = f()
   Finalize()
   return out
+end
+
+function num_parts(comm::MPI.Comm)
+  if comm != MPI.COMM_NULL
+    nparts = MPI.Comm_size(comm)
+  else
+    nparts = -1
+  end
+  nparts
+end
+
+function get_part_id(comm::MPI.Comm)
+  if comm != MPI.COMM_NULL
+    id = MPI.Comm_rank(comm)+1
+  else
+    id = -1
+  end
+  id
+end
+
+function i_am_in(comm::MPI.Comm)
+  get_part_id(comm) >=0
+end
+
+function i_am_in(comm::MPIArray)
+  i_am_in(comm.comm)
+end
+
+# This type is required because MPIArray from PArrays 
+# cannot be instantiated with a NULL communicator
+struct MPIVoidVector{T} <: AbstractVector{T}
+    comm::MPI.Comm
+    function MPIVoidVector(::Type{T}) where {T}
+        new{T}(MPI.COMM_NULL)
+    end
+end
+
+Base.size(a::MPIVoidVector) = (0,)
+Base.IndexStyle(::Type{<:MPIVoidVector}) = IndexLinear()
+function Base.getindex(a::MPIVoidVector,i::Int)
+  error("Indexing of MPIVoidVector not possible.")
+end
+function Base.setindex!(a::MPIVoidVector,v,i::Int)
+  error("Indexing of MPIVoidVector not possible.")
+end
+function Base.show(io::IO,k::MIME"text/plain",data::MPIVoidVector)
+  println(io,"MPIVoidVector")
+end
+
+function i_am_in(comm::MPIVoidVector)
+  i_am_in(comm.comm)
 end
