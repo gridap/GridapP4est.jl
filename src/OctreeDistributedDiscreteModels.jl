@@ -1274,7 +1274,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
     Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
   end
   GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange), 
-    (num_regular_faces,num_hanging_faces,gridap_cell_faces,hanging_faces_glue)
+    (num_regular_faces,num_hanging_faces,hanging_faces_glue)
 end
 
 function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)

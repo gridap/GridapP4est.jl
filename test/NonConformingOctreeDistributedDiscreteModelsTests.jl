@@ -471,11 +471,10 @@ module NonConformingOctreeDistributedDiscreteModelsTests
                                   face_subface_ldof_to_cell_ldof) where Dc
       num_regular_faces,
       num_hanging_faces,
-      gridap_cell_faces,
       hanging_faces_glue = non_conforming_glue
-
-      gridap_cell_faces = map(gridap_cell_faces...) do gridap_cell_faces...
-        gridap_cell_faces
+      gridap_cell_faces = map(local_views(dmodel)) do model
+        topo = Gridap.Geometry.get_grid_topology(model)
+        Tuple(Gridap.Geometry.get_faces(topo,Dc,d) for d=0:Dc-1)
       end 
       num_regular_faces = map(num_regular_faces...) do num_regular_faces...
         num_regular_faces
