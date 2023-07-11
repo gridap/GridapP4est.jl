@@ -1,4 +1,4 @@
-module NonConformingOctreeDistributedDiscreteModelsTests
+# module NonConformingOctreeDistributedDiscreteModelsTests
   using P4est_wrapper
   using GridapP4est
   using Gridap
@@ -165,7 +165,8 @@ module NonConformingOctreeDistributedDiscreteModelsTests
       [refine_flag,nothing_flag]
       #allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
     end 
-    dmodel,non_conforming_glue=refine(model,ref_coarse_flags)
+    dmodel=refine(model,ref_coarse_flags)
+    non_conforming_glue=dmodel.non_conforming_glue
 
     #println(non_conforming_glue)
 
@@ -471,7 +472,9 @@ module NonConformingOctreeDistributedDiscreteModelsTests
                                   face_subface_ldof_to_cell_ldof) where Dc
       num_regular_faces,
       num_hanging_faces,
-      hanging_faces_glue = non_conforming_glue
+      hanging_faces_glue = non_conforming_glue.num_regular_faces,
+                           non_conforming_glue.num_hanging_faces,
+                           non_conforming_glue.hanging_faces_glue
       gridap_cell_faces = map(local_views(dmodel)) do model
         topo = Gridap.Geometry.get_grid_topology(model)
         Tuple(Gridap.Geometry.get_faces(topo,Dc,d) for d=0:Dc-1)

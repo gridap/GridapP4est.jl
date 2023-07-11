@@ -3,12 +3,60 @@ const nothing_flag = Cint(0)
 const refine_flag  = Cint(1)
 const coarse_flag  = Cint(2)
 
-mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
+struct NonConformingGlue{Dc,
+                         A,
+                         B,
+                         C}
+                         #A<:AbstractVector{<:AbstractVector{<:Integer}},
+                         #B<:AbstractVector{<:AbstractVector{<:Integer}},
+                         #C<:AbstractVector{<:AbstractVector{<:Tuple{<:Integer,:Integer,Integer}}}}
+  num_regular_faces  :: A 
+  num_hanging_faces  :: B
+  hanging_faces_glue :: C
+  function NonConformingGlue(num_regular_faces,
+                             num_hanging_faces,
+                             hanging_faces_glue)
+    Dc=length(num_regular_faces)
+    @assert length(num_hanging_faces)==Dc
+    @assert length(hanging_faces_glue)==Dc
+    A=typeof(num_regular_faces)
+    B=typeof(num_hanging_faces)
+    C=typeof(hanging_faces_glue)
+    new{Dc,A,B,C}(num_regular_faces,
+                  num_hanging_faces,
+                  hanging_faces_glue)
+  end
+end
+
+
+function _create_conforming_model_non_conforming_glue(model::GridapDistributed.DistributedDiscreteModel{Dc}) where Dc
+  num_regular_faces=Vector{MPIArray{Int,1}}(undef,Dc)
+  num_hanging_faces=Vector{MPIArray{Int,1}}(undef,Dc)
+  hanging_faces_glue=Vector{MPIArray{Vector{Tuple{Int,Int,Int}},1}}(undef,Dc)
+  for d=1:Dc 
+    num_regular_faces[d]=map(local_views(model)) do model
+      num_faces(model,d)
+    end 
+    num_hanging_faces[d]=map(local_views(model)) do _
+      0
+    end
+    hanging_faces_glue[d]=map(local_views(model)) do _
+      Tuple{Int,Int,Int}[]
+    end
+  end 
+  NonConformingGlue(num_regular_faces,
+                    num_hanging_faces,
+                    hanging_faces_glue)
+end
+
+
+mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
   parts                       :: A
   dmodel                      :: B
-  coarse_model                :: C
-  ptr_pXest_connectivity      :: D
-  ptr_pXest                   :: E
+  non_conforming_glue         :: C 
+  coarse_model                :: D
+  ptr_pXest_connectivity      :: E
+  ptr_pXest                   :: F
 
   # The model for which this variable is true, is the one
   # ultimately responsible for deallocating the pXest_connectivity
@@ -23,6 +71,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistribu
     Dp::Int,
     parts,
     dmodel::Union{GridapDistributed.DistributedDiscreteModel,Nothing},
+    non_conforming_glue::Union{NonConformingGlue,Nothing},
     coarse_model,
     ptr_pXest_connectivity,
     ptr_pXest,
@@ -36,16 +85,18 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E} <: GridapDistribu
 
     A = typeof(parts)
     B = typeof(dmodel)
-    C = typeof(coarse_model)
-    D = typeof(ptr_pXest_connectivity)
-    E = typeof(ptr_pXest)
-    model = new{Dc,Dp,A,B,C,D,E}(parts,
-                                 dmodel,
-                                 coarse_model,
-                                 ptr_pXest_connectivity,
-                                 ptr_pXest,
-                                 owns_ptr_pXest_connectivity,
-                                 gc_ref)
+    C = typeof(non_conforming_glue)
+    D = typeof(coarse_model)
+    E = typeof(ptr_pXest_connectivity)
+    F = typeof(ptr_pXest)
+    model = new{Dc,Dp,A,B,C,D,E,F}(parts,
+                                   dmodel,
+                                   non_conforming_glue,
+                                   coarse_model,
+                                   ptr_pXest_connectivity,
+                                   ptr_pXest,
+                                   owns_ptr_pXest_connectivity,
+                                   gc_ref)
     Init(model)
     return model
   end
@@ -54,6 +105,7 @@ end
 function OctreeDistributedDiscreteModel(
   parts,
   dmodel::GridapDistributed.DistributedDiscreteModel{Dc,Dp},
+  non_conforming_glue::NonConformingGlue{Dc},
   coarse_model,
   ptr_pXest_connectivity,
   ptr_pXest,
@@ -64,6 +116,7 @@ function OctreeDistributedDiscreteModel(
                                         Dp,
                                         parts,
                                         dmodel,
+                                        non_conforming_glue,
                                         coarse_model,
                                         ptr_pXest_connectivity,
                                         ptr_pXest,
@@ -94,10 +147,13 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
+    non_conforming_glue = _create_conforming_model_non_conforming_glue(dmodel)
+
     return OctreeDistributedDiscreteModel(Dc,
                                           Dp,
                                           parts,
                                           dmodel,
+                                          non_conforming_glue,
                                           coarse_model,
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
@@ -127,6 +183,7 @@ function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},p
                                  Dp,
                                  parts,
                                  nothing,
+                                 nothing,
                                  coarse_model,
                                  ptr_pXest_connectivity,
                                  nothing,
@@ -138,6 +195,7 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
   OctreeDistributedDiscreteModel(Dc,
                                  Dp,
                                  parts,
+                                 nothing,
                                  nothing,
                                  model.coarse_model,
                                  model.ptr_pXest_connectivity,
@@ -476,14 +534,20 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                                  model.dmodel,
                                                  fmodel)
 
+      non_conforming_glue = _create_conforming_model_non_conforming_glue(dmodel)
+                                           
+
       ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                      new_parts,
                                      fmodel,
+                                     non_conforming_glue,
                                      model.coarse_model,
                                      model.ptr_pXest_connectivity,
                                      ptr_new_pXest,
                                      false,
                                      model)
+
+
       return ref_model, dglue
    else
     new_parts = isa(parts,Nothing) ? model.parts : parts
@@ -585,7 +649,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
      pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
      pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
 
-
      # To-DO: does not work OK in the non-conforming case 
      #  dglue = _compute_fine_to_coarse_model_glue(model.parts,
      #                                             model.dmodel,
@@ -593,12 +656,13 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
      ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                     model.parts,
                                     fmodel,
+                                    non_conforming_glue,
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
                                     ptr_new_pXest,
                                     false,
                                     model)
-     return ref_model, non_conforming_glue
+     return ref_model
   # else
   #  new_parts = isa(parts,Nothing) ? model.parts : parts
   #  return VoidOctreeDistributedDiscreteModel(model,new_parts), nothing
@@ -1215,11 +1279,13 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
 
   cell_prange = setup_cell_prange(Val{Dc}, parts, ptr_pXest, ptr_pXest_ghost)
 
-  num_regular_faces,
-  num_hanging_faces,
   gridap_cell_faces,
-  hanging_faces_glue =
+  non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
+
+  num_regular_faces=non_conforming_glue.num_regular_faces
+  num_hanging_faces=non_conforming_glue.num_hanging_faces
+  hanging_faces_glue=non_conforming_glue.hanging_faces_glue
 
   #println("### faces ###")
   #println("num_regular_faces: $(PArrays.getany(num_regular_faces))")
@@ -1273,8 +1339,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   discretemodel=map(grid,topology,face_labeling) do grid, topology, face_labeling
     Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
   end
-  GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange), 
-    (num_regular_faces,num_hanging_faces,hanging_faces_glue)
+  GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange), non_conforming_glue
 end
 
 function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
@@ -1892,10 +1957,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       hanging_faces_glue[i]
     end
   end
-  num_regular_faces_out, 
-  num_hanging_faces_out, 
-  gridap_cell_faces_out, 
-  hanging_faces_glue_out
+  gridap_cell_faces_out,NonConformingGlue(num_regular_faces_out, num_hanging_faces_out, hanging_faces_glue_out)
  end
 
 
