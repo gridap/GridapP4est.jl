@@ -1221,11 +1221,11 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   hanging_faces_glue =
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
-  println("### faces ###")
-  println("num_regular_faces: $(num_regular_faces)")
-  println("num_hanging_faces: $(num_hanging_faces)")
-  println("gridap_cell_faces: $(gridap_cell_faces)")
-  println(hanging_faces_glue)
+  #println("### faces ###")
+  #println("num_regular_faces: $(PArrays.getany(num_regular_faces))")
+  #println("num_hanging_faces: $(PArrays.getany(num_hanging_faces))")
+  #println("gridap_cell_faces: $(PArrays.getany(gridap_cell_faces))")
+  #println(PArrays.getany(hanging_faces_glue))
 
   nlvertices = map(num_regular_faces[1],num_hanging_faces[1]) do nrv,nhv
     nrv+nhv
@@ -1239,7 +1239,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
                                              ptr_pXest_ghost)
 
 
-  println("node_coordinates: $(node_coordinates)")
+  # println("node_coordinates: $(PArrays.getany(node_coordinates))")
 
   grid,topology=generate_grid_and_topology(Val{Dc},
                                            gridap_cell_faces[1],
@@ -1285,13 +1285,16 @@ function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
     end
     max_entity_id
   end
-  max_entity_id = MPI.Allreduce(max_entity_ids.part,MPI.MAX,max_entity_ids.comm)
-  
+  max_entity_id = reduction(max,
+                            max_entity_ids,
+                            destination=:all,
+                            init=zero(eltype(max_entity_ids)))
   hanging_entitity_ids = Dict{Int,Bool}()
   for i=1:length(num_hanging_faces)
-     map(face_labeling,
-               num_regular_faces[i],
-               num_hanging_faces[i]) do face_labeling, num_regular_faces, num_hanging_faces
+     map(max_entity_id,
+         face_labeling,
+         num_regular_faces[i],
+         num_hanging_faces[i]) do max_entity_id,face_labeling,num_regular_faces,num_hanging_faces
       for j=num_regular_faces+1:num_regular_faces+num_hanging_faces
         hanging_entity_id = max_entity_id + face_labeling.d_to_dface_to_entity[i][j]
         face_labeling.d_to_dface_to_entity[i][j]=hanging_entity_id
@@ -1464,7 +1467,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   num_regular_faces,
   num_hanging_faces,
   gridap_cell_faces,
-  hanging_faces_glue = map(cell_prange.partition) do indices
+  hanging_faces_glue = map(partition(cell_prange)) do indices
 
     num_regular_faces = Vector{Int}(undef, Dc)
     num_hanging_faces = Vector{Int}(undef, Dc)
@@ -1487,7 +1490,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     PXEST_2_GRIDAP_FACE   = pXest_2_gridap_facet(Val{Dc})
     PXEST_2_GRIDAP_EDGE   = p8est_2_gridap_edge()
 
-    n = length(indices.lid_to_part)
+    n = local_length(indices)
     gridap_cell_vertices_ptrs = Vector{Int32}(undef,n+1)
     gridap_cell_faces_ptrs = Vector{Int32}(undef,n+1)
     gridap_cell_vertices_ptrs[1]=1
@@ -1848,12 +1851,12 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
 
     println("XXX: $(gridap_cell_vertices_data)")
 
-    gridap_cell_faces = Vector{Table}(undef,Dc)
-    gridap_cell_faces[1] = Table(gridap_cell_vertices_data,gridap_cell_vertices_ptrs)
+    gridap_cell_faces = Vector{JaggedArray}(undef,Dc)
+    gridap_cell_faces[1] = JaggedArray(gridap_cell_vertices_data,gridap_cell_vertices_ptrs)
     if (Dc==3)
-      gridap_cell_faces[2] = Table(gridap_cell_edges_data,gridap_cell_edges_ptrs)
+      gridap_cell_faces[2] = JaggedArray(gridap_cell_edges_data,gridap_cell_edges_ptrs)
     end   
-    gridap_cell_faces[Dc] = Table(gridap_cell_faces_data,gridap_cell_faces_ptrs)
+    gridap_cell_faces[Dc] = JaggedArray(gridap_cell_faces_data,gridap_cell_faces_ptrs)
 
     hanging_faces_glue      = Vector{Vector{Tuple}}(undef,Dc)
     hanging_faces_glue[1]   = hanging_vertices_owner_cell_and_lface
@@ -1868,7 +1871,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
            gridap_cell_faces,
            hanging_faces_glue
 
-  end
+  end |> tuple_of_arrays
 
   num_regular_faces_out  = Vector{MPIArray}(undef,Dc)
   num_hanging_faces_out  = Vector{MPIArray}(undef,Dc)

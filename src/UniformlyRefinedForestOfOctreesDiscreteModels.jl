@@ -930,7 +930,7 @@ function update_face_to_entity_with_ghost_data!(
 
 
    part_to_cell_to_entity = map(init_cell_to_face_entity,
-                                      map(x->num_faces_x_cell,cell_prange.partition),
+                                      map(x->num_faces_x_cell,partition(cell_prange)),
                                       cell_to_faces,
                                       face_to_entity)
    fetch_cache = fetch_vector_ghost_values_cache(part_to_cell_to_entity,

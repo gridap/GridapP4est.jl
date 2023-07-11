@@ -1,4 +1,4 @@
-#module NonConformingOctreeDistributedDiscreteModelsTests
+module NonConformingOctreeDistributedDiscreteModelsTests
   using P4est_wrapper
   using GridapP4est
   using Gridap
@@ -152,7 +152,7 @@
   end
 
   MPI.Init()
-  parts = get_part_ids(MPIBackend(), 1)
+  parts = distribute_with_mpi(LinearIndices((1,)))
   # run(parts, (1, 1))
   # MPI.Finalize()
 
@@ -167,7 +167,7 @@
     end 
     dmodel,non_conforming_glue=refine(model,ref_coarse_flags)
 
-    println(non_conforming_glue)
+    #println(non_conforming_glue)
 
     p8est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
@@ -671,7 +671,7 @@
                                 sDOF_to_dofs,
                                 sDOF_to_coeffs)
           sDOF_to_dof, Gridap.Arrays.Table(sDOF_to_dofs), Gridap.Arrays.Table(sDOF_to_coeffs)
-        end 
+        end |> tuple_of_arrays 
     end
 
     rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
@@ -687,9 +687,9 @@
     sDOF_to_dof, sDOF_to_dofs,sDOF_to_coeffs=
         generate_constraints(dmodel, V, reffe, 
                             non_conforming_glue, ref_constraints, face_subface_ldof_to_cell_ldof)
-    println(sDOF_to_dof)
-    println(sDOF_to_dofs)
-    println(sDOF_to_coeffs)
+    #println(sDOF_to_dof)
+    #println(sDOF_to_dofs)
+    #println(sDOF_to_coeffs)
 
     # Define manufactured functions
     u(x) = x[1]+x[2]^order
@@ -770,4 +770,4 @@
   test(Val{3},4,2)
   test(Val{3},4,3)
 
-#end
+end
