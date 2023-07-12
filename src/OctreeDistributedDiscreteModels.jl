@@ -404,11 +404,12 @@ function _compute_fine_to_coarse_model_glue(
     if (!(i_am_in(cparts)))
       nothing
     else
+      polytope=(Dc==2 ? QUAD : HEX)
       cmodel_local = PArrays.getany(cmodel.models)
       num_cells_coarse = num_cells(cmodel_local)
-      reffe  = LagrangianRefFE(Float64,QUAD,1)
+      reffe  = LagrangianRefFE(Float64,polytope,1)
       rrules = Fill(Gridap.Adaptivity.RefinementRule(reffe,2),num_cells_coarse)
-      #println("fcell_to_child_id: ", fcell_to_child_id)
+      println("fcell_to_child_id: ", fcell_to_child_id)
       AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
@@ -437,6 +438,178 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
       fcell_to_child_id[c+child-1] = child
     end
     c = c + num_children
+  end
+
+  ftopology = Gridap.Geometry.get_grid_topology(fmodel)
+  for d=1:Dc
+    fine_to_coarse_faces_map[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
+    fine_to_coarse_faces_dim[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
+  end
+
+  # c_cell_faces=[]
+  # cache_c_cell_faces=[]
+  # f_cell_faces=[]
+  # cache_f_cell_faces=[]
+  # for d=1:Dc
+  #   push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
+  #   push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
+  #   push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
+  #   push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
+  # end
+  # parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
+  # for cell=1:num_f_cells
+  #   parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
+  #   child=fcell_to_child_id[cell]
+  #   for d=1:Dc
+  #     parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
+  #                                   c_cell_faces[d],
+  #                                   parent_cell)
+  #   end
+  #   for d=1:Dc
+  #     cell_f_faces=getindex!(cache_f_cell_faces[d],
+  #                             f_cell_faces[d],
+  #                             cell)
+  #     for (lf,f) in enumerate(cell_f_faces)
+  #       c     = rrule_f_to_c_lid_2D[d][child][lf]
+  #       dim_c = rrule_f_to_c_dim_2D[d][child][lf]
+  #       if (dim_c == Dc)
+  #         fine_to_coarse_faces_map[d][f]=parent_cell
+  #       else
+  #         fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
+  #       end
+  #       fine_to_coarse_faces_dim[d][f]=dim_c
+  #     end
+  #   end
+  # end
+
+  return fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
+end
+
+function _compute_fine_to_coarse_model_glue(
+         cparts,
+         cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel{Dc}},
+         fmodel::GridapDistributed.DistributedDiscreteModel{Dc},
+         refinement_and_coarsening_flags::MPIArray{<:AbstractVector}) where Dc 
+
+  Gridap.Helpers.@notimplementedif cmodel==nothing  
+
+  # Fill data for owned (from coarse cells owned by the processor)
+  fgids = get_cell_gids(fmodel)
+  f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,
+                                       partition(fgids),
+                                       refinement_and_coarsening_flags) do fmodel, fpartition, flags
+    if (!(i_am_in(cparts)))
+      # cmodel might be distributed among less processes than fmodel
+      nothing, nothing, nothing, Int[], Int[]
+    else
+      cgids        = get_cell_gids(cmodel)
+      cmodel_local = PArrays.getany(cmodel.models)
+      cpartition   = PArrays.getany(partition(cgids))
+      flags        = PArrays.getany(refinement_and_coarsening_flags)
+      fine_to_coarse_faces_map,
+        fine_to_coarse_faces_dim,
+          fcell_to_child_id =
+          _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,
+                                                         fmodel,
+                                                         cpartition,
+                                                         fpartition,
+                                                         flags)
+      
+
+      # Note: Reversing snd and rcv    
+      lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(partition(fgids)))
+      cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
+      cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
+      cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+
+      fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id, cgids_snd, cgids_rcv
+    end
+  end |> tuple_of_arrays 
+
+  # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
+  dfcell_to_child_id = map(f3) do fcell_to_child_id
+   !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
+  end
+  cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
+  fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
+  
+  cgids = get_cell_gids(cmodel)
+  cache=fetch_vector_ghost_values_cache(refinement_and_coarsening_flags,partition(cgids))
+  fetch_vector_ghost_values!(refinement_and_coarsening_flags,cache) |> wait
+  
+  # Note: Reversing snd and rcv 
+  parts_rcv, parts_snd = assembly_neighbors(partition(fgids))
+  PArrays.exchange_fetch!(cgids_rcv,cgids_snd,ExchangeGraph(parts_snd,parts_rcv))
+
+  map(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
+    if (i_am_in(cparts))
+      cgids=get_cell_gids(cmodel)
+      cpartition = PArrays.getany(partition(cgids))
+      # Note: Reversing snd and rcv
+      lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(fgids)))
+      glo_to_loc = global_to_local(cpartition)
+      for i in 1:length(lids_rcv.data)
+        lid = lids_rcv.data[i]
+        gid = cgids_rcv.data[i]
+        fine_to_coarse_faces_map[Dc+1][lid] = glo_to_loc[gid]
+      end
+    end
+  end
+
+  # Create distributed glue
+  map(f1,f2,f3,refinement_and_coarsening_flags) do fine_to_coarse_faces_map, 
+                                                   fine_to_coarse_faces_dim, 
+                                                   fcell_to_child_id,
+                                                   flags
+    if (!(i_am_in(cparts)))
+      nothing
+    else
+      polytope=(Dc==2 ? QUAD : HEX)
+      rrule_nothing_flag    = Gridap.Adaptivity.WhiteRefinementRule(polytope)
+      reffe  = LagrangianRefFE(Float64,polytope,1)
+      rrule_refinement_flag = Gridap.Adaptivity.RefinementRule(reffe,2)
+      f(x)=x==nothing_flag ? rrule_nothing_flag : rrule_refinement_flag
+      coarse_cell_to_rrule=map(f,flags)
+      rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
+      AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
+    end
+  end
+end
+
+function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc},
+                                                        fmodel::DiscreteModel{Dc},
+                                                        cpartition,
+                                                        fpartition,
+                                                        flags) where Dc
+  fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
+  fine_to_coarse_faces_dim = Vector{Vector{Int}}(undef,Dc)
+
+  num_f_cells   = num_cells(fmodel)                # Number of fine cells (owned+ghost)
+  num_o_c_cells = length(own_to_local(cpartition)) # Number of coarse cells (owned)
+
+  # Allocate local vector size # local cells
+  fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
+  fcell_to_child_id = Vector{Int}(undef,num_f_cells)
+
+  # Go over all cells of coarse grid portion
+  num_children = get_num_children(Val{Dc})
+  c = 1
+  for cell = 1:num_o_c_cells
+    if flags[cell]==refine_flag
+      for child = 1:num_children
+        fine_to_coarse_faces_map[Dc+1][c+child-1] = cell
+        fcell_to_child_id[c+child-1] = child
+      end
+      c = c + num_children
+    elseif flags[cell]==nothing_flag
+      fine_to_coarse_faces_map[Dc+1][c] = cell
+      fcell_to_child_id[c] = -1
+      c=c+1
+    elseif flags[cell]==coarsen_flag
+      Gridap.Helpers.@notimplemented
+    else 
+      error("Unknown AMR flag")
+    end
   end
 
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
@@ -644,9 +817,11 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
      pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
 
      # To-DO: does not work OK in the non-conforming case 
-     #  dglue = _compute_fine_to_coarse_model_glue(model.parts,
-     #                                             model.dmodel,
-     #                                             fmodel)
+     dglue = _compute_fine_to_coarse_model_glue(model.parts,
+                                                model.dmodel,
+                                                fmodel,
+                                                refinement_and_coarsening_flags)
+
      ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                     model.parts,
                                     fmodel,
