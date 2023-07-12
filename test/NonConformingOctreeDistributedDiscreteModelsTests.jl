@@ -470,23 +470,19 @@
                                   non_conforming_glue,
                                   ref_constraints, 
                                   face_subface_ldof_to_cell_ldof) where Dc
-      num_regular_faces,
-      num_hanging_faces,
-      hanging_faces_glue = non_conforming_glue.num_regular_faces,
-                           non_conforming_glue.num_hanging_faces,
-                           non_conforming_glue.hanging_faces_glue
+
       gridap_cell_faces = map(local_views(dmodel)) do model
         topo = Gridap.Geometry.get_grid_topology(model)
         Tuple(Gridap.Geometry.get_faces(topo,Dc,d) for d=0:Dc-1)
       end 
-      num_regular_faces = map(num_regular_faces...) do num_regular_faces...
-        num_regular_faces
+      num_regular_faces = map(non_conforming_glue) do ncglue
+        Tuple(ncglue.num_regular_faces[d] for d=1:Dc)
       end
-      num_hanging_faces = map(num_hanging_faces...) do num_hanging_faces...
-        num_hanging_faces
+      num_hanging_faces = map(non_conforming_glue) do ncglue
+        Tuple(ncglue.num_hanging_faces[d] for d=1:Dc)
       end
-      hanging_faces_glue = map(hanging_faces_glue...) do hanging_faces_glue...
-        hanging_faces_glue
+      hanging_faces_glue = map(non_conforming_glue) do ncglue
+        Tuple(ncglue.hanging_faces_glue[d] for d=1:Dc)
       end
       sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs = map(gridap_cell_faces,
                                                             num_regular_faces,

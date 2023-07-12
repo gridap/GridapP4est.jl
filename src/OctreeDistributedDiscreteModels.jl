@@ -30,25 +30,19 @@ end
 
 
 function _create_conforming_model_non_conforming_glue(model::GridapDistributed.DistributedDiscreteModel{Dc}) where Dc
-  num_regular_faces=Vector{MPIArray{Int,1}}(undef,Dc)
-  num_hanging_faces=Vector{MPIArray{Int,1}}(undef,Dc)
-  hanging_faces_glue=Vector{MPIArray{Vector{Tuple{Int,Int,Int}},1}}(undef,Dc)
-  for d=1:Dc 
-    num_regular_faces[d]=map(local_views(model)) do model
-      num_faces(model,d)
-    end 
-    num_hanging_faces[d]=map(local_views(model)) do _
-      0
+  non_conforming_glue = map(local_views(model)) do model
+    num_regular_faces=Vector{Int}(undef,Dc)
+    num_hanging_faces=Vector{Int}(undef,Dc)
+    hanging_faces_glue=Vector{Tuple{Int,Int,Int}}(undef,Dc)
+    for d=1:Dc 
+      num_regular_faces[d]=num_faces(model,d)
+      num_hanging_faces[d]=0
     end
-    hanging_faces_glue[d]=map(local_views(model)) do _
-      Tuple{Int,Int,Int}[]
-    end
-  end 
-  NonConformingGlue(num_regular_faces,
-                    num_hanging_faces,
-                    hanging_faces_glue)
+    NonConformingGlue(num_regular_faces,
+                      num_hanging_faces,
+                      hanging_faces_glue)
+  end
 end
-
 
 mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
   parts                       :: A
@@ -71,7 +65,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
     Dp::Int,
     parts,
     dmodel::Union{GridapDistributed.DistributedDiscreteModel,Nothing},
-    non_conforming_glue::Union{NonConformingGlue,Nothing},
+    non_conforming_glue::Union{AbstractVector{<:NonConformingGlue},Nothing},
     coarse_model,
     ptr_pXest_connectivity,
     ptr_pXest,
@@ -105,7 +99,7 @@ end
 function OctreeDistributedDiscreteModel(
   parts,
   dmodel::GridapDistributed.DistributedDiscreteModel{Dc,Dp},
-  non_conforming_glue::NonConformingGlue{Dc},
+  non_conforming_glue::AbstractVector{<:NonConformingGlue{Dc}},
   coarse_model,
   ptr_pXest_connectivity,
   ptr_pXest,
@@ -380,11 +374,11 @@ function _compute_fine_to_coarse_model_glue(
   end |> tuple_of_arrays 
 
   # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
-  # dfcell_to_child_id = map(f3) do fcell_to_child_id
-  #  !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
-  # end
-  # cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
-  # fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
+  dfcell_to_child_id = map(f3) do fcell_to_child_id
+   !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
+  end
+  cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
+  fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
   
   # Note: Reversing snd and rcv 
   parts_rcv, parts_snd = assembly_neighbors(partition(fgids))
@@ -534,7 +528,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                                  model.dmodel,
                                                  fmodel)
 
-      non_conforming_glue = _create_conforming_model_non_conforming_glue(dmodel)
+      non_conforming_glue = _create_conforming_model_non_conforming_glue(model.dmodel)
                                            
 
       ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
@@ -615,7 +609,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
     map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
       # The length of the local flags array has to match the number of 
       # cells in the model. This includes both owned and ghost cells. 
-      # Only the flags for owned cells is actually taken into account. 
+      # Only the flags for owned cells are actually taken into account. 
       @assert num_cells(lmodel)==length(flags)
       pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
     end
@@ -1283,18 +1277,14 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
-  num_regular_faces=non_conforming_glue.num_regular_faces
-  num_hanging_faces=non_conforming_glue.num_hanging_faces
-  hanging_faces_glue=non_conforming_glue.hanging_faces_glue
-
   #println("### faces ###")
   #println("num_regular_faces: $(PArrays.getany(num_regular_faces))")
   #println("num_hanging_faces: $(PArrays.getany(num_hanging_faces))")
   #println("gridap_cell_faces: $(PArrays.getany(gridap_cell_faces))")
   #println(PArrays.getany(hanging_faces_glue))
 
-  nlvertices = map(num_regular_faces[1],num_hanging_faces[1]) do nrv,nhv
-    nrv+nhv
+  nlvertices = map(non_conforming_glue) do ncglue
+    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
   end
 
   node_coordinates=generate_node_coordinates(Val{Dc},
@@ -1334,7 +1324,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
                                        ptr_pXest,
                                        ptr_pXest_ghost)
 
-  _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
+  _set_hanging_labels!(face_labeling,non_conforming_glue)
 
   discretemodel=map(grid,topology,face_labeling) do grid, topology, face_labeling
     Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
@@ -1342,7 +1332,7 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   GridapDistributed.DistributedDiscreteModel(discretemodel,cell_prange), non_conforming_glue
 end
 
-function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
+function _set_hanging_labels!(face_labeling,non_conforming_glue)
   max_entity_ids = map(face_labeling) do face_labeling
     max_entity_id = typemin(eltype(first(face_labeling.d_to_dface_to_entity))) 
     for i=1:length(face_labeling.d_to_dface_to_entity)
@@ -1354,18 +1344,20 @@ function _set_hanging_labels!(face_labeling,num_regular_faces,num_hanging_faces)
                             max_entity_ids,
                             destination=:all,
                             init=zero(eltype(max_entity_ids)))
+  
   hanging_entitity_ids = Dict{Int,Bool}()
-  for i=1:length(num_hanging_faces)
-     map(max_entity_id,
-         face_labeling,
-         num_regular_faces[i],
-         num_hanging_faces[i]) do max_entity_id,face_labeling,num_regular_faces,num_hanging_faces
-      for j=num_regular_faces+1:num_regular_faces+num_hanging_faces
+  map(max_entity_id,
+      face_labeling,
+      non_conforming_glue) do max_entity_id,face_labeling,ncglue 
+    for i=1:length(ncglue.num_hanging_faces)
+      num_regular_faces_i = ncglue.num_regular_faces[i]
+      num_hanging_faces_i = ncglue.num_hanging_faces[i]
+      for j=num_regular_faces_i+1:num_regular_faces_i+num_hanging_faces_i
         hanging_entity_id = max_entity_id + face_labeling.d_to_dface_to_entity[i][j]
         face_labeling.d_to_dface_to_entity[i][j]=hanging_entity_id
         hanging_entitity_ids[hanging_entity_id]=true
-      end
-     end
+      end      
+    end
   end
   map(face_labeling) do face_labeling 
     add_tag!(face_labeling,"hanging",collect(keys(hanging_entitity_ids)))
@@ -1938,26 +1930,17 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
 
   end |> tuple_of_arrays
 
-  num_regular_faces_out  = Vector{MPIArray}(undef,Dc)
-  num_hanging_faces_out  = Vector{MPIArray}(undef,Dc)
+  
   gridap_cell_faces_out  = Vector{MPIArray}(undef,Dc)
-  hanging_faces_glue_out = Vector{MPIArray}(undef,Dc)
-
-  for i=1:Dc 
-    num_regular_faces_out[i] = map(num_regular_faces) do  num_regular_faces
-      num_regular_faces[i]
-    end
-    num_hanging_faces_out[i] = map(num_hanging_faces) do  num_hanging_faces
-      num_hanging_faces[i]
-    end
+  for i=1:Dc
     gridap_cell_faces_out[i] = map(gridap_cell_faces) do  gridap_cell_faces
       gridap_cell_faces[i]
     end
-    hanging_faces_glue_out[i] = map(hanging_faces_glue) do hanging_faces_glue
-      hanging_faces_glue[i]
-    end
   end
-  gridap_cell_faces_out,NonConformingGlue(num_regular_faces_out, num_hanging_faces_out, hanging_faces_glue_out)
+  non_conforming_glue=map(num_regular_faces,num_hanging_faces,hanging_faces_glue) do nrf, nhf, hfg
+    NonConformingGlue(nrf, nhf, hfg)
+  end 
+  gridap_cell_faces_out,non_conforming_glue
  end
 
 
