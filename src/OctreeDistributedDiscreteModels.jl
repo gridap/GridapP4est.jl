@@ -1,7 +1,7 @@
 
-const nothing_flag = Cint(0)
-const refine_flag  = Cint(1)
-const coarse_flag  = Cint(2)
+const nothing_flag  = Cint(0)
+const refine_flag   = Cint(1)
+const coarsen_flag  = Cint(2)
 
 struct NonConformingGlue{Dc,
                          A,
@@ -35,7 +35,7 @@ function _create_conforming_model_non_conforming_glue(model::GridapDistributed.D
     num_hanging_faces=Vector{Int}(undef,Dc)
     hanging_faces_glue=Vector{Tuple{Int,Int,Int}}(undef,Dc)
     for d=1:Dc 
-      num_regular_faces[d]=num_faces(model,d)
+      num_regular_faces[d]=num_faces(model,d-1)
       num_hanging_faces[d]=0
     end
     NonConformingGlue(num_regular_faces,
@@ -568,7 +568,7 @@ function _compute_fine_to_coarse_model_glue(
       rrule_nothing_flag    = Gridap.Adaptivity.WhiteRefinementRule(polytope)
       reffe  = LagrangianRefFE(Float64,polytope,1)
       rrule_refinement_flag = Gridap.Adaptivity.RefinementRule(reffe,2)
-      f(x)=x==nothing_flag ? rrule_nothing_flag : rrule_refinement_flag
+      f(x)=x==nothing_flag ? 1 : 2
       coarse_cell_to_rrule=map(f,flags)
       rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
       AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
@@ -584,8 +584,8 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
   fine_to_coarse_faces_dim = Vector{Vector{Int}}(undef,Dc)
 
-  num_f_cells   = num_cells(fmodel)                # Number of fine cells (owned+ghost)
-  num_o_c_cells = length(own_to_local(cpartition)) # Number of coarse cells (owned)
+  num_f_cells   = num_cells(fmodel)       # Number of fine cells (owned+ghost)
+  num_o_c_cells = own_length(cpartition)  # Number of coarse cells (owned)
 
   # Allocate local vector size # local cells
   fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
@@ -603,7 +603,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
       c = c + num_children
     elseif flags[cell]==nothing_flag
       fine_to_coarse_faces_map[Dc+1][c] = cell
-      fcell_to_child_id[c] = -1
+      fcell_to_child_id[c] = 1
       c=c+1
     elseif flags[cell]==coarsen_flag
       Gridap.Helpers.@notimplemented
@@ -657,7 +657,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   return fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
-function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts=nothing) where {Dc,Dp}
+function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; parts=nothing) where {Dc,Dp}
    old_comm = model.parts.comm
    if (i_am_in(old_comm))
      # Copy and refine input p4est
@@ -723,7 +723,10 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
 end
 
 function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-                                  refinement_and_coarsening_flags::MPIArray{<:Vector}) where {Dc,Dp}
+                                  refinement_and_coarsening_flags::MPIArray{<:Vector};
+                                  parts=nothing) where {Dc,Dp}
+
+    Gridap.Helpers.@notimplementedif parts!=nothing
 
     # Variables which are updated accross calls to init_fn_callback_2d
     current_quadrant_index_within_tree = Cint(0)
@@ -744,12 +747,15 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
         quadrant = quadrant_ptr[]
         q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
         @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
+        println("kjfksjfksf: 
+                $(unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer), current_quadrant_index_among_trees+1))")
         user_data = unsafe_wrap(Array, 
                                 Ptr{Cint}(forest.user_pointer), 
                                 current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
         unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
         current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
         current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+        println("current_quadrant_index_among_trees = ", current_quadrant_index_among_trees)
         return nothing
       end
       init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
@@ -784,6 +790,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       # cells in the model. This includes both owned and ghost cells. 
       # Only the flags for owned cells are actually taken into account. 
       @assert num_cells(lmodel)==length(flags)
+      println("flags: $(flags)")
       pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
     end
     
@@ -791,6 +798,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       which_tree::p4est_topidx_t,
       quadrant_ptr::Ptr{p4est_quadrant_t})
       quadrant = quadrant_ptr[]
+      println("PPPP: $(Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]))")
       return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
     end
     
@@ -816,11 +824,16 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
      pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
      pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
 
-     # To-DO: does not work OK in the non-conforming case 
-     dglue = _compute_fine_to_coarse_model_glue(model.parts,
-                                                model.dmodel,
-                                                fmodel,
-                                                refinement_and_coarsening_flags)
+     adaptivity_glue = _compute_fine_to_coarse_model_glue(model.parts,
+                                                          model.dmodel,
+                                                          fmodel,
+                                                          refinement_and_coarsening_flags)
+     adaptive_models=map(local_views(model),
+                         local_views(fmodel),
+                         adaptivity_glue) do model, fmodel, glue 
+        Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+     end
+     fmodel=GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
 
      ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                     model.parts,
@@ -831,7 +844,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                     ptr_new_pXest,
                                     false,
                                     model)
-     return ref_model
+     return ref_model, adaptivity_glue
   # else
   #  new_parts = isa(parts,Nothing) ? model.parts : parts
   #  return VoidOctreeDistributedDiscreteModel(model,new_parts), nothing
@@ -1539,17 +1552,14 @@ function _set_hanging_labels!(face_labeling,non_conforming_glue)
   end
 end 
 
-function _build_map_from_faces_to_cell_lface(lnodes)
+function _build_map_from_faces_to_cell_lface(vnodes, element_nodes, face_code)
   n_cell_faces    = num_cell_faces(Val{2})
-
-  element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
-  face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
   hanging_face = Vector{Cint}(undef, n_cell_faces)
 
   # Build a map from faces to (cell,lface)
   p4est_gface_to_gcell_p4est_lface = Dict{Int,Tuple{Int,Int}}()
-  for cell = 1:lnodes.num_local_elements
-    start = (cell - 1) * lnodes.vnodes + 1
+  for cell = 1:length(face_code)
+    start = (cell - 1) * vnodes + 1
     p4est_cell_faces = view(element_nodes, start:start+n_cell_faces-1)
     has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
     if (has_hanging==0)
@@ -1683,6 +1693,37 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
   face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
   hanging_face = Vector{Cint}(undef, n_cell_faces)
+  face_code_with_ghosts = map(partition(cell_prange)) do indices
+      @assert length(face_code)==own_length(indices)
+      @assert own_length(indices)==lnodes.num_local_elements
+      face_code_with_ghosts=similar(face_code, local_length(indices))
+      face_code_with_ghosts[1:own_length(indices)] .= face_code
+      face_code_with_ghosts
+  end
+
+  cache_face_code=fetch_vector_ghost_values_cache(face_code_with_ghosts, partition(cell_prange))
+  fetch_vector_ghost_values!(face_code_with_ghosts, cache_face_code) |> wait
+
+  element_nodes_with_ghosts = map(partition(cell_prange)) do indices
+    nonlocal_nodes = unsafe_wrap(Array, lnodes.nonlocal_nodes, lnodes.num_local_nodes-lnodes.owned_count)
+    element_nodes_with_ghosts_data=similar(element_nodes, local_length(indices)*lnodes.vnodes)
+    for (i,node) in enumerate(element_nodes)
+      if (node<lnodes.owned_count)
+        element_nodes_with_ghosts_data[i] = lnodes.global_offset+node
+      else
+        element_nodes_with_ghosts_data[i] = nonlocal_nodes[node-lnodes.owned_count+1]
+      end 
+    end     
+    element_nodes_with_ghosts_ptrs = [i for i=1:lnodes.vnodes:length(element_nodes_with_ghosts_data)+1]
+    PArrays.JaggedArray(element_nodes_with_ghosts_data,element_nodes_with_ghosts_ptrs)
+  end
+  cache_element_nodes_with_ghosts=fetch_vector_ghost_values_cache(element_nodes_with_ghosts, partition(cell_prange))
+  fetch_vector_ghost_values!(element_nodes_with_ghosts, cache_element_nodes_with_ghosts) |> wait
+
+  map(element_nodes_with_ghosts,face_code_with_ghosts,partition(cell_prange)) do element_nodes_with_ghosts, face_code_with_ghosts, indices
+    print("ENDES[$(part_id(indices))]: $(element_nodes_with_ghosts.data)"); print("\n") 
+    print("FCODS[$(part_id(indices))]: $(face_code_with_ghosts)"); print("\n")
+  end
 
   if (Dc==2)
     hanging_lvertex_within_face=hanging_lvertex_within_face_2d
@@ -1699,8 +1740,15 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   num_regular_faces,
   num_hanging_faces,
   gridap_cell_faces,
-  hanging_faces_glue = map(partition(cell_prange)) do indices
-
+  hanging_faces_glue = 
+      map(partition(cell_prange),
+          element_nodes_with_ghosts,
+          face_code_with_ghosts) do indices, 
+                                    element_nodes_with_ghosts, 
+                                    face_code_with_ghosts
+    @assert local_length(indices)==length(face_code_with_ghosts) 
+ 
+    num_local_elements = local_length(indices)
     num_regular_faces = Vector{Int}(undef, Dc)
     num_hanging_faces = Vector{Int}(undef, Dc)
 
@@ -1712,10 +1760,12 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     regular_faces_p4est_to_gridap = Dict{Int,Int}()
 
     if (Dc==2)
-      p4est_gface_to_gcell_p4est_lface = _build_map_from_faces_to_cell_lface(lnodes)
+      p4est_gface_to_gcell_p4est_lface = 
+         _build_map_from_faces_to_cell_lface(lnodes.vnodes, element_nodes_with_ghosts.data, face_code_with_ghosts)
     else 
       p4est_gface_to_gcell_p4est_lface, 
-         p4est_gedge_to_gcell_p4est_ledge = _build_map_from_faces_edges_to_cell_lface_ledge(lnodes)
+         p4est_gedge_to_gcell_p4est_ledge = 
+           _build_map_from_faces_edges_to_cell_lface_ledge(lnodes)
     end 
 
     PXEST_2_GRIDAP_VERTEX = pXest_2_gridap_vertex(Val{Dc})
@@ -1736,10 +1786,10 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       gridap_cell_faces_ptrs[i+1]=gridap_cell_faces_ptrs[i]+n_cell_faces
     end
 
-    gridap_cell_vertices_data = Vector{Int}(undef, lnodes.num_local_elements * n_cell_vertices)
+    gridap_cell_vertices_data = Vector{Int}(undef, num_local_elements * n_cell_vertices)
     gridap_cell_vertices_data .= -1
 
-    gridap_cell_faces_data = Vector{Int}(undef, lnodes.num_local_elements * n_cell_faces)
+    gridap_cell_faces_data = Vector{Int}(undef, num_local_elements * n_cell_faces)
     gridap_cell_faces_data .= -1
 
     if (Dc==3)
@@ -1750,20 +1800,20 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       for i=1:n
         gridap_cell_edges_ptrs[i+1]=gridap_cell_edges_ptrs[i]+n_cell_edges
       end
-      gridap_cell_edges_data = Vector{Int}(undef, lnodes.num_local_elements * n_cell_edges)
+      gridap_cell_edges_data = Vector{Int}(undef, num_local_elements * n_cell_edges)
       gridap_cell_edges_data .= -1
       hanging_edges_pairs_to_owner_face = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
       hanging_vertices_pairs_to_owner_edge = Dict{Tuple{Int,Int},Int}()
       regular_edges_p4est_to_gridap = Dict{Int,Int}()
     end 
 
-    for cell = 1:lnodes.num_local_elements
+    for cell = 1:num_local_elements
       start                 = (cell - 1) * lnodes.vnodes + 1
       start_gridap_vertices = (cell - 1) * n_cell_vertices
       start_gridap_faces    = (cell - 1) * n_cell_faces
 
-      p4est_cell_faces = view(element_nodes, start:start+n_cell_faces-1)
-      p4est_cell_vertices = view(element_nodes, 
+      p4est_cell_faces = view(element_nodes_with_ghosts.data, start:start+n_cell_faces-1)
+      p4est_cell_vertices = view(element_nodes_with_ghosts.data, 
                                  start+n_cell_faces+n_cell_edges:start+n_cell_faces+n_cell_edges+n_cell_vertices-1)
 
       gridap_cell_vertices = view(gridap_cell_vertices_data,
@@ -1772,12 +1822,12 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
         start_gridap_faces+1:start_gridap_faces+n_cell_faces)
 
       if (Dc==2)  
-        has_hanging = p4est_lnodes_decode(face_code[cell], hanging_face)
+        has_hanging = p4est_lnodes_decode(face_code_with_ghosts[cell], hanging_face)
       else
-        has_hanging = p8est_lnodes_decode(face_code[cell], hanging_face, hanging_edge)
+        has_hanging = p8est_lnodes_decode(face_code_with_ghosts[cell], hanging_face, hanging_edge)
         start_gridap_edges = (cell-1)*n_cell_edges
         gridap_cell_edges = view(gridap_cell_edges_data, start_gridap_edges+1:start_gridap_edges+n_cell_edges)
-        p4est_cell_edges = view(element_nodes, 
+        p4est_cell_edges = view(element_nodes_with_ghosts.data, 
                                 start+n_cell_faces:start+n_cell_faces+n_cell_edges-1)
       end
       if has_hanging == 0
@@ -1981,6 +2031,9 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     # Go over all touched hanging faces and start 
     # assigning IDs from the last num_regular_faces ID
     # For each hanging face, keep track of (owner_cell,lface)
+    println("regular_faces_p4est_to_gridap: $(regular_faces_p4est_to_gridap)")
+    println("hanging_faces_pairs_to_owner_face: $(hanging_faces_pairs_to_owner_face)")
+
     hanging_faces_owner_cell_and_lface =
       Vector{Tuple{Int,Int,Int}}(undef, length(keys(hanging_faces_pairs_to_owner_face)))
     num_hanging_faces[Dc] = 0

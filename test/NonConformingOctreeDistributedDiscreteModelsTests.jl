@@ -163,9 +163,8 @@
 
     ref_coarse_flags=map(parts) do _
       [refine_flag,nothing_flag]
-      #allocate_and_set_refinement_and_coarsening_flags(model.ptr_pXest)
     end 
-    dmodel=refine(model,ref_coarse_flags)
+    dmodel,adaptivity_glue=refine(model,ref_coarse_flags)
     non_conforming_glue=dmodel.non_conforming_glue
 
     #println(non_conforming_glue)
@@ -723,7 +722,6 @@
       op = AffineFEOperator(a,b,Uc,Vc)
       uh = solve(op)
 
-      # Define exact solution and error
       e = u - uh
 
       # Compute errors
@@ -736,9 +734,12 @@
     end 
   end 
 
-  test(Val{2},1,1)
-  test(Val{2},1,2)
+  Vc=test(Val{2},1,1)
+  Vc=test(Val{2},1,2)
   test(Val{2},1,3)
+
+  
+  fe_space_with_linear_constraints_my_cell_dof_ids(Vc.item)
 
   test(Val{2},2,1)
   test(Val{2},2,2)

@@ -15,6 +15,8 @@ module GridapP4est
   include("Environment.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
+  include("GridapFixes.jl")
+  include("FESpaces.jl")
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
@@ -24,5 +26,6 @@ module GridapP4est
   export setup_non_conforming_distributed_discrete_model
   export MPIVoidVector
   export i_am_in
+  export nothing_flag, refine_flag, coarsen_flag
   
 end
