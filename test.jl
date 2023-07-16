@@ -32,12 +32,6 @@ map(ranks,glue) do rank, glue
       print(glue.refinement_rules); print("\n")
     end  
 end
-Vh=FESpace(rdmodel,reffe,conformity=:H1;dirichlet_tags=Int[])
-map(ranks,partition(Vh.gids)) do rank, indices 
-    print("$(rank): $(local_to_owner(indices))"); print("\n")
-    print("$(rank): $(local_to_global(indices))"); print("\n")
-end 
-Uh=TrialFESpace(Vh)
 
 # Define integration mesh and quadrature
 order=1
@@ -45,6 +39,15 @@ order=1
 u(x) = x[1]+x[2]^order
 f(x) = -Δ(u)(x)
 degree = 2*order+1
+
+Vh=FESpace(rdmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
+map(ranks,partition(Vh.gids)) do rank, indices 
+    print("$(rank): $(local_to_owner(indices))"); print("\n")
+    print("$(rank): $(local_to_global(indices))"); print("\n")
+end 
+Uh=TrialFESpace(Vh,u)
+
+
 Ω = Triangulation(rdmodel)
 dΩ = Measure(Ω,degree)
 

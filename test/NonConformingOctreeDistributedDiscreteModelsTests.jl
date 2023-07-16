@@ -1,4 +1,4 @@
-# module NonConformingOctreeDistributedDiscreteModelsTests
+module NonConformingOctreeDistributedDiscreteModelsTests
   using P4est_wrapper
   using GridapP4est
   using Gridap
@@ -165,14 +165,14 @@
 
     p8est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
-    # FE Spaces
-    reffe = ReferenceFE(lagrangian,Float64,order)
-    V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
-    U = TrialFESpace(V)   
-
     # Define manufactured functions
     u(x) = x[1]+x[2]^order
     f(x) = -Δ(u)(x)
+
+    # FE Spaces
+    reffe = ReferenceFE(lagrangian,Float64,order)
+    V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
+    U = TrialFESpace(V,u)
 
     # Define integration mesh and quadrature
     degree = 2*order+1
