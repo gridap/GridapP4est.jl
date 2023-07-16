@@ -32,7 +32,37 @@ map(ranks,glue) do rank, glue
       print(glue.refinement_rules); print("\n")
     end  
 end
-Uh=FESpace(rdmodel,reffe,conformity=:H1;dirichlet_tags=Int[])
+Vh=FESpace(rdmodel,reffe,conformity=:H1;dirichlet_tags=Int[])
+map(ranks,partition(Vh.gids)) do rank, indices 
+    print("$(rank): $(local_to_owner(indices))"); print("\n")
+    print("$(rank): $(local_to_global(indices))"); print("\n")
+end 
+Uh=TrialFESpace(Vh)
+
+# Define integration mesh and quadrature
+order=1
+# Define manufactured functions
+u(x) = x[1]+x[2]^order
+f(x) = -Δ(u)(x)
+degree = 2*order+1
+Ω = Triangulation(rdmodel)
+dΩ = Measure(Ω,degree)
+
+a(u,v) = ∫( ∇(v)⊙∇(u) )*dΩ
+b(v) = ∫(v*f)*dΩ
+
+op = AffineFEOperator(a,b,Uh,Vh)
+uh = solve(op)
+e = u - uh
+
+# # Compute errors
+el2 = sqrt(sum( ∫( e*e )*dΩ ))
+eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩ ))
+
+tol=1e-8
+@assert el2 < tol
+@assert eh1 < tol
+
 # Uh=FESpace(rdmodel,reffe,conformity=:H1;dirichlet_tags=Int[])
 # vector_partition=map(partition(UH.gids)) do indices
 #     ones(local_length(indices))

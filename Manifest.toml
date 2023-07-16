@@ -109,9 +109,9 @@ version = "1.3.2"
 
 [[deps.CodecZlib]]
 deps = ["TranscodingStreams", "Zlib_jll"]
-git-tree-sha1 = "9c209fb7536406834aa938fb149964b985de6c83"
+git-tree-sha1 = "02aa26a4cf76381be7f66e020a3eddeb27b0a092"
 uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
-version = "0.7.1"
+version = "0.7.2"
 
 [[deps.Combinatorics]]
 git-tree-sha1 = "08c8b6831dc00bfea825826be0bc8336fc369860"
@@ -269,9 +269,9 @@ version = "0.17.17"
 
 [[deps.GridapDistributed]]
 deps = ["FillArrays", "Gridap", "LinearAlgebra", "MPI", "PartitionedArrays", "SparseArrays", "SparseMatricesCSR", "WriteVTK"]
-git-tree-sha1 = "028e30e80ceb2b68257d1b3b2a0cebd596d6bb39"
-repo-rev = "partitioned_arrays_v0.3"
-repo-url = "https://github.com/gridap/GridapDistributed.jl.git"
+git-tree-sha1 = "607da91f5f5dc635a59ce9918201482c36460568"
+repo-rev = "fixing_psparse_matrix_assembly_col_partition"
+repo-url = "https://github.com/gridap/GridapDistributed.jl"
 uuid = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
 version = "0.3.0"
 
@@ -536,7 +536,9 @@ version = "2.7.1"
 
 [[deps.PartitionedArrays]]
 deps = ["CircularArrays", "Distances", "FillArrays", "IterativeSolvers", "LinearAlgebra", "MPI", "Printf", "Random", "SparseArrays", "SparseMatricesCSR"]
-git-tree-sha1 = "efdde29f1a7def5f81d1ed0265b3c7bc1c3ee00f"
+git-tree-sha1 = "a2421d0c2e4abdeaea12507ca1983be4d642a3a9"
+repo-rev = "master"
+repo-url = "https://github.com/fverdugo/PartitionedArrays.jl"
 uuid = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
 version = "0.3.2"
 
@@ -649,18 +651,18 @@ version = "2.3.0"
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "Random", "StaticArraysCore"]
-git-tree-sha1 = "0da7e6b70d1bb40b1ace3b576da9ea2992f76318"
+git-tree-sha1 = "fffc14c695c17bfdbfa92a2a01836cdc542a1e46"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.6.0"
+version = "1.6.1"
 weakdeps = ["Statistics"]
 
     [deps.StaticArrays.extensions]
     StaticArraysStatisticsExt = "Statistics"
 
 [[deps.StaticArraysCore]]
-git-tree-sha1 = "6b7ba252635a5eff6a0b0664a41ee140a1c9e72a"
+git-tree-sha1 = "1d5708d926c76a505052d0d24a846d5da08bc3a4"
 uuid = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
-version = "1.4.0"
+version = "1.4.1"
 
 [[deps.Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
