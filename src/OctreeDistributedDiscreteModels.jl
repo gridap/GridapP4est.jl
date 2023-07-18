@@ -564,10 +564,18 @@ function _compute_fine_to_coarse_model_glue(
     if (!(i_am_in(cparts)))
       nothing
     else
+      ## The following lines are a replacement for WhiteRefinementRule()
+      ## to have the types of rrule_nothing_flag and rrule_refinement_flag
+      ## to be 100% equivalent for all type parameters
       polytope=(Dc==2 ? QUAD : HEX)
-      rrule_nothing_flag    = Gridap.Adaptivity.WhiteRefinementRule(polytope)
+      partition = Gridap.ReferenceFEs.tfill(1,Val{Dc}())
+      ref_grid = UnstructuredGrid(compute_reference_grid(polytope,partition))
+      rrule_nothing_flag = 
+         Gridap.Adaptivity.RefinementRule(Gridap.Adaptivity.WithoutRefinement(),polytope,ref_grid)
+      
       reffe  = LagrangianRefFE(Float64,polytope,1)
-      rrule_refinement_flag = Gridap.Adaptivity.RefinementRule(reffe,2)
+      rrule_refinement_flag = 
+          Gridap.Adaptivity.RefinementRule(reffe,2)
       f(x)=x==nothing_flag ? 1 : 2
       coarse_cell_to_rrule=map(f,flags)
       rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
@@ -1118,7 +1126,8 @@ end
 # Assumptions. Either:
 # A) model.parts MPI tasks are included in parts_redistributed_model MPI tasks; or
 # B) model.parts MPI tasks include parts_redistributed_model MPI tasks
-function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model=model.parts) where {Dc,Dp}
+function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+                                        parts_redistributed_model=model.parts) where {Dc,Dp}
   parts = (parts_redistributed_model === model.parts) ? model.parts : parts_redistributed_model
   comm  = parts.comm
   if (i_am_in(model.parts.comm) || i_am_in(parts.comm))

@@ -147,23 +147,17 @@ module NonConformingOctreeDistributedDiscreteModelsTests
 
   MPI.Init()
   parts = distribute_with_mpi(LinearIndices((1,)))
-  # run(parts, (1, 1))
-  # MPI.Finalize()
 
   function test(TVDc::Type{Val{Dc}}, perm, order) where Dc
     # This is for debuging
     coarse_model = setup_model(TVDc,perm)
-    model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
+    model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
 
     ref_coarse_flags=map(parts) do _
       [refine_flag,nothing_flag]
     end 
     dmodel,adaptivity_glue=refine(model,ref_coarse_flags)
     non_conforming_glue=dmodel.non_conforming_glue
-
-    #println(non_conforming_glue)
-
-    p8est_vtk_write_file(dmodel.ptr_pXest, C_NULL, string("adapted_forest"))
 
     # Define manufactured functions
     u(x) = x[1]+x[2]^order
