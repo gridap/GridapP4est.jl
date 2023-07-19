@@ -17,6 +17,7 @@ module GridapP4est
   include("OctreeDistributedDiscreteModels.jl")
   include("GridapFixes.jl")
   include("FESpaces.jl")
+  include("RedistributeTools.jl")
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
@@ -27,5 +28,6 @@ module GridapP4est
   export MPIVoidVector
   export i_am_in
   export nothing_flag, refine_flag, coarsen_flag
+  export redistribute_fe_function
   
 end

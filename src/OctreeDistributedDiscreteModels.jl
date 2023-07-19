@@ -1185,14 +1185,14 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
   red_model = OctreeDistributedDiscreteModel(Dc,Dp,
-                                              parts,
-                                              fmodel,
-                                              non_conforming_glue,
-                                              model.coarse_model,
-                                              model.ptr_pXest_connectivity,
-                                              ptr_pXest_new,
-                                              false,
-                                              model)
+                                             parts,
+                                             fmodel,
+                                             non_conforming_glue,
+                                             model.coarse_model,
+                                             model.ptr_pXest_connectivity,
+                                             ptr_pXest_new,
+                                             false,
+                                             model)
   return red_model, glue
 end
 

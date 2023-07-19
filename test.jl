@@ -13,7 +13,7 @@ f(x) = -Δ(u)(x)
 degree = 2*order+1
 
 MPI.Init()
-ranks=distribute_with_mpi(LinearIndices((1,)))
+ranks=distribute_with_mpi(LinearIndices((2,)))
 coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
 dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,1)
 
@@ -27,8 +27,7 @@ ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indi
     flags=zeros(Cint,length(indices))
     flags.=-1
     if (rank==1)
-        #flags[1:2].=[refine_flag,nothing_flag]
-        flags[1:4].=[refine_flag,nothing_flag,nothing_flag,nothing_flag]
+        flags[1:2].=[refine_flag,nothing_flag]
     elseif (rank==2)
         flags[1:2].=[nothing_flag,nothing_flag]
     end
@@ -43,86 +42,107 @@ map(ranks,glue) do rank, glue
     end  
 end
 
-rdmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
+Vh=FESpace(fmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
+map(ranks,partition(Vh.gids)) do rank, indices 
+    print("$(rank): $(local_to_owner(indices))"); print("\n")
+    print("$(rank): $(local_to_global(indices))"); print("\n")
+end 
+Uh=TrialFESpace(Vh,u)
+
+ΩH  = Triangulation(dmodel)
+dΩH = Measure(ΩH,degree)
+
+aH(u,v) = ∫( ∇(v)⊙∇(u) )*dΩH
+bH(v) = ∫(v*f)*dΩH
+
+op = AffineFEOperator(aH,bH,UH,VH)
+uH = solve(op)
+e = u - uH
+
+# # Compute errors
+el2 = sqrt(sum( ∫( e*e )*dΩH ))
+eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩH ))
+
+tol=1e-8
+@assert el2 < tol
+@assert eh1 < tol
 
 
-# Vh=FESpace(fmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
-# map(ranks,partition(Vh.gids)) do rank, indices 
-#     print("$(rank): $(local_to_owner(indices))"); print("\n")
-#     print("$(rank): $(local_to_global(indices))"); print("\n")
-# end 
-# Uh=TrialFESpace(Vh,u)
+Ωh  = Triangulation(fmodel)
+dΩh = Measure(Ωh,degree)
 
-# ΩH  = Triangulation(dmodel)
-# dΩH = Measure(ΩH,degree)
+ah(u,v) = ∫( ∇(v)⊙∇(u) )*dΩh
+bh(v) = ∫(v*f)*dΩh
 
-# aH(u,v) = ∫( ∇(v)⊙∇(u) )*dΩH
-# bH(v) = ∫(v*f)*dΩH
+op = AffineFEOperator(ah,bh,Uh,Vh)
+uh = solve(op)
+e = u - uh
 
-# op = AffineFEOperator(aH,bH,UH,VH)
-# uH = solve(op)
-# e = u - uH
+# # Compute errors
+el2 = sqrt(sum( ∫( e*e )*dΩh ))
+eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩh ))
 
-# # # Compute errors
-# el2 = sqrt(sum( ∫( e*e )*dΩH ))
-# eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩH ))
+tol=1e-8
+@assert el2 < tol
+@assert eh1 < tol
 
-# tol=1e-8
-# @assert el2 < tol
-# @assert eh1 < tol
+# prolongation via interpolation
+uHh=interpolate(uH,Uh)   
+e = uh - uHh
+el2 = sqrt(sum( ∫( e*e )*dΩh ))
+tol=1e-8
+@assert el2 < tol
 
+# prolongation via L2-projection 
+# Coarse FEFunction -> Fine FEFunction, by projection
+ah(u,v)  = ∫(v⋅u)*dΩh
+lh(v)    = ∫(v⋅uH)*dΩh
+oph      = AffineFEOperator(ah,lh,Uh,Vh)
+uHh      = solve(oph)
+e = uh - uHh
+el2 = sqrt(sum( ∫( e*e )*dΩh ))
+tol=1e-8
+@assert el2 < tol
 
-# Ωh  = Triangulation(fmodel)
-# dΩh = Measure(Ωh,degree)
+# restriction via interpolation
+uhH=interpolate(uh,UH) 
+e = uH - uhH
+el2 = sqrt(sum( ∫( e*e )*dΩh ))
+tol=1e-8
+@assert el2 < tol
 
-# ah(u,v) = ∫( ∇(v)⊙∇(u) )*dΩh
-# bh(v) = ∫(v*f)*dΩh
+# restriction via L2-projection
+dΩhH = Measure(ΩH,Ωh,2*order)
+aH(u,v) = ∫(v⋅u)*dΩH
+lH(v)   = ∫(v⋅uh)*dΩhH
+oph     = AffineFEOperator(aH,lH,UH,VH)
+uhH     = solve(oph)
+e       = uH - uhH
+el2     = sqrt(sum( ∫( e*e )*dΩH ))
 
-# op = AffineFEOperator(ah,bh,Uh,Vh)
-# uh = solve(op)
-# e = u - uh
+fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
+Vhred=FESpace(fmodel_red,reffe,conformity=:H1;dirichlet_tags="boundary")
+Uhred=TrialFESpace(Vhred,u)
 
-# # # Compute errors
-# el2 = sqrt(sum( ∫( e*e )*dΩh ))
-# eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩh ))
+Ωhred  = Triangulation(fmodel_red)
+dΩhred = Measure(Ωhred,degree)
 
-# tol=1e-8
-# @assert el2 < tol
-# @assert eh1 < tol
+ahred(u,v) = ∫( ∇(v)⊙∇(u) )*dΩhred
+bhred(v)   = ∫(v*f)*dΩhred
 
-# # prolongation via interpolation
-# uHh=interpolate(uH,Uh)   
-# e = uh - uHh
-# el2 = sqrt(sum( ∫( e*e )*dΩh ))
-# tol=1e-8
-# @assert el2 < tol
+op    = AffineFEOperator(ahred,bhred,Uhred,Vhred)
+uhred = solve(op)
+e = u - uhred
+el2 = sqrt(sum( ∫( e*e )*dΩhred ))
+@assert el2 < tol
 
-# # prolongation via L2-projection 
-# # Coarse FEFunction -> Fine FEFunction, by projection
-# ah(u,v)  = ∫(v⋅u)*dΩh
-# lh(v)    = ∫(v⋅uH)*dΩh
-# oph      = AffineFEOperator(ah,lh,Uh,Vh)
-# uHh      = solve(oph)
-# e = uh - uHh
-# el2 = sqrt(sum( ∫( e*e )*dΩh ))
-# tol=1e-8
-# @assert el2 < tol
+uhred2 = GridapP4est.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
+e = u - uhred2
+el2 = sqrt(sum( ∫( e*e )*dΩhred ))
+tol=1e-8
+println(el2)
+@assert el2 < tol
 
-# # restriction via interpolation
-# uhH=interpolate(uh,UH) 
-# e = uH - uhH
-# el2 = sqrt(sum( ∫( e*e )*dΩh ))
-# tol=1e-8
-# @assert el2 < tol
-
-# # restriction via L2-projection
-# dΩhH = Measure(ΩH,Ωh,2*order)
-# aH(u,v) = ∫(v⋅u)*dΩH
-# lH(v)   = ∫(v⋅uh)*dΩhH
-# oph     = AffineFEOperator(aH,lH,UH,VH)
-# uhH     = solve(oph)
-# e       = uH - uhH
-# el2     = sqrt(sum( ∫( e*e )*dΩH ))
 
 
 
