@@ -851,8 +851,8 @@ function generate_face_labeling(parts,
     d_to_dface_to_entity[Dc]   = faces_to_entity[Dc]
     d_to_dface_to_entity[Dc+1] = faces_to_entity[Dc+1]
     Gridap.Geometry.FaceLabeling(d_to_dface_to_entity,
-                                 coarse_grid_labeling.tag_to_entities,
-                                 coarse_grid_labeling.tag_to_name)
+                                 copy(coarse_grid_labeling.tag_to_entities),
+                                 copy(coarse_grid_labeling.tag_to_name))
   end
   face_labeling
 end

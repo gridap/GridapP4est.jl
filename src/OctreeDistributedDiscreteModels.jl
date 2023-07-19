@@ -1170,10 +1170,10 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
 
   # Extract ghost and lnodes
   ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest_new)
-  ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_pXest_new, ptr_pXest_ghost)
+  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(Val{Dc}, ptr_pXest_new, ptr_pXest_ghost)
 
   # Build fine-grid mesh
-  fmodel = setup_distributed_discrete_model(Val{Dc},
+  fmodel, non_conforming_glue = setup_non_conforming_distributed_discrete_model(Val{Dc},
                                             parts,
                                             model.coarse_model,
                                             model.ptr_pXest_connectivity,
@@ -1187,6 +1187,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   red_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                               parts,
                                               fmodel,
+                                              non_conforming_glue,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
                                               ptr_pXest_new,
