@@ -114,6 +114,7 @@ function _allocate_cell_wise_dofs(cell_to_ldofs)
       end
     end
   end
+
   
   function get_glue_components(glue::GridapDistributed.RedistributeGlue,reverse::Val{false})
     return glue.lids_rcv, glue.lids_snd, glue.parts_rcv, glue.parts_snd, glue.new2old
@@ -170,14 +171,32 @@ function _allocate_cell_wise_dofs(cell_to_ldofs)
   
     snd_data, rcv_data, cell_dof_values_new = caches
     lids_rcv, lids_snd, parts_rcv, parts_snd, new2old = get_glue_components(glue,Val(reverse))
+
+    map(model_new.parts,lids_rcv,lids_snd,parts_rcv,parts_snd,new2old) do rank,
+                                                                          lids_rcv,
+                                                                          lids_snd,
+                                                                          parts_rcv,
+                                                                          parts_snd,
+                                                                          new2old
+      print("$(rank): [$(lids_rcv)]: $(parts_rcv)"); print("\n")
+      print("$(rank): [$(lids_snd)]: $(parts_snd)"); print("\n")
+      print("$(rank): [$(new2old)]"); print("\n")  
+    end 
   
     cell_dof_values_old = change_parts(cell_dof_values_old,get_parts(glue);default=[])
     cell_dof_ids_new    = change_parts(cell_dof_ids_new,get_parts(glue);default=[[]])
   
     _pack_snd_data!(snd_data,cell_dof_values_old,lids_snd)
 
+    map(model_new.parts,snd_data,cell_dof_values_old,rcv_data) do rank,snd_data,cell_dof_values_old, rcv_data
+      print("$(rank): [$(snd_data)]"); print("\n")
+      print("$(rank): [$(cell_dof_values_old)]"); print("\n")
+      print("$(rank) XXX: [$(rcv_data)]"); print("\n")
+    end 
+
     graph=ExchangeGraph(parts_snd,parts_rcv)
     t=exchange!(rcv_data,snd_data,graph)
+    wait(t)
   
     # We have to build the owned part of "cell_dof_values_new" out of
     #  1. cell_dof_values_old (for those cells s.t. new2old[:]!=0)
@@ -186,21 +205,34 @@ function _allocate_cell_wise_dofs(cell_to_ldofs)
                                              cell_dof_values_old,
                                              new2old)
   
-    wait(t)
-
     _unpack_rcv_data!(cell_dof_values_new,rcv_data,lids_rcv)
   
     # Now that every part knows it's new owned dofs, exchange ghosts
     new_parts = model_new.parts
     cell_dof_values_new = change_parts(cell_dof_values_new,new_parts)
     if i_am_in(new_parts)
+      map(partition(get_cell_gids(model_new))) do indices 
+        println("!!!$(part_id(indices))!!!: $(local_to_global(indices))")
+        println("!!!$(part_id(indices))!!!: $(local_to_owner(indices))")
+      end 
       cache = fetch_vector_ghost_values_cache(cell_dof_values_new,
                                               partition(get_cell_gids(model_new)))
+      map(partition(get_cell_gids(model_new)),cache) do indices,cache
+        println("!!!$(part_id(indices))!!!: !!!$(cache.cache.local_indices_snd)!!!: $(cache.cache.local_indices_rcv)")
+      end 
       fetch_vector_ghost_values!(cell_dof_values_new,cache) |> wait
     end
     return cell_dof_values_new
   end
   
+  function _get_cell_dof_ids_inner_space(s::FESpace)
+    get_cell_dof_ids(s)
+  end 
+
+  function _get_cell_dof_ids_inner_space(s::FESpaceWithLinearConstraints)
+    get_cell_dof_ids(s.space)
+  end 
+
   function get_redistribute_free_values_cache(fv_new::Union{PVector,Nothing},
                                                Uh_new::Union{GridapDistributed.DistributedSingleFieldFESpace,VoidDistributedFESpace},
                                                fv_old::Union{PVector,Nothing},
@@ -210,7 +242,7 @@ function _allocate_cell_wise_dofs(cell_to_ldofs)
                                                glue::GridapDistributed.RedistributeGlue;
                                                reverse=false)
     cell_dof_values_old = !isa(fv_old,Nothing) ? map(scatter_free_and_dirichlet_values,local_views(Uh_old),local_views(fv_old),dv_old) : nothing
-    cell_dof_ids_new    = !isa(fv_new,Nothing) ? map(get_cell_dof_ids, local_views(Uh_new)) : nothing
+    cell_dof_ids_new    = !isa(fv_new,Nothing) ? map(_get_cell_dof_ids_inner_space, local_views(Uh_new)) : nothing
     caches = get_redistribute_cell_dofs_cache(cell_dof_values_old,cell_dof_ids_new,model_new,glue;reverse=reverse)
     
     return caches
@@ -240,7 +272,7 @@ function _allocate_cell_wise_dofs(cell_to_ldofs)
                                      reverse=false)
   
     cell_dof_values_old = !isa(fv_old,Nothing) ? map(scatter_free_and_dirichlet_values,local_views(Uh_old),local_views(fv_old),dv_old) : nothing
-    cell_dof_ids_new    = !isa(fv_new,Nothing) ? map(get_cell_dof_ids, local_views(Uh_new)) : nothing
+    cell_dof_ids_new    = !isa(fv_new,Nothing) ? map(_get_cell_dof_ids_inner_space, local_views(Uh_new)) : nothing
     cell_dof_values_new = redistribute_cell_dofs!(caches,cell_dof_values_old,cell_dof_ids_new,model_new,glue;reverse=reverse)
   
     # Gather the new free dofs
@@ -257,7 +289,7 @@ function _allocate_cell_wise_dofs(cell_to_ldofs)
                                     reverse=false)
   
     cell_dof_values_old = !isa(uh_old,Nothing) ? map(get_cell_dof_values,local_views(uh_old)) : nothing
-    cell_dof_ids_new    = !isa(Uh_new,VoidDistributedFESpace) ? map(get_cell_dof_ids,local_views(Uh_new)) : nothing
+    cell_dof_ids_new    = !isa(Uh_new,VoidDistributedFESpace) ? map(_get_cell_dof_ids_inner_space,local_views(Uh_new)) : nothing
 
     map(cell_dof_values_old,partition(Uh_new.gids)) do cell_dof_values_old, indices
       print("[$(part_id(indices))]: $(cell_dof_values_old)"); print("\n")

@@ -49,19 +49,28 @@ function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
     ptrs[1] = 1
     for fid_hanging = 1:num_hanging_faces
         glue = hanging_faces_glue[fid_hanging]
-        ocell_lface = glue[2]
-        ptrs[fid_hanging+1] = ptrs[fid_hanging] + length(face_dofs[ocell_lface])
+        if (glue[1]!=-1)
+          ocell_lface = glue[2]
+          ptrs[fid_hanging+1] = ptrs[fid_hanging] + length(face_dofs[ocell_lface])
+        else
+          ptrs[fid_hanging+1] = ptrs[fid_hanging] + 1 
+        end 
     end
     data_owner_face_dofs = Vector{Int}(undef, ptrs[num_hanging_faces+1] - 1)
     for fid_hanging = 1:num_hanging_faces
         glue = hanging_faces_glue[fid_hanging]
         ocell = glue[1]
-        ocell_lface = glue[2]
-        s = ptrs[fid_hanging]
-        e = ptrs[fid_hanging+1] - 1
-        current_cell_dof_ids = getindex!(cache, cell_dof_ids, ocell)
-        for (j, ldof) in enumerate(face_dofs[ocell_lface])
+        if (ocell!=-1)
+          ocell_lface = glue[2]
+          s = ptrs[fid_hanging]
+          e = ptrs[fid_hanging+1] - 1
+          current_cell_dof_ids = getindex!(cache, cell_dof_ids, ocell)
+          for (j, ldof) in enumerate(face_dofs[ocell_lface])
             data_owner_face_dofs[s+j-1] = current_cell_dof_ids[ldof]
+          end
+        else 
+          s = ptrs[fid_hanging]
+          data_owner_face_dofs[s] = 1
         end
     end
     Gridap.Arrays.Table(data_owner_face_dofs, ptrs)
@@ -141,61 +150,72 @@ function _generate_constraints!(Df,
         current_cell_dof_ids = getindex!(cache_dof_ids, cell_dof_ids, cell)
         lface = hanging_faces_to_lface[fid_hanging]
         ocell, ocell_lface, subface = hanging_faces_glue[fid_hanging]
-        ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
-        oface_dim = face_dim(Val{Dc}, ocell_lface)
+        if (ocell!=-1)
+            ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+            oface_dim = face_dim(Val{Dc}, ocell_lface)
 
-        if (Df == 0) # Am I a vertex?
-            hanging_lvertex_within_first_subface = 2^oface_dim
-            cur_subface_own_dofs = subface_own_dofs[oface_dim][hanging_lvertex_within_first_subface]
-        elseif (Df == 1 && Dc == 3) # Am I an edge?
-            if (subface < 0) # Edge hanging in the interior of a face 
-                @assert subface == -1 || subface == -2 || subface == -3 || subface == -4
-                @assert oface_dim == Dc - 1
-                abs_subface = abs(subface)
-                if (abs_subface == 1)
-                    subface = 1
-                    edge = 4 + 4 # num_vertices+edge_id
-                elseif (abs_subface == 2)
-                    subface = 3
-                    edge = 4 + 4 # num_vertices+edge_id 
-                elseif (abs_subface == 3)
-                    subface = 3
-                    edge = 4 + 1 # num_vertices+edge_id 
-                elseif (abs_subface == 4)
-                    subface = 4
-                    edge = 4 + 1 # num_vertices+edge_id 
-                end
-                cur_subface_own_dofs = subface_own_dofs[oface_dim][edge]
-            else
-                @assert subface == 1 || subface == 2
-                @assert oface_dim == 1
+            if (Df == 0) # Am I a vertex?
                 hanging_lvertex_within_first_subface = 2^oface_dim
+                cur_subface_own_dofs = subface_own_dofs[oface_dim][hanging_lvertex_within_first_subface]
+            elseif (Df == 1 && Dc == 3) # Am I an edge?
+                if (subface < 0) # Edge hanging in the interior of a face 
+                    @assert subface == -1 || subface == -2 || subface == -3 || subface == -4
+                    @assert oface_dim == Dc - 1
+                    abs_subface = abs(subface)
+                    if (abs_subface == 1)
+                        subface = 1
+                        edge = 4 + 4 # num_vertices+edge_id
+                    elseif (abs_subface == 2)
+                        subface = 3
+                        edge = 4 + 4 # num_vertices+edge_id 
+                    elseif (abs_subface == 3)
+                        subface = 3
+                        edge = 4 + 1 # num_vertices+edge_id 
+                    elseif (abs_subface == 4)
+                        subface = 4
+                        edge = 4 + 1 # num_vertices+edge_id 
+                    end
+                    cur_subface_own_dofs = subface_own_dofs[oface_dim][edge]
+                else
+                    @assert subface == 1 || subface == 2
+                    @assert oface_dim == 1
+                    hanging_lvertex_within_first_subface = 2^oface_dim
+                    cur_subface_own_dofs = subface_own_dofs[oface_dim][end]
+                end
+            elseif (Df == Dc - 1) # Am I a face?
+                @assert oface_dim == Dc - 1
                 cur_subface_own_dofs = subface_own_dofs[oface_dim][end]
             end
-        elseif (Df == Dc - 1) # Am I a face?
-            @assert oface_dim == Dc - 1
-            cur_subface_own_dofs = subface_own_dofs[oface_dim][end]
-        end
 
 
-        oface = getindex!(cache_cell_faces[oface_dim+1], cell_faces[oface_dim+1], ocell)[ocell_lface_within_dim]
-        oface_lid, _ = owner_faces_lids[oface_dim][oface]
-        pindex = owner_faces_pindex[oface_dim][oface_lid]
-        for ((ldof, dof), ldof_subface) in zip(enumerate(face_own_dofs[offset+lface]), cur_subface_own_dofs)
-            push!(sDOF_to_dof, current_cell_dof_ids[dof])
-            push!(sDOF_to_dofs, hanging_faces_owner_face_dofs[fid_hanging])
-            coeffs = Vector{Float64}(undef, length(hanging_faces_owner_face_dofs[fid_hanging]))
-            # Go over dofs of ocell_lface
-            for (ifdof, icdof) in enumerate(face_dofs[ocell_lface])
-                pifdof = node_permutations[oface_dim][pindex][ifdof]
-                println("XXXX: $(ifdof) $(pifdof)")
-                ldof_coarse = face_dofs[ocell_lface][pifdof]
-                coeffs[ifdof] =
-                    ref_constraints[face_subface_ldof_to_cell_ldof[oface_dim][ocell_lface_within_dim][subface][ldof_subface], ldof_coarse]
+            oface = getindex!(cache_cell_faces[oface_dim+1], cell_faces[oface_dim+1], ocell)[ocell_lface_within_dim]
+            oface_lid, _ = owner_faces_lids[oface_dim][oface]
+            pindex = owner_faces_pindex[oface_dim][oface_lid]
+            for ((ldof, dof), ldof_subface) in zip(enumerate(face_own_dofs[offset+lface]), cur_subface_own_dofs)
+                push!(sDOF_to_dof, current_cell_dof_ids[dof])
+                push!(sDOF_to_dofs, hanging_faces_owner_face_dofs[fid_hanging])
+                coeffs = Vector{Float64}(undef, length(hanging_faces_owner_face_dofs[fid_hanging]))
+                # Go over dofs of ocell_lface
+                for (ifdof, icdof) in enumerate(face_dofs[ocell_lface])
+                    pifdof = node_permutations[oface_dim][pindex][ifdof]
+                    println("XXXX: $(ifdof) $(pifdof)")
+                    ldof_coarse = face_dofs[ocell_lface][pifdof]
+                    coeffs[ifdof] =
+                        ref_constraints[face_subface_ldof_to_cell_ldof[oface_dim][ocell_lface_within_dim][subface][ldof_subface], ldof_coarse]
+                end
+                push!(sDOF_to_coeffs, coeffs)
             end
-            push!(sDOF_to_coeffs, coeffs)
-        end
+        else 
+            for (ldof, dof) in enumerate(face_own_dofs[offset+lface])
+                push!(sDOF_to_dof, current_cell_dof_ids[dof])
+                push!(sDOF_to_dofs, hanging_faces_owner_face_dofs[fid_hanging])
+                push!(sDOF_to_coeffs, [1.0])
+            end
+        end 
     end
+    println("sDOF_to_dof [$(Df)]= $(sDOF_to_dof)")
+    println("sDOF_to_dofs [$(Df)]= $(sDOF_to_dofs)")
+    println("sDOF_to_coeffs [$(Df)]= $(sDOF_to_coeffs)")
 end
 
 # count how many different owner faces
@@ -217,13 +237,15 @@ function _compute_owner_faces_pindex_and_lids(Df,
     owner_faces_lids = Dict{Int,Tuple{Int,Int,Int}}()
     for fid_hanging = 1:num_hanging_faces
         ocell, ocell_lface, _ = hanging_faces_glue[fid_hanging]
-        ocell_dim = face_dim(Val{Dc}, ocell_lface)
-        if (ocell_dim == Df)
-            ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
-            owner_face = cell_faces[ocell][ocell_lface_within_dim]
-            if !(haskey(owner_faces_lids, owner_face))
-                num_owner_faces += 1
-                owner_faces_lids[owner_face] = (num_owner_faces, ocell, ocell_lface)
+        if (ocell!=-1)
+            ocell_dim = face_dim(Val{Dc}, ocell_lface)
+            if (ocell_dim == Df)
+                ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+                owner_face = cell_faces[ocell][ocell_lface_within_dim]
+                if !(haskey(owner_faces_lids, owner_face))
+                    num_owner_faces += 1
+                    owner_faces_lids[owner_face] = (num_owner_faces, ocell, ocell_lface)
+                end
             end
         end
     end
@@ -236,16 +258,18 @@ function _compute_owner_faces_pindex_and_lids(Df,
 
     for fid_hanging = 1:num_hanging_faces
         ocell, ocell_lface, subface = hanging_faces_glue[fid_hanging]
-        ocell_dim = face_dim(Val{Dc}, ocell_lface)
-        if (ocell_dim == Df)
-            cell = hanging_faces_to_cell[fid_hanging]
-            lface = hanging_faces_to_lface[fid_hanging]
-            cvertex = lface_to_cvertices[lface][subface]
-            vertex = cell_vertices[cell][cvertex]
-            ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
-            owner_face = cell_faces[ocell][ocell_lface_within_dim]
-            owner_face_lid, _ = owner_faces_lids[owner_face]
-            owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+subface] = vertex
+        if (ocell!=-1)
+            ocell_dim = face_dim(Val{Dc}, ocell_lface)
+            if (ocell_dim == Df)
+                cell = hanging_faces_to_cell[fid_hanging]
+                lface = hanging_faces_to_lface[fid_hanging]
+                cvertex = lface_to_cvertices[lface][subface]
+                vertex = cell_vertices[cell][cvertex]
+                ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+                owner_face = cell_faces[ocell][ocell_lface_within_dim]
+                owner_face_lid, _ = owner_faces_lids[owner_face]
+                owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+subface] = vertex
+            end
         end
     end
 
@@ -314,11 +338,11 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         hanging_faces_glue,
         dmodel.models,
         spaces_wo_constraints) do gridap_cell_faces,
-    num_regular_faces,
-    num_hanging_faces,
-    hanging_faces_glue,
-    model,
-    V
+                                    num_regular_faces,
+                                    num_hanging_faces,
+                                    hanging_faces_glue,
+                                    model,
+                                    V
 
         hanging_faces_to_cell = Vector{Vector{Int}}(undef, Dc)
         hanging_faces_to_lface = Vector{Vector{Int}}(undef, Dc)
@@ -502,7 +526,7 @@ end
 # An auxiliary function which we use in order to generate a version of  
 # get_cell_dof_ids() for FE spaces with linear constraints which is suitable 
 # for the algorithm which generates the global DoFs identifiers
-function fe_space_with_linear_constraints_cell_dof_ids(Uc::FESpaceWithLinearConstraints)
+function fe_space_with_linear_constraints_cell_dof_ids(Uc::FESpaceWithLinearConstraints,sDOF_to_dof)
     U_cell_dof_ids = Gridap.Arrays.Table(get_cell_dof_ids(Uc.space))
     ndata = U_cell_dof_ids.ptrs[end] - 1
     Uc_cell_dof_ids_data = zeros(eltype(U_cell_dof_ids.data), ndata)
@@ -515,6 +539,7 @@ function fe_space_with_linear_constraints_cell_dof_ids(Uc::FESpaceWithLinearCons
     n_cells = length(U_cell_dof_ids)
     n_fdofs = num_free_dofs(Uc.space)
     n_fmdofs = Uc.n_fmdofs
+    dof_to_sDOF = Dict(val=>key for (key,val) in enumerate(sDOF_to_dof))
     for cell in 1:n_cells
         pini = U_cell_dof_ids.ptrs[cell]
         pend = U_cell_dof_ids.ptrs[cell+1] - 1
@@ -522,13 +547,13 @@ function fe_space_with_linear_constraints_cell_dof_ids(Uc::FESpaceWithLinearCons
             dof = U_cell_dof_ids.data[p]
             DOF = Gridap.FESpaces._dof_to_DOF(dof, n_fdofs)
             qini = Uc.DOF_to_mDOFs.ptrs[DOF]
-            qend = Uc.DOF_to_mDOFs.ptrs[DOF+1] - 1
-            if (qend - qini == 0) # master DOF 
+            qend = Uc.DOF_to_mDOFs.ptrs[DOF+1]-1 
+            if (!haskey(dof_to_sDOF,dof)) # master DoF
+                @assert qend-qini==0
                 mDOF = Uc.DOF_to_mDOFs.data[qini]
                 mdof = Gridap.FESpaces._DOF_to_dof(mDOF, n_fmdofs)
                 Uc_cell_dof_ids_data[p] = mdof
             else # slave DoF
-                @assert qend - qini > 0
                 Uc_cell_dof_ids_data[p] = max_negative_minus_one
             end
         end
@@ -563,14 +588,18 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, reff
         Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
     end
 
-    local_cell_dof_ids = map(spaces_w_constraints) do Vc
-        result = fe_space_with_linear_constraints_cell_dof_ids(Vc)
+    local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
+        result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
         println("result=", result)
         result
     end
     nldofs = map(num_free_dofs,spaces_w_constraints)
     cell_gids = get_cell_gids(model)
     gids=GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
+    map(partition(gids)) do indices 
+        println("[$(part_id(indices))]: l2g=$(local_to_global(indices))")
+        println("[$(part_id(indices))]: l2o=$(local_to_owner(indices))")
+    end 
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)
 end

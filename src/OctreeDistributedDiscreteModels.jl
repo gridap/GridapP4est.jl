@@ -246,9 +246,30 @@ end
 
 function pXest_partition!(::Type{Val{Dc}}, ptr_pXest) where Dc
   if (Dc==2)
+    # The 1 here is required to avoid that the children of the 
+    # same parent are assigned to different partitions
     p4est_partition(ptr_pXest, 0, C_NULL)
   else
     @assert false
+  end
+end
+
+function pXest_balance!(::Type{Val{Dc}}, ptr_pXest; k_2_1_balance=0) where Dc
+  if (Dc==2)
+    if (k_2_1_balance==0)
+      p4est_balance(ptr_pXest, P4est_wrapper.P4EST_CONNECT_FULL, C_NULL) 
+    else 
+      p4est_balance(ptr_pXest, P4est_wrapper.P4EST_CONNECT_FACE, C_NULL)
+    end
+  else
+    if (k_2_1_balance==0)
+      p8est_balance(ptr_pXest, P4est_wrapper.P8EST_CONNECT_FULL, C_NULL) 
+    elseif (k_2_1_balance==1)
+      p8est_balance(ptr_pXest, P4est_wrapper.P8EST_CONNECT_EDGE, C_NULL)
+    else 
+      @assert k_2_1_balance==2
+      p8est_balance(ptr_pXest, P4est_wrapper.P8EST_CONNECT_FACE, C_NULL)  
+    end
   end
 end
 
@@ -340,6 +361,163 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
    [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
   ])
 
+ function p4est_update_flags!(ptr_p4est_old,
+                              ptr_p4est_new)
+   p4est_old = ptr_p4est_old[]
+   p4est_new = ptr_p4est_new[]
+   flags=unsafe_wrap(Array, 
+                     Ptr{Cint}(p4est_old.user_pointer), 
+                     p4est_old.local_num_quadrants)
+   
+   num_trees = Cint(p4est_old.connectivity[].num_trees)
+   @assert num_trees == Cint(p4est_new.connectivity[].num_trees)
+
+   for itree = 0:num_trees-1
+    tree_old = _p4est_tree_array_index(Val{2},p4est_old.trees,itree)[]
+    tree_new = _p4est_tree_array_index(Val{2},p4est_new.trees,itree)[]
+    num_quads_old = Cint(tree_old.quadrants.elem_count)
+    iquad_new = 0
+    iquad_old = 0
+    while iquad_old < num_quads_old
+      q_old = _p4est_quadrant_array_index(Val{2},tree_old.quadrants,iquad_old)
+      q_new = _p4est_quadrant_array_index(Val{2},tree_new.quadrants,iquad_new)
+      if (p4est_quadrant_compare(q_old,q_new) == 0)     # q_old was not refined nor coarsened
+        flags[iquad_old+1] = nothing_flag
+        iquad_new += 1
+        iquad_old += 1
+      elseif (p4est_quadrant_is_parent(q_old,q_new)!=0) # q_old was refined
+        flags[iquad_old+1] = refine_flag
+        iquad_new += 4
+        iquad_old += 1
+      elseif (p4est_quadrant_is_parent(q_new,q_old)!=0) # q_old and its siblings were coarsened 
+        for i=0:3
+          flags[iquad_old+i+1] = coarsen_flag
+        end
+        iquad_old += 4
+        iquad_new += 1
+      else
+        @assert false
+      end
+    end
+   end
+  end 
+
+  # void F90_p4est_update_refinement_and_coarsening_flags(p4est_t * p4est_old, p4est_t * p4est_new)
+  # {
+  #     p4est_tree_t       *tree_old;
+  #     p4est_quadrant_t   *q_old;
+  #     sc_array_t         *quadrants_old;
+  #     int                old_quadrant_index;
+      
+  #     p4est_tree_t       *tree_new;
+  #     p4est_quadrant_t   *q_new;
+  #     sc_array_t         *quadrants_new;
+  #     int                i, new_quadrant_index;
+      
+  #     int * user_pointer;
+     
+  #     P4EST_ASSERT(p4est_old->user_pointer == p4est_new->user_pointer);
+      
+  #     user_pointer = (int *) p4est_old->user_pointer;
+      
+  #     // Extract references to the first (and uniquely allowed) trees
+  #     tree_old = p4est_tree_array_index (p4est_old->trees,0);
+  #     tree_new = p4est_tree_array_index (p4est_new->trees,0);
+      
+  #     quadrants_old = &(tree_old->quadrants);
+  #     quadrants_new = &(tree_new->quadrants);
+      
+  #     new_quadrant_index = 0;
+  #     for (old_quadrant_index=0; old_quadrant_index < quadrants_old->elem_count;)
+  #     {
+  #        q_old = p4est_quadrant_array_index(quadrants_old, old_quadrant_index);
+  #        q_new = p4est_quadrant_array_index(quadrants_new, new_quadrant_index);
+  #        if ( p4est_quadrant_compare(q_old,q_new) == 0 ) //q_old was not refined nor coarsened
+  #        {
+  #            user_pointer[old_quadrant_index] = FEMPAR_do_nothing_flag;
+  #            old_quadrant_index++;
+  #            new_quadrant_index++;
+  #        }
+  #        else if ( p4est_quadrant_is_parent(q_old,q_new)  )  //q_old was refined
+  #        { 
+  #            user_pointer[old_quadrant_index] = FEMPAR_refinement_flag;
+  #            old_quadrant_index++;
+  #            new_quadrant_index = new_quadrant_index + P4EST_CHILDREN;
+  #        }
+  #        else if ( p4est_quadrant_is_parent(q_new,q_old) ) //q_old and its siblings were coarsened 
+  #        {
+  #            for (i=0; i < P4EST_CHILDREN; i++)
+  #            {
+  #                user_pointer[old_quadrant_index] = FEMPAR_coarsening_flag;
+  #                old_quadrant_index++;
+  #            }
+  #            new_quadrant_index++;
+  #        }
+  #        else
+  #        {
+  #          P4EST_ASSERT(0);
+  #        }
+  #     }
+  # }
+  
+  # void F90_p8est_update_refinement_and_coarsening_flags(p8est_t * p8est_old, p8est_t * p8est_new)
+  # {
+  #     p8est_tree_t       *tree_old;
+  #     p8est_quadrant_t   *q_old;
+  #     sc_array_t         *quadrants_old;
+  #     int                old_quadrant_index;
+      
+  #     p8est_tree_t       *tree_new;
+  #     p8est_quadrant_t   *q_new;
+  #     sc_array_t         *quadrants_new;
+  #     int                i, new_quadrant_index;
+      
+  #     int * user_pointer;
+     
+  #     P4EST_ASSERT(p8est_old->user_pointer == p8est_new->user_pointer);
+      
+  #     user_pointer = (int *) p8est_old->user_pointer;
+      
+  #     // Extract references to the first (and uniquely allowed) trees
+  #     tree_old = p8est_tree_array_index (p8est_old->trees,0);
+  #     tree_new = p8est_tree_array_index (p8est_new->trees,0);
+      
+  #     quadrants_old = &(tree_old->quadrants);
+  #     quadrants_new = &(tree_new->quadrants);
+      
+  #     new_quadrant_index = 0;
+  #     for (old_quadrant_index=0; old_quadrant_index < quadrants_old->elem_count;)
+  #     {
+  #        q_old = p8est_quadrant_array_index(quadrants_old, old_quadrant_index);
+  #        q_new = p8est_quadrant_array_index(quadrants_new, new_quadrant_index);
+  #        if ( p8est_quadrant_compare(q_old,q_new) == 0 ) //q_old was not refined nor coarsened
+  #        {
+  #            user_pointer[old_quadrant_index] = FEMPAR_do_nothing_flag;
+  #            old_quadrant_index++;
+  #            new_quadrant_index++;
+  #        }
+  #        else if ( p8est_quadrant_is_parent(q_old,q_new)  )  //q_old was refined
+  #        { 
+  #            user_pointer[old_quadrant_index] = FEMPAR_refinement_flag;
+  #            old_quadrant_index++;
+  #            new_quadrant_index = new_quadrant_index + P8EST_CHILDREN;
+  #        }
+  #        else if ( p8est_quadrant_is_parent(q_new,q_old) ) //q_old and its siblings were coarsened 
+  #        {
+  #            for (i=0; i < P8EST_CHILDREN; i++)
+  #            {
+  #                user_pointer[old_quadrant_index] = FEMPAR_coarsening_flag;
+  #                old_quadrant_index++;
+  #            }
+  #            new_quadrant_index++;
+  #        }
+  #        else
+  #        {
+  #          P4EST_ASSERT(0);
+  #        }
+  #     }
+  
+  # }
 
 function _compute_fine_to_coarse_model_glue(
          cparts,
@@ -812,9 +990,11 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
     
     refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
     
-    # Copy and refine input p4est
+    # Copy input p4est, refine and balance
     ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
     pXest_refine!(Val{Dc}, ptr_new_pXest, refine_callback_2d_c)
+    pXest_balance!(Val{Dc}, ptr_new_pXest)
+    p4est_update_flags!(model.ptr_pXest,ptr_new_pXest)
 
     # Extract ghost and lnodes
     ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
@@ -1966,6 +2146,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
                 gridap_cell_edges[PXEST_2_GRIDAP_EDGE[p4est_ledge+1]] = hanging_edge_from_face_code
               end 
             end 
+
           end
         end
 
@@ -2034,6 +2215,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
               end 
             end 
         end
+
       end
     end
   end 
@@ -2041,8 +2223,29 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     # Go over all touched hanging faces and start 
     # assigning IDs from the last num_regular_faces ID
     # For each hanging face, keep track of (owner_cell,lface)
-    println("regular_faces_p4est_to_gridap: $(regular_faces_p4est_to_gridap)")
-    println("hanging_faces_pairs_to_owner_face: $(hanging_faces_pairs_to_owner_face)")
+    println("regular_faces_p4est_to_gridap [$(part_id(partition(cell_prange).item))]: $(regular_faces_p4est_to_gridap)")
+    println("hanging_faces_pairs_to_owner_face[$(part_id(partition(cell_prange).item))]: $(hanging_faces_pairs_to_owner_face)")
+
+    # Go over all hanging faces 
+    # Detect if the owner face is in a ghost cell. 
+    # If not in a ghost cell or touched 
+    # Else 
+    #   The current face becomes a regular face 
+    # end 
+    function is_ghost(cell)
+      cell>own_length(indices)
+    end
+    # for key in keys(hanging_faces_pairs_to_owner_face)
+    #   (cell, lface) = key
+    #   (owner_p4est_gface, half) = hanging_faces_pairs_to_owner_face[key]
+    #   if (is_ghost(cell) && !(haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
+    #      # Current face becomes a regular face (locally)
+    #      num_regular_faces[Dc]+=1
+    #      start_gridap_faces = (cell - 1) * n_cell_faces
+    #      gridap_cell_faces_data[start_gridap_faces+lface] = num_regular_faces[Dc]
+    #   end     
+    # end  
+
 
     hanging_faces_owner_cell_and_lface =
       Vector{Tuple{Int,Int,Int}}(undef, length(keys(hanging_faces_pairs_to_owner_face)))
@@ -2050,38 +2253,62 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     for key in keys(hanging_faces_pairs_to_owner_face)
       (cell, lface) = key
       (owner_p4est_gface, half) = hanging_faces_pairs_to_owner_face[key]
-      owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
       num_hanging_faces[Dc] += 1
       start_gridap_faces = (cell - 1) * n_cell_faces
       gridap_cell_faces_data[start_gridap_faces+lface] = num_regular_faces[Dc] + num_hanging_faces[Dc]
-      (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
-      hanging_faces_owner_cell_and_lface[num_hanging_faces[Dc]] =
-        (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface], half)
+      if (!(is_ghost(cell)) || haskey(regular_faces_p4est_to_gridap,owner_p4est_gface))  
+        (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
+        hanging_faces_owner_cell_and_lface[num_hanging_faces[Dc]] =
+          (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface], half)
+      else
+        # Glue info cannot be computed for this hanging face
+        hanging_faces_owner_cell_and_lface[num_hanging_faces[Dc]] = (-1,-1,-1)
+      end
     end
 
     println("AAA: $(gridap_cell_faces_data)")
+
+    # owner_p4est_gface_to_regular_vertex = Dict{Int,Int}()
+    # for key in keys(hanging_vertices_pairs_to_owner_face)
+    #   (cell, lvertex) = key
+    #   owner_p4est_gface = hanging_vertices_pairs_to_owner_face[key]
+    #   if (is_ghost(cell) && !(haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
+    #     if !(haskey(owner_p4est_gface_to_regular_vertex, owner_p4est_gface))
+    #       num_regular_faces[1] += 1
+    #       owner_p4est_gface_to_regular_vertex[owner_p4est_gface] = num_regular_faces[1]
+    #     end 
+    #     start_gridap_vertices = (cell - 1) * n_cell_vertices
+    #     gridap_cell_vertices_data[start_gridap_vertices+lvertex] = 
+    #         owner_p4est_gface_to_regular_vertex[owner_p4est_gface]
+    #   end 
+    # end 
+
 
     # Go over all touched hanging vertices and start 
     # assigning IDs from the last num_regular_vertices ID
     # For each hanging vertex, keep track of (owner_cell,lface)
     num_hanging_faces[1] = 0
     hanging_vertices_owner_cell_and_lface = Tuple{Int,Int,Int}[]
-    owner_gridap_gface_to_hanging_vertex = Dict{Int,Int}()
     half=1
+    owner_p4est_gface_to_hanging_vertex = Dict{Int,Int}()
     for key in keys(hanging_vertices_pairs_to_owner_face)
       (cell, lvertex) = key
       owner_p4est_gface = hanging_vertices_pairs_to_owner_face[key]
-      owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
-      if !(haskey(owner_gridap_gface_to_hanging_vertex, owner_gridap_gface))
+      if !(haskey(owner_p4est_gface_to_hanging_vertex, owner_p4est_gface))
         num_hanging_faces[1] += 1
-        owner_gridap_gface_to_hanging_vertex[owner_gridap_gface] = num_hanging_faces[1]
-        (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
-        push!(hanging_vertices_owner_cell_and_lface,
-          (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface],half))
-      end
+        owner_p4est_gface_to_hanging_vertex[owner_p4est_gface] = num_hanging_faces[1]
+        if (!is_ghost(cell) || (haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
+          (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
+          owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
+          push!(hanging_vertices_owner_cell_and_lface,
+            (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface],half))
+        else
+          push!(hanging_vertices_owner_cell_and_lface,(-1, -1,-1))
+        end
+      end 
       start_gridap_vertices = (cell - 1) * n_cell_vertices
       gridap_cell_vertices_data[start_gridap_vertices+lvertex] = num_regular_faces[1] +
-                                                             owner_gridap_gface_to_hanging_vertex[owner_gridap_gface]
+                                                          owner_p4est_gface_to_hanging_vertex[owner_p4est_gface] 
     end
 
     if (Dc==3)
