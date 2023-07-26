@@ -176,10 +176,14 @@ uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
 version = "1.15.1"
 
 [[deps.Distances]]
-deps = ["LinearAlgebra", "SparseArrays", "Statistics", "StatsAPI"]
-git-tree-sha1 = "49eba9ad9f7ead780bfb7ee319f962c811c6d3b2"
+deps = ["LinearAlgebra", "Statistics", "StatsAPI"]
+git-tree-sha1 = "b6def76ffad15143924a2199f72a5cd883a2e8a9"
 uuid = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
-version = "0.10.8"
+version = "0.10.9"
+weakdeps = ["SparseArrays"]
+
+    [deps.Distances.extensions]
+    DistancesSparseArraysExt = "SparseArrays"
 
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
@@ -504,9 +508,9 @@ uuid = "efe28fd5-8261-553b-a9e1-b2916fc3738e"
 version = "0.5.5+0"
 
 [[deps.OrderedCollections]]
-git-tree-sha1 = "d321bf2de576bf25ec4d3e4360faca399afca282"
+git-tree-sha1 = "2e73fe17cac3c62ad1aebe70d44c963c3cfdc3e3"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
-version = "1.6.0"
+version = "1.6.2"
 
 [[deps.P4est_jll]]
 deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "Pkg", "TOML", "Zlib_jll"]
@@ -516,9 +520,7 @@ version = "2.8.1+2"
 
 [[deps.P4est_wrapper]]
 deps = ["CEnum", "Libdl", "MPI", "P4est_jll"]
-git-tree-sha1 = "6c6065325bae7301bb3728a7ced2f130eca54eef"
-repo-rev = "update_to_mpi_20"
-repo-url = "git@github.com:gridap/P4est_wrapper.jl.git"
+git-tree-sha1 = "c182e067e6bac213c6e75e4139d01ebfb7ea0a58"
 uuid = "3743d7c0-8adf-11ea-380b-7d33b0ecc1da"
 version = "0.2.0"
 
@@ -536,7 +538,7 @@ version = "2.7.1"
 
 [[deps.PartitionedArrays]]
 deps = ["CircularArrays", "Distances", "FillArrays", "IterativeSolvers", "LinearAlgebra", "MPI", "Printf", "Random", "SparseArrays", "SparseMatricesCSR"]
-git-tree-sha1 = "a2421d0c2e4abdeaea12507ca1983be4d642a3a9"
+git-tree-sha1 = "0fa8c755744baab5f11a649b02fd0beba05fe8bc"
 repo-rev = "master"
 repo-url = "https://github.com/fverdugo/PartitionedArrays.jl"
 uuid = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
@@ -651,9 +653,9 @@ version = "2.3.0"
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "Random", "StaticArraysCore"]
-git-tree-sha1 = "fffc14c695c17bfdbfa92a2a01836cdc542a1e46"
+git-tree-sha1 = "9cabadf6e7cd2349b6cf49f1915ad2028d65e881"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "1.6.1"
+version = "1.6.2"
 weakdeps = ["Statistics"]
 
     [deps.StaticArrays.extensions]

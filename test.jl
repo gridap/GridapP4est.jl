@@ -6,16 +6,16 @@ using MPI
 
 
 # Define integration mesh and quadrature
-order=2
+order=1
 # Define manufactured functions
 u(x) = x[1]+x[2]^order
 f(x) = -Δ(u)(x)
 degree = 2*order+1
 
 MPI.Init()
-ranks=distribute_with_mpi(LinearIndices((4,)))
+ranks=distribute_with_mpi(LinearIndices((1,)))
 coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
-dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,1)
+dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
 
 function test(ranks,dmodel)
     map(ranks,partition(dmodel.dmodel.face_gids[end])) do rank, indices
@@ -157,6 +157,18 @@ function test(ranks,dmodel)
 
     fmodel_red
 end
+
+function test_coarsen(ranks,dmodel)
+    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
+        flags=zeros(Cint,length(indices))
+        flags.=nothing_flag        
+        flags[1:4].=coarsen_flag
+        flags[end]=refine_flag
+        flags
+    end
+    fmodel,glue=refine(dmodel,ref_coarse_flags);
+end
+test_coarsen(ranks,dmodel);
 
 function f()
   rdmodel=dmodel

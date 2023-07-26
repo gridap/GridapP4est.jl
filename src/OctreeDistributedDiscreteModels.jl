@@ -299,11 +299,11 @@ function pXest_uniformly_refine!(::Type{Val{Dc}}, ptr_pXest) where Dc
   end
 end
 
-function pXest_refine!(::Type{Val{Dc}}, ptr_pXest, refine_fn_c) where Dc
+function pXest_refine!(::Type{Val{Dc}}, ptr_pXest, refine_fn_c, refine_replace_fn_c; init_fn_c=C_NULL) where Dc
   if (Dc==2)
-    p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
+    p4est_refine_ext(ptr_pXest, Cint(0), Cint(-1), refine_fn_c, init_fn_c, refine_replace_fn_c)
   else
-    p8est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
+    p8est_refine_ext(ptr_pXest, Cint(0), Cint(-1), refine_fn_c, init_fn_c, refine_replace_fn_c)
   end
 end
 
@@ -617,13 +617,11 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
     end
     c = c + num_children
   end
-
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
   for d=1:Dc
     fine_to_coarse_faces_map[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
     fine_to_coarse_faces_dim[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
   end
-
   # c_cell_faces=[]
   # cache_c_cell_faces=[]
   # f_cell_faces=[]
@@ -667,42 +665,173 @@ function _compute_fine_to_coarse_model_glue(
          cparts,
          cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel{Dc}},
          fmodel::GridapDistributed.DistributedDiscreteModel{Dc},
-         refinement_and_coarsening_flags::MPIArray{<:AbstractVector}) where Dc 
+         refinement_and_coarsening_flags::MPIArray{<:AbstractVector}) where Dc
 
-  Gridap.Helpers.@notimplementedif cmodel==nothing  
+  function setup_communication_buffers_fine_partition(cparts,
+                                              fmodel,
+                                              cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel},
+                                              fine_to_coarse_faces_map::Union{Nothing,MPIArray})
+    fgids=get_cell_gids(fmodel)
+    map(fmodel.models,fine_to_coarse_faces_map) do fmodel, fine_to_coarse_faces_map
+      if (!(i_am_in(cparts)))
+        # cmodel might be distributed among less processes than fmodel
+        Int[], Int[]
+      else
+        cgids        = get_cell_gids(cmodel)
+        cpartition   = PArrays.getany(partition(cgids))
+        _setup_communication_buffers_fine_partition(fine_to_coarse_faces_map,
+                                                    partition(fgids),
+                                                    cpartition)
+      end 
+    end |> tuple_of_arrays
+  end 
+   
+  function _setup_communication_buffers_fine_partition(
+        fine_to_coarse_faces_map::AbstractVector{<:AbstractVector{<:Integer}},
+        fpartition::MPIArray,
+        cpartition::AbstractLocalIndices)
+    # Note: Reversing snd and rcv
+    lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
+    cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[end][lids_snd.data]]
+    cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
+    cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+    cgids_snd, cgids_rcv
+  end
+
+  function _setup_communication_buffers_fine_partition(
+    fine_to_coarse_faces_map::AbstractVector{<:Gridap.Arrays.Table},
+    fpartition::MPIArray,
+    cpartition::AbstractLocalIndices)
+
+    # Note: Reversing snd and rcv
+    lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
+
+    cgids_data   = Vector{Int}(undef,length(lids_snd.data))
+    cgids_data  .= -1 
+    
+    f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
+    f2c_map_data = fine_to_coarse_faces_map[end].data
+    cl2g         = local_to_global(cpartition)
+    for (i,fcell) in enumerate(lids_snd.data)
+      # refinement or do nothing
+      if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]==1)
+        ccell = f2c_map_data[f2c_map_ptrs[fcell]]
+        cgids_data[i] = cl2g[ccell]
+      end
+    end 
+    cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
+    cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+    cgids_snd, cgids_rcv
+  end
+
+  function setup_communication_buffers_coarse_partition(cparts,
+                                              fmodel,
+                                              cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel},
+                                              fine_to_coarse_faces_map::Union{Nothing,MPIArray})
+    fgids=get_cell_gids(fmodel)
+    map(fmodel.models,fine_to_coarse_faces_map) do fmodel, fine_to_coarse_faces_map
+      if (!(i_am_in(cparts)))
+        # cmodel might be distributed among less processes than fmodel
+        Int[], Int[]
+      else
+        cgids = get_cell_gids(cmodel)
+        _setup_communication_buffers_coarse_partition(fine_to_coarse_faces_map,
+                                                      partition(fgids),
+                                                      partition(cgids))
+      end 
+    end |> tuple_of_arrays
+  end 
+
+
+  function _setup_communication_buffers_coarse_partition(
+    fine_to_coarse_faces_map::AbstractVector{<:Gridap.Arrays.Table},
+    fpartition::MPIArray,
+    cpartition::MPIArray)
+
+    # Note: Reversing snd and rcv
+    flids_rcv,flids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
+    clids_rcv,clids_snd = map(PArrays.getany,assembly_local_indices(cpartition))
+
+    fgids_data   = Vector{Int}(undef,length(clids_snd.data))
+    fgids_data  .= -1 
+
+    # Count how many distintic cells there are in clids_snd
+    clid_to_pos = Dict{Int,Int}()
+    current_pos = 1 
+    for clid in clids_snd.data
+      if (!haskey(clid,clid_to_pos))
+        clid_to_pos[clid] = current_pos
+        current_pos += 1
+      end
+    end   
+
+    n_clid_touched = length(keys(clid_to_pos))
+    ptrs_clid_touched  = Vector{Int}(undef,n_clid_touched+1)
+    ptrs_clid_touched .= 0
+    for i in 1:length(clids_snd.data)
+      ptrs_clid_touched[clid_to_pos[clids_snd.data[i]]+1] += 1
+    end
+    PArrays.length_to_ptrs!(ptrs_clid_touched)
+    data_clid_touched = Vector{Int}(undef,ptrs_clid_touched[end]-1)
+    for i in 1:length(clids_snd.data)
+      data_clid_touched[ptrs_clid_touched[clid_to_pos[clids_snd.data[i]]]] = clids_snd.data[i]
+      ptrs_clid_touched[clid_to_pos[clids_snd.data[i]]] += 1
+    end
+    PArrays.rewind_ptrs!(ptrs_clid_touched)
+
+    f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
+    f2c_map_data = fine_to_coarse_faces_map[end].data
+    fl2g         = local_to_global(PArrays.getany(fpartition))
+    for (i,fcell) in enumerate(flids_snd.data)
+      # fcell coarsened ...
+      if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
+         for j=f2c_map_ptrs[ccell]:f2c_map_ptrs[ccell+1]-1
+            ccell = f2c_map_data[j]
+            if (haskey(clid_to_pos,ccell))
+              pos = clid_to_pos[ccell]
+              for k=ptrs_clid_touched[pos]:ptrs_clid_touched[pos+1]-1
+                l=data_clid_touched[k]
+                fgids_data[l] = fl2g[fcell]
+              end 
+            end 
+         end
+      end    
+    end
+    fgids_snd   = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
+    fgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
+    fgids_snd, fgids_rcv
+  end
+
+  Gridap.Helpers.@notimplementedif cmodel==nothing
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
-  f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,
-                                       partition(fgids),
-                                       refinement_and_coarsening_flags) do fmodel, fpartition, flags
+  f1,f2,f3 = map(fmodel.models,
+                 partition(fgids),
+                 refinement_and_coarsening_flags) do fmodel, fpartition, flags
     if (!(i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
-      nothing, nothing, nothing, Int[], Int[]
+      nothing, nothing, nothing
     else
       cgids        = get_cell_gids(cmodel)
       cmodel_local = PArrays.getany(cmodel.models)
       cpartition   = PArrays.getany(partition(cgids))
-      flags        = PArrays.getany(refinement_and_coarsening_flags)
       fine_to_coarse_faces_map,
         fine_to_coarse_faces_dim,
           fcell_to_child_id =
-          _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,
-                                                         fmodel,
-                                                         cpartition,
-                                                         fpartition,
-                                                         flags)
-      
-
-      # Note: Reversing snd and rcv    
-      lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(partition(fgids)))
-      cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
-      cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
-      cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
-
-      fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id, cgids_snd, cgids_rcv
+          _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,fmodel,cpartition,fpartition,flags)
     end
-  end |> tuple_of_arrays 
+  end |> tuple_of_arrays
+
+  cgids_snd, cgids_rcv = setup_communication_buffers_fine_partition(cparts,
+                                                                    fmodel,
+                                                                    cmodel,
+                                                                    f1)
+
+  fgids_snd, fgids_rcv = setup_communication_buffers_coarse_partition(cparts,
+                                                                      fmodel,
+                                                                      cmodel,
+                                                                      f1)
 
   # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
   dfcell_to_child_id = map(f3) do fcell_to_child_id
@@ -716,8 +845,11 @@ function _compute_fine_to_coarse_model_glue(
   fetch_vector_ghost_values!(refinement_and_coarsening_flags,cache) |> wait
   
   # Note: Reversing snd and rcv 
-  parts_rcv, parts_snd = assembly_neighbors(partition(fgids))
-  PArrays.exchange_fetch!(cgids_rcv,cgids_snd,ExchangeGraph(parts_snd,parts_rcv))
+  fparts_rcv, fparts_snd = assembly_neighbors(partition(fgids))
+  PArrays.exchange_fetch!(cgids_rcv,cgids_snd,ExchangeGraph(fparts_snd,fparts_rcv))
+
+  cparts_rcv, cparts_snd = assembly_neighbors(partition(cgids))
+  PArrays.exchange_fetch!(fgids_rcv,fgids_snd,ExchangeGraph(cparts_snd,cparts_rcv))
 
   map(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
     if (i_am_in(cparts))
@@ -733,6 +865,8 @@ function _compute_fine_to_coarse_model_glue(
       end
     end
   end
+
+
 
   # Create distributed glue
   map(f1,f2,f3,refinement_and_coarsening_flags) do fine_to_coarse_faces_map, 
@@ -767,81 +901,187 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
                                                         cpartition,
                                                         fpartition,
                                                         flags) where Dc
-  fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
-  fine_to_coarse_faces_dim = Vector{Vector{Int}}(undef,Dc)
 
-  num_f_cells   = num_cells(fmodel)       # Number of fine cells (owned+ghost)
-  num_o_c_cells = own_length(cpartition)  # Number of coarse cells (owned)
-
-  # Allocate local vector size # local cells
-  fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
-  fcell_to_child_id = Vector{Int}(undef,num_f_cells)
-
-  # Go over all cells of coarse grid portion
-  num_children = get_num_children(Val{Dc})
-  c = 1
-  for cell = 1:num_o_c_cells
-    if flags[cell]==refine_flag
-      for child = 1:num_children
-        fine_to_coarse_faces_map[Dc+1][c+child-1] = cell
-        fcell_to_child_id[c+child-1] = child
+  function _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+    e=cell+num_children-1
+    while (cell <= num_o_c_cells) && (cell <= e)
+      if (flags[cell]!=coarsen_flag)
+        break
       end
-      c = c + num_children
-    elseif flags[cell]==nothing_flag
-      fine_to_coarse_faces_map[Dc+1][c] = cell
-      fcell_to_child_id[c] = 1
-      c=c+1
-    elseif flags[cell]==coarsen_flag
-      Gridap.Helpers.@notimplemented
-    else 
-      error("Unknown AMR flag")
+      cell=cell+1
+    end
+    return cell,cell==e+1
+  end
+
+  function _check_if_coarsen(Dc,
+                            cpartition,
+                            flags)
+    num_children = get_num_children(Val{Dc})
+    num_o_c_cells = own_length(cpartition)
+    cell = 1
+    while cell <= num_o_c_cells
+      if (flags[cell]==coarsen_flag)
+        cell,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        if coarsen
+          return true
+        end 
+      else 
+        cell=cell+1
+      end
+    end
+    return false
+  end
+
+  function _setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
+    num_children = get_num_children(Val{Dc})
+    fine_to_coarse_faces_map_ptrs = Vector{Int}(undef,num_f_cells+1)
+    fine_to_coarse_faces_map_ptrs[1]=1
+    cell=1
+    while cell <= num_o_c_cells
+      if (flags[cell]==refine_flag || flags[cell]==nothing_flag) 
+        fine_to_coarse_faces_map_ptrs[cell+1]=fine_to_coarse_faces_map_ptrs[cell]+1
+        cell=cell+1
+      else
+        @assert flags[cell]==coarsen_flag
+        cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        if coarsen
+          fine_to_coarse_faces_map_ptrs[cell+1]=fine_to_coarse_faces_map_ptrs[cell]+num_children
+          cell=cell+1
+        else 
+          for j=cell:cell_fwd-1 
+            fine_to_coarse_faces_map_ptrs[j+1]=fine_to_coarse_faces_map_ptrs[j]+1
+            cell=cell+1
+          end
+        end
+      end
+    end
+    println(fine_to_coarse_faces_map_ptrs)
+    Gridap.Helpers.@notimplementedif cell-1 != num_f_cells
+    fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
+    fcell_to_child_id = Vector{Int}(undef,num_f_cells)
+    println(fine_to_coarse_faces_map_ptrs)
+    cell=1
+    c = 1
+    while cell <= num_o_c_cells
+      if (flags[cell]==refine_flag)
+        for child = 1:num_children
+          fine_to_coarse_faces_map_data[c+child-1] = cell
+          fcell_to_child_id[c+child-1] = child
+        end 
+        c = c + num_children
+        cell=cell+1
+      elseif (flags[cell]==nothing_flag)
+        fine_to_coarse_faces_map_data[c]=cell
+        fcell_to_child_id[c]=1
+        c=c+1
+        cell=cell+1
+      else
+        @assert flags[cell]==coarsen_flag
+        cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        if coarsen
+          fcell_to_child_id[c]=-1
+          cell=cell+num_children
+        else 
+          for j=cell:cell_fwd-1 
+            fine_to_coarse_faces_map_data[c]=j
+            fcell_to_child_id[c]=1
+            c=c+1
+            cell=cell+1
+          end
+        end
+      end
+    end
+    Gridap.Arrays.Table(fine_to_coarse_faces_map_data, fine_to_coarse_faces_map_ptrs),fcell_to_child_id
+  end
+
+  function _setup_fine_to_coarse_faces_map_vector!(fine_to_coarse_faces_map,fcell_to_child_id,Dc,flags,num_o_c_cells)
+    # Go over all cells of coarse grid portion
+    num_children = get_num_children(Val{Dc})
+    c = 1
+    for cell = 1:num_o_c_cells
+      if flags[cell]==refine_flag
+        for child = 1:num_children
+          fine_to_coarse_faces_map[c+child-1] = cell
+          fcell_to_child_id[c+child-1] = child
+        end
+        c = c + num_children
+      elseif (flags[cell]==nothing_flag || flags[cell]==coarsen_flag)
+        fine_to_coarse_faces_map[c] = cell
+        fcell_to_child_id[c] = 1
+        c=c+1
+      else 
+        error("Unknown AMR flag")
+      end
     end
   end
-
+  
+  num_f_cells   = num_cells(fmodel)       # Number of fine cells (owned+ghost)
+  num_o_c_cells = own_length(cpartition)  # Number of coarse cells (owned)
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
+
+  coarsen=_check_if_coarsen(Dc,cpartition,flags)
+  if coarsen
+    fine_to_coarse_faces_map = Vector{Gridap.Arrays.Table{Int,Vector{Int},Vector{Int}}}(undef,Dc+1)
+    a,b=_setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
+    fine_to_coarse_faces_map[Dc+1]=a
+    fcell_to_child_id=b
+    # In the future we should also have here the code to also setup
+    # fine_to_coarse_faces_map for lower dimensional objects
+  else
+    fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
+    fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
+    fcell_to_child_id = Vector{Int}(undef,num_f_cells)
+    _setup_fine_to_coarse_faces_map_vector!(fine_to_coarse_faces_map[Dc+1],fcell_to_child_id,Dc,flags,num_o_c_cells)
+    for d=1:Dc
+      fine_to_coarse_faces_map[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
+    end
+    # Code commented out as not currently required. 
+    # c_cell_faces=[]
+    # cache_c_cell_faces=[]
+    # f_cell_faces=[]
+    # cache_f_cell_faces=[]
+    # for d=1:Dc
+    #   push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
+    #   push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
+    #   push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
+    #   push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
+    # end
+    # parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
+    # for cell=1:num_f_cells
+    #   parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
+    #   child=fcell_to_child_id[cell]
+    #   for d=1:Dc
+    #     parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
+    #                                   c_cell_faces[d],
+    #                                   parent_cell)
+    #   end
+    #   for d=1:Dc
+    #     cell_f_faces=getindex!(cache_f_cell_faces[d],
+    #                             f_cell_faces[d],
+    #                             cell)
+    #     for (lf,f) in enumerate(cell_f_faces)
+    #       c     = rrule_f_to_c_lid_2D[d][child][lf]
+    #       dim_c = rrule_f_to_c_dim_2D[d][child][lf]
+    #       if (dim_c == Dc)
+    #         fine_to_coarse_faces_map[d][f]=parent_cell
+    #       else
+    #         fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
+    #       end
+    #       fine_to_coarse_faces_dim[d][f]=dim_c
+    #     end
+    #   end
+    # end
+  end
+  # To-think: how fine_to_coarse_faces_dim should look like whenever we have 
+  # coarsening and refinement at the same time? By now it is not being used,
+  # so least concern. 
+  fine_to_coarse_faces_dim = Vector{Vector{Int}}(undef,Dc)
   for d=1:Dc
-    fine_to_coarse_faces_map[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
     fine_to_coarse_faces_dim[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
   end
-
-  # c_cell_faces=[]
-  # cache_c_cell_faces=[]
-  # f_cell_faces=[]
-  # cache_f_cell_faces=[]
-  # for d=1:Dc
-  #   push!(c_cell_faces, Gridap.Geometry.get_faces(ctopology, Dc, d-1))
-  #   push!(cache_c_cell_faces,array_cache(last(c_cell_faces)))
-  #   push!(f_cell_faces, Gridap.Geometry.get_faces(ftopology, Dc, d-1))
-  #   push!(cache_f_cell_faces,array_cache(last(f_cell_faces)))
-  # end
-  # parent_cell_faces=Vector{Vector{Int}}(undef,Dc)
-  # for cell=1:num_f_cells
-  #   parent_cell=fine_to_coarse_faces_map[Dc+1][cell]
-  #   child=fcell_to_child_id[cell]
-  #   for d=1:Dc
-  #     parent_cell_faces[d]=getindex!(cache_c_cell_faces[d],
-  #                                   c_cell_faces[d],
-  #                                   parent_cell)
-  #   end
-  #   for d=1:Dc
-  #     cell_f_faces=getindex!(cache_f_cell_faces[d],
-  #                             f_cell_faces[d],
-  #                             cell)
-  #     for (lf,f) in enumerate(cell_f_faces)
-  #       c     = rrule_f_to_c_lid_2D[d][child][lf]
-  #       dim_c = rrule_f_to_c_dim_2D[d][child][lf]
-  #       if (dim_c == Dc)
-  #         fine_to_coarse_faces_map[d][f]=parent_cell
-  #       else
-  #         fine_to_coarse_faces_map[d][f]=parent_cell_faces[dim_c+1][c]
-  #       end
-  #       fine_to_coarse_faces_dim[d][f]=dim_c
-  #     end
-  #   end
-  # end
-
   return fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
+
 
 function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; parts=nothing) where {Dc,Dp}
    old_comm = model.parts.comm
@@ -938,6 +1178,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
         user_data = unsafe_wrap(Array, 
                                 Ptr{Cint}(forest.user_pointer), 
                                 current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+        println("user_data: $(user_data[])")
         unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
         current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
         current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
@@ -947,6 +1188,36 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
                                         Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
       init_fn_callback_c = init_fn_callback_2d_c
+
+
+      function coarsen_callback_2d(forest_ptr::Ptr{p4est_t},
+                                   which_tree::p4est_topidx_t,
+                                   quadrant_ptr::Ptr{Ptr{p4est_quadrant_t}})
+
+        num_children=get_num_children(Val{2})
+        println("num_children=$(num_children)")
+        quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
+        coarsen=Cint(1)
+        for quadrant_index=1:num_children
+          quadrant = quadrants[quadrant_index][]
+          # I have noticed that new quadrants created as by-product
+          # of the refininement process have quadrant.p.user_data == C_NULL
+          # Not sure why ... The following if-end takes care of this.
+          if (quadrant.p.user_data) == C_NULL
+            return Cint(0)
+          end
+          println("coarsen wrap: $(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])")
+          is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+          println("is_coarsen_flag=$(is_coarsen_flag)")
+          if (!is_coarsen_flag) 
+            return Cint(0)
+          end
+        end  
+        return coarsen
+      end 
+      coarsen_fn_callback_2d_c = @cfunction($coarsen_callback_2d, 
+                                            Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
+      coarsen_fn_callback_c = coarsen_fn_callback_2d_c
     else
       @assert Dc==3
       function init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
@@ -969,6 +1240,24 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       init_fn_callback_3d_c = @cfunction($init_fn_callback_3d, 
                                         Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
       init_fn_callback_c = init_fn_callback_3d_c
+
+# int coarsen_callback_3d (p8est_t * p8est,
+#                       p4est_topidx_t which_tree,
+#                       p8est_quadrant_t * quadrants[])
+# {
+#     int quadrant_index;
+#     int coarsen;
+#     P4EST_ASSERT(which_tree == 0);
+    
+#     coarsen = 1;
+#     for (quadrant_index=0; quadrant_index < P8EST_CHILDREN; quadrant_index++)
+#     {
+#       coarsen = (*((int *)(quadrants[quadrant_index]->p.user_data)) ==  FEMPAR_coarsening_flag);
+#       if (!coarsen) return coarsen;
+#     }
+#     return coarsen;
+# }
+
     end                                     
 
     map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
@@ -987,12 +1276,73 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       println("PPPP: $(Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]))")
       return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
     end
+
+    function init_refine_callback_2d(forest_ptr::Ptr{p4est_t},
+                                     which_tree::p4est_topidx_t,
+                                     quadrant_ptr::Ptr{p4est_quadrant_t})
+      quadrant=quadrant_ptr[]
+      println("ptr init: $(quadrant.p.user_data)")
+    end 
+
+    function refine_replace_callback_2d(::Ptr{p4est_t},
+                                        which_tree::p4est_topidx_t,
+                                        num_outgoing::Cint,
+                                        outgoing_ptr::Ptr{Ptr{p4est_quadrant_t}},
+                                        num_incoming::Cint,
+                                        incoming_ptr::Ptr{Ptr{p4est_quadrant_t}})
+        num_children=get_num_children(Val{2}) 
+        @assert num_outgoing==1 
+        @assert num_incoming==num_children
+        outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
+        quadrant = outgoing[1][]
+        println("quadrant_index out : $(1) 
+                   quadrant_level out: $(quadrant.level) 
+                   ptr out: $(quadrant.p.user_data)")
+        incoming=unsafe_wrap(Array, incoming_ptr, num_children)
+        for quadrant_index=1:num_children
+          quadrant = incoming[quadrant_index][]
+          println("quadrant_index: $(quadrant_index) 
+                   quadrant_level: $(quadrant.level) 
+                   ptr: $(quadrant.p.user_data)")
+          if (quadrant.p.user_data) != C_NULL
+             unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
+          end
+        end
+     end
+
+#  {
+#     int quadrant_index;
+#     int *quadrant_data;
+#     P4EST_ASSERT(which_tree   == 0);
+#     P4EST_ASSERT(num_outgoing == 1);
+#     P4EST_ASSERT(num_incoming == P4EST_CHILDREN);
+#     for (quadrant_index=0; quadrant_index < P4EST_CHILDREN; quadrant_index++)
+#     {
+#       quadrant_data = (int *) incoming[quadrant_index]->p.user_data;
+#       *quadrant_data = FEMPAR_do_nothing_flag;
+#     }
+#  }
     
     refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+    refine_replace_callback_2d_c = 
+       @cfunction($refine_replace_callback_2d, Cvoid, (Ptr{p4est_t}, 
+                                                       p4est_topidx_t, 
+                                                       Cint, 
+                                                       Ptr{Ptr{p4est_quadrant_t}}, 
+                                                       Cint, 
+                                                       Ptr{Ptr{p4est_quadrant_t}}))
+
+    
+    init_refine_callback_2d = @cfunction($init_refine_callback_2d, Cvoid, 
+    (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
     
     # Copy input p4est, refine and balance
     ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
-    pXest_refine!(Val{Dc}, ptr_new_pXest, refine_callback_2d_c)
+    pXest_refine!(Val{Dc}, ptr_new_pXest,
+                  refine_callback_2d_c,
+                  refine_replace_callback_2d_c,
+                  init_fn_c=init_refine_callback_2d)
+    pXest_coarsen!(Val{Dc}, ptr_new_pXest, coarsen_fn_callback_c)
     pXest_balance!(Val{Dc}, ptr_new_pXest)
     p4est_update_flags!(model.ptr_pXest,ptr_new_pXest)
 
