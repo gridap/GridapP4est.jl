@@ -661,6 +661,17 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   return fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
+function _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+  e=cell+num_children-1
+  while (cell <= num_o_c_cells) && (cell <= e)
+    if (flags[cell]!=coarsen_flag)
+      break
+    end
+    cell=cell+1
+  end
+  return cell,cell==e+1
+end
+
 function _compute_fine_to_coarse_model_glue(
          cparts,
          cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel{Dc}},
@@ -802,13 +813,40 @@ function _compute_fine_to_coarse_model_glue(
     fgids_snd, fgids_rcv
   end
 
+  function _check_if_coarsen(Dc,
+                            cpartition,
+                            flags)
+    num_children = get_num_children(Val{Dc})
+    num_o_c_cells = own_length(cpartition)
+    cell = 1
+    while cell <= num_o_c_cells
+      if (flags[cell]==coarsen_flag)
+        cell,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        if coarsen
+          return true
+        end 
+      else 
+        cell=cell+1
+      end
+    end
+    return false
+  end
+
   Gridap.Helpers.@notimplementedif cmodel==nothing
+
+  cgids = get_cell_gids(cmodel)
+  coarsen_array=map(partition(cgids),refinement_and_coarsening_flags) do cpartition,flags
+    _check_if_coarsen(Dc,cpartition,flags) 
+  end 
+  or_func(a,b)=a || b
+  coarsen=reduction(or_func,coarsen_array;destination=:all,init=false)
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
   f1,f2,f3 = map(fmodel.models,
                  partition(fgids),
-                 refinement_and_coarsening_flags) do fmodel, fpartition, flags
+                 refinement_and_coarsening_flags,
+                 coarsen) do fmodel, fpartition, flags, coarsen
     if (!(i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing
@@ -819,7 +857,7 @@ function _compute_fine_to_coarse_model_glue(
       fine_to_coarse_faces_map,
         fine_to_coarse_faces_dim,
           fcell_to_child_id =
-          _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,fmodel,cpartition,fpartition,flags)
+          _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,fmodel,cpartition,fpartition,flags,coarsen)
     end
   end |> tuple_of_arrays
 
@@ -900,37 +938,8 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
                                                         fmodel::DiscreteModel{Dc},
                                                         cpartition,
                                                         fpartition,
-                                                        flags) where Dc
-
-  function _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
-    e=cell+num_children-1
-    while (cell <= num_o_c_cells) && (cell <= e)
-      if (flags[cell]!=coarsen_flag)
-        break
-      end
-      cell=cell+1
-    end
-    return cell,cell==e+1
-  end
-
-  function _check_if_coarsen(Dc,
-                            cpartition,
-                            flags)
-    num_children = get_num_children(Val{Dc})
-    num_o_c_cells = own_length(cpartition)
-    cell = 1
-    while cell <= num_o_c_cells
-      if (flags[cell]==coarsen_flag)
-        cell,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
-        if coarsen
-          return true
-        end 
-      else 
-        cell=cell+1
-      end
-    end
-    return false
-  end
+                                                        flags,
+                                                        coarsen) where Dc
 
   function _setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
     println("PPP: $(flags)")
@@ -956,16 +965,18 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
         end
       end
     end
-    println(fine_to_coarse_faces_map_ptrs)
-    Gridap.Helpers.@notimplementedif cell-1 != num_f_cells
+    for j=cell:num_f_cells+1
+      fine_to_coarse_faces_map_ptrs[j]=fine_to_coarse_faces_map_ptrs[j-1]
+    end
+    println("PTRS: $(fine_to_coarse_faces_map_ptrs)")
     fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     fcell_to_child_id = Vector{Int}(undef,num_f_cells)
-    println(fine_to_coarse_faces_map_ptrs)
     cell=1
     c = 1
     while cell <= num_o_c_cells
       if (flags[cell]==refine_flag)
         for child = 1:num_children
+          print(fine_to_coarse_faces_map_ptrs[c]); print("  $(child) \n")
           fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
           fcell_to_child_id[c+child-1] = child
         end 
@@ -1024,8 +1035,6 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   num_f_cells   = num_cells(fmodel)       # Number of fine cells (owned+ghost)
   num_o_c_cells = own_length(cpartition)  # Number of coarse cells (owned)
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
-
-  coarsen=_check_if_coarsen(Dc,cpartition,flags)
   if coarsen
     fine_to_coarse_faces_map = Vector{Gridap.Arrays.Table{Int,Vector{Int},Vector{Int}}}(undef,Dc+1)
     a,b=_setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)

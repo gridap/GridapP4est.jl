@@ -13,7 +13,7 @@ f(x) = -Δ(u)(x)
 degree = 2*order+1
 
 MPI.Init()
-ranks=distribute_with_mpi(LinearIndices((1,)))
+ranks=distribute_with_mpi(LinearIndices((2,)))
 coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
 dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
 
@@ -162,8 +162,11 @@ function test_coarsen(ranks,dmodel)
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag        
-        flags[1:4].=coarsen_flag
-        flags[end]=refine_flag
+        if (rank==1)
+           flags[1:4].=coarsen_flag
+        else 
+           flags[own_length(indices)]=refine_flag
+        end 
         flags
     end
     fmodel,glue=refine(dmodel,ref_coarse_flags);
