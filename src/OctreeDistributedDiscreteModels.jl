@@ -933,6 +933,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   end
 
   function _setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
+    println("PPP: $(flags)")
     num_children = get_num_children(Val{Dc})
     fine_to_coarse_faces_map_ptrs = Vector{Int}(undef,num_f_cells+1)
     fine_to_coarse_faces_map_ptrs[1]=1
@@ -965,13 +966,13 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
     while cell <= num_o_c_cells
       if (flags[cell]==refine_flag)
         for child = 1:num_children
-          fine_to_coarse_faces_map_data[c+child-1] = cell
+          fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
           fcell_to_child_id[c+child-1] = child
         end 
         c = c + num_children
         cell=cell+1
       elseif (flags[cell]==nothing_flag)
-        fine_to_coarse_faces_map_data[c]=cell
+        fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=cell
         fcell_to_child_id[c]=1
         c=c+1
         cell=cell+1
@@ -980,10 +981,14 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
         cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
         if coarsen
           fcell_to_child_id[c]=-1
-          cell=cell+num_children
+          for child = 1:num_children
+            fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
+            cell=cell+1
+          end 
+          c=c+1
         else 
           for j=cell:cell_fwd-1 
-            fine_to_coarse_faces_map_data[c]=j
+            fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=j
             fcell_to_child_id[c]=1
             c=c+1
             cell=cell+1
@@ -991,6 +996,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
         end
       end
     end
+    println("XXX: ", fine_to_coarse_faces_map_data)
     Gridap.Arrays.Table(fine_to_coarse_faces_map_data, fine_to_coarse_faces_map_ptrs),fcell_to_child_id
   end
 

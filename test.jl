@@ -167,6 +167,57 @@ function test_coarsen(ranks,dmodel)
         flags
     end
     fmodel,glue=refine(dmodel,ref_coarse_flags);
+
+    order=1
+    reffe=ReferenceFE(lagrangian,Float64,order)
+    VH=FESpace(dmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
+    UH=TrialFESpace(VH,u)
+
+    Vh=FESpace(fmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
+    Uh=TrialFESpace(Vh,u)
+    ΩH  = Triangulation(dmodel)
+    dΩH = Measure(ΩH,degree)
+
+    aH(u,v) = ∫( ∇(v)⊙∇(u) )*dΩH
+    bH(v) = ∫(v*f)*dΩH
+
+    op = AffineFEOperator(aH,bH,UH,VH)
+    uH = solve(op)
+    e = u - uH
+
+    # # Compute errors
+    el2 = sqrt(sum( ∫( e*e )*dΩH ))
+    eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩH ))
+
+    tol=1e-8
+    @assert el2 < tol
+    @assert eh1 < tol
+
+
+    Ωh  = Triangulation(fmodel)
+    dΩh = Measure(Ωh,degree)
+
+    ah(u,v) = ∫( ∇(v)⊙∇(u) )*dΩh
+    bh(v) = ∫(v*f)*dΩh
+
+    op = AffineFEOperator(ah,bh,Uh,Vh)
+    uh = solve(op)
+    e = u - uh
+
+    # # Compute errors
+    el2 = sqrt(sum( ∫( e*e )*dΩh ))
+    eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩh ))
+
+    tol=1e-8
+    @assert el2 < tol
+    @assert eh1 < tol
+
+    # prolongation via interpolation
+    uHh=interpolate(uH,Uh)
+    e = uh - uHh
+    el2 = sqrt(sum( ∫( e*e )*dΩh ))
+    tol=1e-8
+    @assert el2 < tol
 end
 test_coarsen(ranks,dmodel);
 
