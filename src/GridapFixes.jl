@@ -142,10 +142,13 @@ struct OldToNewField <: Gridap.Fields.Field
   end 
 end
 
-function OldToNewField(old_fields::AbstractArray{<:Gridap.Fields.Field},rrule::RefinementRule,child_id::Integer)
-  if child_id != -1
-    @assert length(old_fields)==1
-    cell_map = get_cell_map(rrule)[child_id]
+function OldToNewField(old_fields::AbstractArray{<:Gridap.Fields.Field},
+                       rrule::RefinementRule,
+                       child_ids::AbstractVector{<:Integer})
+  println("child_ids: $(child_ids)")
+  @assert length(old_fields)==length(child_ids)                   
+  if length(old_fields)==1
+    cell_map = get_cell_map(rrule)[child_ids[1]]
     old_field=old_fields[1]
     fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(
           [old_field for i=1:Gridap.Adaptivity.num_subcells(rrule)],
@@ -155,16 +158,7 @@ function OldToNewField(old_fields::AbstractArray{<:Gridap.Fields.Field},rrule::R
     OldToNewField(RefinedOrUntouchedNewFieldType(),fine_to_coarse_field,refined_or_untouched_field)
   else 
     @assert length(old_fields) <= Gridap.Adaptivity.num_subcells(rrule)
-    if (length(old_fields)==Gridap.Adaptivity.num_subcells(rrule))
-      # Use optimized version of FineToCoarseField (we can do this for the coarsened owned cells)
-      child_ids=[i for i=1:length(old_fields)]
-      fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(old_fields,rrule,child_ids)
-    else
-      # For the ghost coarsened cells we are missing information. Namely the child_ids of the children.
-      # TO-DO: by now we can use the wrong child_ids, but we should fix this in the future. 
-      child_ids=[i for i=1:length(old_fields)]
-      fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(old_fields,rrule,child_ids)
-    end
+    fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(old_fields,rrule,child_ids)
     cell_map = get_cell_map(rrule)[1]
     refined_or_untouched_field=old_fields[1]∘cell_map 
     OldToNewField(CoarsenedNewFieldType(),fine_to_coarse_field,refined_or_untouched_field)

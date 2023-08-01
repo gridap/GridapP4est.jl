@@ -401,65 +401,7 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
     end
    end
   end 
-
-  # void F90_p4est_update_refinement_and_coarsening_flags(p4est_t * p4est_old, p4est_t * p4est_new)
-  # {
-  #     p4est_tree_t       *tree_old;
-  #     p4est_quadrant_t   *q_old;
-  #     sc_array_t         *quadrants_old;
-  #     int                old_quadrant_index;
-      
-  #     p4est_tree_t       *tree_new;
-  #     p4est_quadrant_t   *q_new;
-  #     sc_array_t         *quadrants_new;
-  #     int                i, new_quadrant_index;
-      
-  #     int * user_pointer;
-     
-  #     P4EST_ASSERT(p4est_old->user_pointer == p4est_new->user_pointer);
-      
-  #     user_pointer = (int *) p4est_old->user_pointer;
-      
-  #     // Extract references to the first (and uniquely allowed) trees
-  #     tree_old = p4est_tree_array_index (p4est_old->trees,0);
-  #     tree_new = p4est_tree_array_index (p4est_new->trees,0);
-      
-  #     quadrants_old = &(tree_old->quadrants);
-  #     quadrants_new = &(tree_new->quadrants);
-      
-  #     new_quadrant_index = 0;
-  #     for (old_quadrant_index=0; old_quadrant_index < quadrants_old->elem_count;)
-  #     {
-  #        q_old = p4est_quadrant_array_index(quadrants_old, old_quadrant_index);
-  #        q_new = p4est_quadrant_array_index(quadrants_new, new_quadrant_index);
-  #        if ( p4est_quadrant_compare(q_old,q_new) == 0 ) //q_old was not refined nor coarsened
-  #        {
-  #            user_pointer[old_quadrant_index] = FEMPAR_do_nothing_flag;
-  #            old_quadrant_index++;
-  #            new_quadrant_index++;
-  #        }
-  #        else if ( p4est_quadrant_is_parent(q_old,q_new)  )  //q_old was refined
-  #        { 
-  #            user_pointer[old_quadrant_index] = FEMPAR_refinement_flag;
-  #            old_quadrant_index++;
-  #            new_quadrant_index = new_quadrant_index + P4EST_CHILDREN;
-  #        }
-  #        else if ( p4est_quadrant_is_parent(q_new,q_old) ) //q_old and its siblings were coarsened 
-  #        {
-  #            for (i=0; i < P4EST_CHILDREN; i++)
-  #            {
-  #                user_pointer[old_quadrant_index] = FEMPAR_coarsening_flag;
-  #                old_quadrant_index++;
-  #            }
-  #            new_quadrant_index++;
-  #        }
-  #        else
-  #        {
-  #          P4EST_ASSERT(0);
-  #        }
-  #     }
-  # }
-  
+ 
   # void F90_p8est_update_refinement_and_coarsening_flags(p8est_t * p8est_old, p8est_t * p8est_new)
   # {
   #     p8est_tree_t       *tree_old;
@@ -551,12 +493,12 @@ function _compute_fine_to_coarse_model_glue(
     end
   end |> tuple_of_arrays 
 
-  # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
-  dfcell_to_child_id = map(f3) do fcell_to_child_id
-   !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
-  end
-  cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
-  fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
+  # # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
+  # dfcell_to_child_id = map(f3) do fcell_to_child_id
+  #  !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
+  # end
+  # cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
+  # fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
   
   # Note: Reversing snd and rcv 
   parts_rcv, parts_snd = assembly_neighbors(partition(fgids))
@@ -681,16 +623,18 @@ function _compute_fine_to_coarse_model_glue(
   function setup_communication_buffers_fine_partition(cparts,
                                               fmodel,
                                               cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel},
-                                              fine_to_coarse_faces_map::Union{Nothing,MPIArray})
+                                              fine_to_coarse_faces_map::Union{Nothing,MPIArray},
+                                              fcell_to_child_id::Union{Nothing,MPIArray})
     fgids=get_cell_gids(fmodel)
-    map(fmodel.models,fine_to_coarse_faces_map) do fmodel, fine_to_coarse_faces_map
+    map(fmodel.models,fine_to_coarse_faces_map,fcell_to_child_id) do fmodel, fine_to_coarse_faces_map, fcell_to_child_id
       if (!(i_am_in(cparts)))
         # cmodel might be distributed among less processes than fmodel
-        Int[], Int[]
+        Int[], Int[], Int[], Int[]
       else
         cgids        = get_cell_gids(cmodel)
         cpartition   = PArrays.getany(partition(cgids))
         _setup_communication_buffers_fine_partition(fine_to_coarse_faces_map,
+                                                    fcell_to_child_id,
                                                     partition(fgids),
                                                     cpartition)
       end 
@@ -699,6 +643,7 @@ function _compute_fine_to_coarse_model_glue(
    
   function _setup_communication_buffers_fine_partition(
         fine_to_coarse_faces_map::AbstractVector{<:AbstractVector{<:Integer}},
+        fcell_to_child_id::AbstractVector{<:Integer},
         fpartition::MPIArray,
         cpartition::AbstractLocalIndices)
     # Note: Reversing snd and rcv
@@ -706,11 +651,15 @@ function _compute_fine_to_coarse_model_glue(
     cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[end][lids_snd.data]]
     cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
     cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
-    cgids_snd, cgids_rcv
+    cell_child_id_data = fcell_to_child_id[lids_snd.data]
+    cell_child_id_snd = PArrays.JaggedArray(cell_child_id_data,lids_snd.ptrs)
+    fcell_child_id_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+    cgids_snd, cgids_rcv, cell_child_id_snd, fcell_child_id_rcv
   end
 
   function _setup_communication_buffers_fine_partition(
     fine_to_coarse_faces_map::AbstractVector{<:Gridap.Arrays.Table},
+    fcell_to_child_id::Gridap.Arrays.Table,
     fpartition::MPIArray,
     cpartition::AbstractLocalIndices)
 
@@ -719,6 +668,9 @@ function _compute_fine_to_coarse_model_glue(
 
     cgids_data   = Vector{Int}(undef,length(lids_snd.data))
     cgids_data  .= -1 
+
+    fcell_child_id_data = Vector{Int}(undef,length(lids_snd.data))
+    fcell_child_id_data .= -1
     
     f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
     f2c_map_data = fine_to_coarse_faces_map[end].data
@@ -728,25 +680,30 @@ function _compute_fine_to_coarse_model_glue(
       if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]==1)
         ccell = f2c_map_data[f2c_map_ptrs[fcell]]
         cgids_data[i] = cl2g[ccell]
+        fcell_child_id_data[i] = fcell_to_child_id.data[f2c_map_ptrs[fcell]]
       end
     end 
     cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
     cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
-    cgids_snd, cgids_rcv
+    cell_child_id_snd = PArrays.JaggedArray(fcell_child_id_data,lids_snd.ptrs)
+    cell_child_id_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+    cgids_snd, cgids_rcv, cell_child_id_snd, cell_child_id_rcv
   end
 
   function setup_communication_buffers_coarse_partition(cparts,
-                                              fmodel,
                                               cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel},
-                                              fine_to_coarse_faces_map::Union{Nothing,MPIArray})
+                                              fmodel,
+                                              fine_to_coarse_faces_map::Union{Nothing,MPIArray},
+                                              fcell_to_child_id::Union{Nothing,MPIArray})
     fgids=get_cell_gids(fmodel)
-    map(fmodel.models,fine_to_coarse_faces_map) do fmodel, fine_to_coarse_faces_map
+    map(fmodel.models,fine_to_coarse_faces_map,fcell_to_child_id) do fmodel, fine_to_coarse_faces_map, fcell_to_child_id
       if (!(i_am_in(cparts)))
         # cmodel might be distributed among less processes than fmodel
-        Int[], Int[]
+        Int[], Int[], Int[], Int[]
       else
         cgids = get_cell_gids(cmodel)
         _setup_communication_buffers_coarse_partition(fine_to_coarse_faces_map,
+                                                      fcell_to_child_id,
                                                       partition(fgids),
                                                       partition(cgids))
       end 
@@ -777,6 +734,7 @@ function _compute_fine_to_coarse_model_glue(
 
   function _setup_communication_buffers_coarse_partition(
     fine_to_coarse_faces_map::AbstractVector{<:Gridap.Arrays.Table},
+    fcell_to_child_id::Gridap.Arrays.Table,
     fpartition::MPIArray,
     cpartition::MPIArray)
 
@@ -787,7 +745,10 @@ function _compute_fine_to_coarse_model_glue(
     clid_to_pos,ptrs_clid_touched=_setup_clid_to_pos_and_ptrs_clids_touched(clids_snd)
 
     fgids_data   = Vector{Int}(undef,length(clids_snd.data))
-    fgids_data  .= -1 
+    fgids_data  .= -1
+    
+    child_ids_data = Vector{Int}(undef,length(clids_snd.data))
+    child_ids_data .= -1
 
     data_clid_touched = Vector{Int}(undef,ptrs_clid_touched[end]-1)
     for i in 1:length(clids_snd.data)
@@ -798,26 +759,31 @@ function _compute_fine_to_coarse_model_glue(
 
     f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
     f2c_map_data = fine_to_coarse_faces_map[end].data
+    fchild_id_data = fcell_to_child_id.data
     fl2g         = local_to_global(PArrays.getany(fpartition))
     for (i,fcell) in enumerate(flids_snd.data)
       # fcell coarsened ...
       if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
          for j=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
             ccell = f2c_map_data[j]
+            child_id = fchild_id_data[j]
             if (haskey(clid_to_pos,ccell))
               pos = clid_to_pos[ccell]
               for k=ptrs_clid_touched[pos]:ptrs_clid_touched[pos+1]-1
                 l=data_clid_touched[k]
-                fgids_data[l] = fl2g[fcell]
+                fgids_data[l]  = fl2g[fcell]
+                child_ids_data[l] = child_id 
               end 
             end 
          end
       end    
     end
     println("rrr: $(fgids_data)")
-    fgids_snd   = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
-    fgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
-    fgids_snd, fgids_rcv
+    fgids_snd     = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
+    fgids_rcv     = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
+    child_id_snd = PArrays.JaggedArray(child_ids_data,clids_snd.ptrs)
+    child_id_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
+    fgids_snd, fgids_rcv, child_id_snd, child_id_rcv
   end
 
   function _check_if_coarsen(Dc,
@@ -842,14 +808,22 @@ function _compute_fine_to_coarse_model_glue(
 
   function _update_fine_to_coarse_faces_map_ptrs_with_ghost_data!(
                                       fine_to_coarse_faces_map::AbstractVector{<:Vector{<:Gridap.Arrays.Table}},
+                                      fcell_to_child_id::AbstractVector{<:Gridap.Arrays.Table},
                                       cparts,
                                       cmodel,
                                       fmodel)
+      # IMPORTANT NOTE: in this function we are assuming that the ptrs member variable of 
+      # fine_to_coarse_face_map[] is shared by fcell_to_child_id[]. Thus, we do not need 
+      # to update the latter. 
+
       fpartition = get_cell_gids(fmodel)
       flids_rcv,flids_snd = assembly_local_indices(partition(fpartition))
       snd_buffer,rcv_buffer=map(fine_to_coarse_faces_map,
-                                flids_rcv,flids_snd) do fine_to_coarse_faces_map,flids_rcv,flids_snd
+                                fcell_to_child_id,
+                                flids_rcv,
+                                flids_snd) do fine_to_coarse_faces_map,fcell_to_child_id,flids_rcv,flids_snd
         if (i_am_in(cparts))
+          @assert fine_to_coarse_faces_map[end].ptrs === fcell_to_child_id.ptrs
           cpartition = get_cell_gids(cmodel)
           clids_rcv,clids_snd = map(PArrays.getany,assembly_local_indices(partition(cpartition)))
           clid_to_pos,ptrs_clid_touched=_setup_clid_to_pos_and_ptrs_clids_touched(clids_snd)
@@ -880,7 +854,7 @@ function _compute_fine_to_coarse_model_glue(
       end |> tuple_of_arrays
       parts_rcv, parts_snd = assembly_neighbors(partition(fpartition))
       PArrays.exchange_fetch!(rcv_buffer,snd_buffer,ExchangeGraph(parts_snd,parts_rcv))
-      map(rcv_buffer, fine_to_coarse_faces_map, partition(fpartition)) do rcv_buffer, fine_to_coarse_faces_map, findices
+      map(rcv_buffer, fine_to_coarse_faces_map, fcell_to_child_id, partition(fpartition)) do rcv_buffer, fine_to_coarse_faces_map, fcell_to_child_id, findices
         flids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(fpartition)))
         for (i,fcell) in enumerate(flids_rcv.data)
           fine_to_coarse_faces_map[end].ptrs[fcell+1]=rcv_buffer.data[i] 
@@ -890,18 +864,24 @@ function _compute_fine_to_coarse_model_glue(
               fine_to_coarse_faces_map[end].ptrs[fcell]+fine_to_coarse_faces_map[end].ptrs[fcell+1]
         end
         println("PTRS2: $(fine_to_coarse_faces_map[end].ptrs)")
-        resize!(fine_to_coarse_faces_map[end].data,fine_to_coarse_faces_map[end].ptrs[end]-1) 
+        resize!(fine_to_coarse_faces_map[end].data,fine_to_coarse_faces_map[end].ptrs[end]-1)
+        resize!(fcell_to_child_id.data,fine_to_coarse_faces_map[end].ptrs[end]-1)
       end
   end
 
 
   function _update_fine_to_coarse_faces_map_with_cgids_ghost_data!(
                       fine_to_coarse_faces_map::AbstractVector{<:Vector{<:Vector{<:Integer}}},
+                      fcell_to_child_id::AbstractVector{<:Vector{<:Integer}},
                       cparts,
                       cmodel,
                       fgids,
-                      cgids_rcv)
-      map(fine_to_coarse_faces_map,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
+                      cgids_rcv,
+                      child_id_rcv)
+      map(fine_to_coarse_faces_map,fcell_to_child_id,cgids_rcv,child_id_rcv) do fine_to_coarse_faces_map, 
+                                                                   fcell_to_child_id, 
+                                                                   cgids_rcv,
+                                                                   child_id_rcv
         if (i_am_in(cparts))
           cgids=get_cell_gids(cmodel)
           cpartition = PArrays.getany(partition(cgids))
@@ -912,6 +892,7 @@ function _compute_fine_to_coarse_model_glue(
             lid = lids_rcv.data[i]
             gid = cgids_rcv.data[i]
             fine_to_coarse_faces_map[end][lid] = glo_to_loc[gid]
+            fcell_to_child_id[lid] = child_id_rcv.data[i]
           end
         end
       end
@@ -920,11 +901,16 @@ function _compute_fine_to_coarse_model_glue(
 
   function _update_fine_to_coarse_faces_map_with_cgids_ghost_data!(
                                       fine_to_coarse_faces_map::AbstractVector{<:Vector{<:Gridap.Arrays.Table}},
+                                      fcell_to_child_id::AbstractVector{<:Gridap.Arrays.Table},
                                       cparts,
                                       cmodel,
                                       fgids,
-                                      cgids_rcv)
-      map(fine_to_coarse_faces_map,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
+                                      cgids_rcv,
+                                      child_id_rcv)
+      map(fine_to_coarse_faces_map,fcell_to_child_id,cgids_rcv,child_id_rcv) do fine_to_coarse_faces_map, 
+                                                                                fcell_to_child_id, 
+                                                                                cgids_rcv,
+                                                                                child_id_rcv
         if (i_am_in(cparts))
           data=fine_to_coarse_faces_map[end].data
           ptrs=fine_to_coarse_faces_map[end].ptrs
@@ -939,42 +925,57 @@ function _compute_fine_to_coarse_model_glue(
             if gid!=-1
                @assert (ptrs[lid+1]-ptrs[lid])==1
                data[ptrs[lid]] = glo_to_loc[gid]
+               fcell_to_child_id.data[ptrs[lid]] = child_id_rcv.data[i]
             end
           end
-          print("lids_rcv: $(lids_rcv.data) ptrs: $(ptrs) data: $(data)"); print("\n")
+          print("lids_rcv: $(lids_rcv.data) ptrs: $(ptrs) data: $(data) fcell_to_child_id.data: $(fcell_to_child_id.data)"); print("\n")
         end
       end
   end
 
   function _update_fine_to_coarse_faces_map_with_fgids_ghost_data!(
                                       fine_to_coarse_faces_map::AbstractVector{<:Vector{<:Gridap.Arrays.Table}},
+                                      fcell_to_child_id::AbstractVector{<:Gridap.Arrays.Table},
                                       cparts,
                                       cmodel,
                                       fgids,
-                                      fgids_rcv)
-      map(fine_to_coarse_faces_map,fgids_rcv,partition(fgids)) do fine_to_coarse_faces_map, fgids_rcv, fpartition
+                                      fgids_rcv,
+                                      child_id_rcv)
+      map(fine_to_coarse_faces_map,
+          fcell_to_child_id, 
+          fgids_rcv, 
+          child_id_rcv, 
+          partition(fgids)) do fine_to_coarse_faces_map, fcell_to_child_id, fgids_rcv, child_id_rcv, fpartition
         if (i_am_in(cparts))
-          data=fine_to_coarse_faces_map[end].data
-          ptrs=fine_to_coarse_faces_map[end].ptrs
+          f2c_data=fine_to_coarse_faces_map[end].data
+          f2c_ptrs=fine_to_coarse_faces_map[end].ptrs
+          fchild_id_data=fcell_to_child_id.data
           cgids=get_cell_gids(cmodel)
           cpartition = PArrays.getany(partition(cgids))
           # Note: Reversing snd and rcv
           lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(cgids)))
           glo_to_loc = global_to_local(fpartition)
-          tmp_ptrs=Dict((i=>ptrs[i] for i=own_length(fpartition)+1:local_length(fpartition)))
+          tmp_ptrs=Dict((i=>f2c_ptrs[i] for i=own_length(fpartition)+1:local_length(fpartition)))
           for i in 1:length(lids_rcv.data)
-            gid_fine = fgids_rcv.data[i]
+            gid_fine        = fgids_rcv.data[i]
+            child_id_coarse = child_id_rcv.data[i]
             if gid_fine!=-1
+              @assert child_id_coarse!=-1
               lid_coarse = lids_rcv.data[i]
               lid_fine = glo_to_loc[gid_fine]
               # Add lid_fine to lid_coarse
               pos=tmp_ptrs[lid_fine]
-              data[pos]=lid_coarse
+              f2c_data[pos]=lid_coarse
+              fchild_id_data[pos]=child_id_coarse
               tmp_ptrs[pos]+=1
               println("i: $(i) tmp_ptrs: $(tmp_ptrs)")
             end
           end
-          print("jkl: $(lids_rcv.data) opoppo $(fgids_rcv.data) ptrs: $(ptrs) data: $(data)"); print("\n")
+          print("jkl: $(lids_rcv.data) 
+                 opoppo $(fgids_rcv.data) 
+                 ptrs: $(f2c_ptrs) 
+                 data: $(f2c_data) 
+                 fchild_id_data: $(fchild_id_data)"); print("\n")
         end
       end
   end
@@ -1008,28 +1009,34 @@ function _compute_fine_to_coarse_model_glue(
     end
   end |> tuple_of_arrays
 
-  cgids_snd, cgids_rcv = setup_communication_buffers_fine_partition(cparts,
+  cgids_snd, cgids_rcv, fchild_id_snd, fchild_id_rcv = setup_communication_buffers_fine_partition(cparts,
                                                                     fmodel,
                                                                     cmodel,
-                                                                    f1)
+                                                                    f1,
+                                                                    f3)
+  println("AAAA: $(typeof(fchild_id_rcv))")
+  println("BBBB: $(typeof(fchild_id_snd))")
+
   if coarsen 
     _update_fine_to_coarse_faces_map_ptrs_with_ghost_data!(f1,
+                                                           f3,
                                                            cparts,
                                                            cmodel,
                                                            fmodel)
 
-    fgids_snd, fgids_rcv = setup_communication_buffers_coarse_partition(cparts,
-                                                                        fmodel,
-                                                                        cmodel,
-                                                                        f1)                                                          
+    println("AAAA: $(typeof(fchild_id_rcv))")
+    println("BBBB: $(typeof(fchild_id_snd))")                                                       
+
+    fgids_snd, fgids_rcv, cchild_id_snd, cchild_id_rcv = setup_communication_buffers_coarse_partition(cparts,
+                                                                                                      cmodel,
+                                                                                                      fmodel,
+                                                                                                      f1,
+                                                                                                      f3)
+
+    println("AAAA: $(typeof(fchild_id_rcv))")
+    println("BBBB: $(typeof(fchild_id_snd))")                                                                                                     
   end
 
-  # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
-  dfcell_to_child_id = map(f3) do fcell_to_child_id
-   !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
-  end
-  cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
-  fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
   
   cgids = get_cell_gids(cmodel)
   cache=fetch_vector_ghost_values_cache(refinement_and_coarsening_flags,partition(cgids))
@@ -1037,19 +1044,32 @@ function _compute_fine_to_coarse_model_glue(
   
   # Note: Reversing snd and rcv 
   fparts_rcv, fparts_snd = assembly_neighbors(partition(fgids))
-  PArrays.exchange_fetch!(cgids_rcv,cgids_snd,ExchangeGraph(fparts_snd,fparts_rcv))
+  graph=ExchangeGraph(fparts_snd,fparts_rcv)
+  PArrays.exchange_fetch!(cgids_rcv,cgids_snd,graph)
+  PArrays.exchange_fetch!(fchild_id_rcv,fchild_id_snd,graph)
 
   if coarsen 
     cparts_rcv, cparts_snd = assembly_neighbors(partition(cgids))
-    PArrays.exchange_fetch!(fgids_rcv,fgids_snd,ExchangeGraph(cparts_snd,cparts_rcv))
+    graph=ExchangeGraph(cparts_snd,cparts_rcv)
+    PArrays.exchange_fetch!(fgids_rcv,fgids_snd,graph)
+    PArrays.exchange_fetch!(cchild_id_rcv,cchild_id_snd,graph)
     _update_fine_to_coarse_faces_map_with_fgids_ghost_data!(f1,
+                                                            f3,
                                                             cparts,
                                                             cmodel,
                                                             get_cell_gids(fmodel),
-                                                            fgids_rcv)  
+                                                            fgids_rcv,
+                                                            cchild_id_rcv)
   end
 
-  _update_fine_to_coarse_faces_map_with_cgids_ghost_data!(f1,cparts,cmodel,fgids,cgids_rcv)
+  _update_fine_to_coarse_faces_map_with_cgids_ghost_data!(f1,
+                                                          f3,
+                                                          cparts,
+                                                          cmodel,
+                                                          fgids,
+                                                          cgids_rcv,
+                                                          fchild_id_rcv)
+
 
   # Create distributed glue
   map(f1,f2,f3,refinement_and_coarsening_flags) do fine_to_coarse_faces_map, 
@@ -1127,7 +1147,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
     end
     println("PTRS: $(fine_to_coarse_faces_map_ptrs)")
     fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
-    fcell_to_child_id = Vector{Int}(undef,num_f_cells)
+    fcell_to_child_id_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     cell=1
     c = 1
     while cell <= num_o_c_cells
@@ -1135,21 +1155,21 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
         for child = 1:num_children
           print(fine_to_coarse_faces_map_ptrs[c]); print("  $(child) \n")
           fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
-          fcell_to_child_id[c+child-1] = child
+          fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = child
         end 
         c = c + num_children
         cell=cell+1
       elseif (flags[cell]==nothing_flag)
         fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=cell
-        fcell_to_child_id[c]=1
+        fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
         c=c+1
         cell=cell+1
       else
         @assert flags[cell]==coarsen_flag
         cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
         if coarsen
-          fcell_to_child_id[c]=-1
           for child = 1:num_children
+            fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = child
             fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
             cell=cell+1
           end 
@@ -1157,7 +1177,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
         else 
           for j=cell:cell_fwd-1 
             fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=j
-            fcell_to_child_id[c]=1
+            fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
             c=c+1
             cell=cell+1
           end
@@ -1165,7 +1185,8 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
       end
     end
     println("XXX: ", fine_to_coarse_faces_map_data)
-    Gridap.Arrays.Table(fine_to_coarse_faces_map_data, fine_to_coarse_faces_map_ptrs),fcell_to_child_id
+    Gridap.Arrays.Table(fine_to_coarse_faces_map_data, fine_to_coarse_faces_map_ptrs),
+             Gridap.Arrays.Table(fcell_to_child_id_data, fine_to_coarse_faces_map_ptrs)
   end
 
   function _setup_fine_to_coarse_faces_map_vector!(fine_to_coarse_faces_map,fcell_to_child_id,Dc,flags,num_o_c_cells)
