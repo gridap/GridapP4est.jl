@@ -158,7 +158,7 @@ function test(ranks,dmodel)
     fmodel_red
 end
 
-function test_coarsen(ranks,dmodel)
+function test_refine_and_coarsen_at_once(ranks,dmodel)
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag        
@@ -222,7 +222,7 @@ function test_coarsen(ranks,dmodel)
     tol=1e-8
     @assert el2 < tol
 end
-test_coarsen(ranks,dmodel);
+test_refine_and_coarsen_at_once(ranks,dmodel);
 
 function f()
   rdmodel=dmodel

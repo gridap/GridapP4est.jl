@@ -87,7 +87,7 @@ function Gridap.Adaptivity.change_domain_o2n(
      f_old,
      old_trian::Triangulation{Dc},
      new_trian::AdaptedTriangulation,
-     glue::AdaptivityGlue) where {Dc}
+     glue::AdaptivityGlue{<:Gridap.Adaptivity.MixedGlue}) where {Dc}
 
   oglue = get_glue(old_trian,Val(Dc))
   nglue = get_glue(new_trian,Val(Dc))
@@ -143,37 +143,33 @@ struct OldToNewField <: Gridap.Fields.Field
 end
 
 function OldToNewField(old_fields::AbstractArray{<:Gridap.Fields.Field},rrule::RefinementRule,child_id::Integer)
-  if length(old_fields)==1
+  if child_id != -1
+    @assert length(old_fields)==1
     cell_map = get_cell_map(rrule)[child_id]
     old_field=old_fields[1]
     fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(
           [old_field for i=1:Gridap.Adaptivity.num_subcells(rrule)],
-          rrule)
+          rrule,
+          [i for i=1:Gridap.Adaptivity.num_subcells(rrule)])
     refined_or_untouched_field=old_field∘cell_map
     OldToNewField(RefinedOrUntouchedNewFieldType(),fine_to_coarse_field,refined_or_untouched_field)
   else 
-    Gridap.Helpers.@check length(old_fields) == Gridap.Adaptivity.num_subcells(rrule)
-    Gridap.Helpers.@check child_id==-1
+    @assert length(old_fields) <= Gridap.Adaptivity.num_subcells(rrule)
+    if (length(old_fields)==Gridap.Adaptivity.num_subcells(rrule))
+      # Use optimized version of FineToCoarseField (we can do this for the coarsened owned cells)
+      child_ids=[i for i=1:length(old_fields)]
+      fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(old_fields,rrule,child_ids)
+    else
+      # For the ghost coarsened cells we are missing information. Namely the child_ids of the children.
+      # TO-DO: by now we can use the wrong child_ids, but we should fix this in the future. 
+      child_ids=[i for i=1:length(old_fields)]
+      fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(old_fields,rrule,child_ids)
+    end
     cell_map = get_cell_map(rrule)[1]
-    fine_to_coarse_field=Gridap.Adaptivity.FineToCoarseField(old_fields,rrule)
     refined_or_untouched_field=old_fields[1]∘cell_map 
     OldToNewField(CoarsenedNewFieldType(),fine_to_coarse_field,refined_or_untouched_field)
   end
 end
-
-function OldToNewField(old_field::Gridap.Fields.Field,rrule::RefinementRule,child_id::Integer)
-  Gridap.Helpers.@notimplemented
-end
-
-# # Necessary for distributed meshes, where not all children of a coarse cell may belong to the processor. 
-# function FineToCoarseField(fine_fields::AbstractArray{<:Field},rrule::RefinementRule,child_ids::AbstractArray{<:Integer})
-#   fields = Vector{Field}(undef,num_subcells(rrule))
-#   fields = fill!(fields,ConstantField(0.0))
-#   for (k,id) in enumerate(child_ids)
-#     fields[id] = fine_fields[k]
-#   end
-#   return FineToCoarseField(fields,rrule)
-# end
 
 function Gridap.Fields.return_cache(a::OldToNewField,x::AbstractArray{<:Point})
   f2c_cache=Gridap.Fields.return_cache(a.fine_to_coarse_field,x)
@@ -190,15 +186,4 @@ function Gridap.Fields.evaluate!(cache,a::OldToNewField,x::AbstractArray{<:Point
     f2c_cache,rou_cache = cache
     Gridap.Fields.evaluate!(rou_cache,a.refined_or_untouched_field,x)
   end  
-end
-
-# Fast evaluation of FineToCoarseFields: 
-# Points are pre-classified into the children cells, which allows for the search to be 
-# skipped entirely. 
-function Gridap.Fields.return_cache(a::OldToNewField,x::AbstractArray{<:Point},child_ids::AbstractArray{<:Integer})
-  Gridap.Helpers.@notimplemented
-end
-
-function Gridap.Fields.evaluate!(cache,a::OldToNewField,x::AbstractArray{<:Point},child_ids::AbstractArray{<:Integer})
-  Gridap.Helpers.@notimplemented
 end
