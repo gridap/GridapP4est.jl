@@ -250,7 +250,7 @@ function pXest_partition!(::Type{Val{Dc}}, ptr_pXest) where Dc
     # same parent are assigned to different partitions
     p4est_partition(ptr_pXest, 0, C_NULL)
   else
-    @assert false
+    p4est_partition(ptr_pXest, 0, C_NULL)
   end
 end
 
@@ -333,7 +333,7 @@ function pXest_coarsen!(::Type{Val{Dc}}, ptr_pXest, coarsen_fn_c) where Dc
   if (Dc==2)
     p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
   else
-    @assert false
+    p8est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
   end
 end
 
@@ -360,106 +360,48 @@ const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
    [[0,1,1,2], [1,0,2,1], [1,2,0,1], [2,1,1,0]],  # c
    [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
   ])
-
- function p4est_update_flags!(ptr_p4est_old,
-                              ptr_p4est_new)
-   p4est_old = ptr_p4est_old[]
-   p4est_new = ptr_p4est_new[]
-   flags=unsafe_wrap(Array, 
-                     Ptr{Cint}(p4est_old.user_pointer), 
-                     p4est_old.local_num_quadrants)
-   
-   num_trees = Cint(p4est_old.connectivity[].num_trees)
-   @assert num_trees == Cint(p4est_new.connectivity[].num_trees)
-
-   for itree = 0:num_trees-1
-    tree_old = _p4est_tree_array_index(Val{2},p4est_old.trees,itree)[]
-    tree_new = _p4est_tree_array_index(Val{2},p4est_new.trees,itree)[]
-    num_quads_old = Cint(tree_old.quadrants.elem_count)
-    iquad_new = 0
-    iquad_old = 0
-    while iquad_old < num_quads_old
-      q_old = _p4est_quadrant_array_index(Val{2},tree_old.quadrants,iquad_old)
-      q_new = _p4est_quadrant_array_index(Val{2},tree_new.quadrants,iquad_new)
-      if (p4est_quadrant_compare(q_old,q_new) == 0)     # q_old was not refined nor coarsened
-        flags[iquad_old+1] = nothing_flag
-        iquad_new += 1
-        iquad_old += 1
-      elseif (p4est_quadrant_is_parent(q_old,q_new)!=0) # q_old was refined
-        flags[iquad_old+1] = refine_flag
-        iquad_new += 4
-        iquad_old += 1
-      elseif (p4est_quadrant_is_parent(q_new,q_old)!=0) # q_old and its siblings were coarsened 
-        for i=0:3
-          flags[iquad_old+i+1] = coarsen_flag
-        end
-        iquad_old += 4
-        iquad_new += 1
-      else
-        @assert false
-      end
-    end
-   end
-  end 
  
-  # void F90_p8est_update_refinement_and_coarsening_flags(p8est_t * p8est_old, p8est_t * p8est_new)
-  # {
-  #     p8est_tree_t       *tree_old;
-  #     p8est_quadrant_t   *q_old;
-  #     sc_array_t         *quadrants_old;
-  #     int                old_quadrant_index;
-      
-  #     p8est_tree_t       *tree_new;
-  #     p8est_quadrant_t   *q_new;
-  #     sc_array_t         *quadrants_new;
-  #     int                i, new_quadrant_index;
-      
-  #     int * user_pointer;
-     
-  #     P4EST_ASSERT(p8est_old->user_pointer == p8est_new->user_pointer);
-      
-  #     user_pointer = (int *) p8est_old->user_pointer;
-      
-  #     // Extract references to the first (and uniquely allowed) trees
-  #     tree_old = p8est_tree_array_index (p8est_old->trees,0);
-  #     tree_new = p8est_tree_array_index (p8est_new->trees,0);
-      
-  #     quadrants_old = &(tree_old->quadrants);
-  #     quadrants_new = &(tree_new->quadrants);
-      
-  #     new_quadrant_index = 0;
-  #     for (old_quadrant_index=0; old_quadrant_index < quadrants_old->elem_count;)
-  #     {
-  #        q_old = p8est_quadrant_array_index(quadrants_old, old_quadrant_index);
-  #        q_new = p8est_quadrant_array_index(quadrants_new, new_quadrant_index);
-  #        if ( p8est_quadrant_compare(q_old,q_new) == 0 ) //q_old was not refined nor coarsened
-  #        {
-  #            user_pointer[old_quadrant_index] = FEMPAR_do_nothing_flag;
-  #            old_quadrant_index++;
-  #            new_quadrant_index++;
-  #        }
-  #        else if ( p8est_quadrant_is_parent(q_old,q_new)  )  //q_old was refined
-  #        { 
-  #            user_pointer[old_quadrant_index] = FEMPAR_refinement_flag;
-  #            old_quadrant_index++;
-  #            new_quadrant_index = new_quadrant_index + P8EST_CHILDREN;
-  #        }
-  #        else if ( p8est_quadrant_is_parent(q_new,q_old) ) //q_old and its siblings were coarsened 
-  #        {
-  #            for (i=0; i < P8EST_CHILDREN; i++)
-  #            {
-  #                user_pointer[old_quadrant_index] = FEMPAR_coarsening_flag;
-  #                old_quadrant_index++;
-  #            }
-  #            new_quadrant_index++;
-  #        }
-  #        else
-  #        {
-  #          P4EST_ASSERT(0);
-  #        }
-  #     }
+function pXest_update_flags!(::Type{Val{Dc}}, ptr_pXest_old, ptr_pXest_new) where Dc
+  pXest_old = ptr_pXest_old[]
+  pXest_new = ptr_pXest_new[]
+  flags=unsafe_wrap(Array, 
+                    Ptr{Cint}(pXest_old.user_pointer), 
+                    pXest_old.local_num_quadrants)
   
-  # }
+  num_trees = Cint(pXest_old.connectivity[].num_trees)
+  @assert num_trees == Cint(pXest_new.connectivity[].num_trees)
+
+  num_children = get_num_children(Val{Dc})
+
+  for itree = 0:num_trees-1
+   tree_old = _pXest_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
+   tree_new = _pXest_tree_array_index(Val{Dc},pXest_new.trees,itree)[]
+   num_quads_old = Cint(tree_old.quadrants.elem_count)
+   iquad_new = 0
+   iquad_old = 0
+   while iquad_old < num_quads_old
+     q_old = _pXest_quadrant_array_index(Val{Dc},tree_old.quadrants,iquad_old)
+     q_new = _pXest_quadrant_array_index(Val{Dc},tree_new.quadrants,iquad_new)
+     if (_pXest_quadrant_compare(Val{Dc},q_old,q_new) == 0)     # q_old was not refined nor coarsened
+       flags[iquad_old+1] = nothing_flag
+       iquad_new += 1
+       iquad_old += 1
+     elseif (_pXest_quadrant_is_parent(Val{Dc},q_old,q_new)!=0) # q_old was refined
+       flags[iquad_old+1] = refine_flag
+       iquad_new += num_children
+       iquad_old += 1
+     elseif (_pXest_quadrant_is_parent(Val{Dc},q_new,q_old)!=0) # q_old and its siblings were coarsened 
+       for i=0:num_children-1
+         flags[iquad_old+i+1] = coarsen_flag
+       end
+       iquad_old += num_children
+       iquad_new += 1
+     else
+       @assert false
+     end
+   end
+  end
+end
 
 function _compute_fine_to_coarse_model_glue(
          cparts,
@@ -1411,73 +1353,9 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       coarsen_fn_callback_2d_c = @cfunction($coarsen_callback_2d, 
                                             Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
       coarsen_fn_callback_c = coarsen_fn_callback_2d_c
-    else
-      @assert Dc==3
-      function init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
-        which_tree::p4est_topidx_t,
-        quadrant_ptr::Ptr{p8est_quadrant_t})
-        # Extract a reference to the tree which_tree
-        forest = forest_ptr[]
-        tree = p8est_tree_array_index(forest.trees, which_tree)[]
-        quadrant = quadrant_ptr[]
-        q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-        @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
-        user_data = unsafe_wrap(Array, 
-                                Ptr{Cint}(forest.user_pointer), 
-                                current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-        unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-        current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-        current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-        return nothing
-      end
-      init_fn_callback_3d_c = @cfunction($init_fn_callback_3d, 
-                                        Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
-      init_fn_callback_c = init_fn_callback_3d_c
 
-# int coarsen_callback_3d (p8est_t * p8est,
-#                       p4est_topidx_t which_tree,
-#                       p8est_quadrant_t * quadrants[])
-# {
-#     int quadrant_index;
-#     int coarsen;
-#     P4EST_ASSERT(which_tree == 0);
-    
-#     coarsen = 1;
-#     for (quadrant_index=0; quadrant_index < P8EST_CHILDREN; quadrant_index++)
-#     {
-#       coarsen = (*((int *)(quadrants[quadrant_index]->p.user_data)) ==  FEMPAR_coarsening_flag);
-#       if (!coarsen) return coarsen;
-#     }
-#     return coarsen;
-# }
 
-    end                                     
-
-    map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
-      # The length of the local flags array has to match the number of 
-      # cells in the model. This includes both owned and ghost cells. 
-      # Only the flags for owned cells are actually taken into account. 
-      @assert num_cells(lmodel)==length(flags)
-      println("flags: $(flags)")
-      pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
-    end
-    
-    function refine_callback_2d(::Ptr{p4est_t},
-      which_tree::p4est_topidx_t,
-      quadrant_ptr::Ptr{p4est_quadrant_t})
-      quadrant = quadrant_ptr[]
-      println("PPPP: $(Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]))")
-      return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
-    end
-
-    function init_refine_callback_2d(forest_ptr::Ptr{p4est_t},
-                                     which_tree::p4est_topidx_t,
-                                     quadrant_ptr::Ptr{p4est_quadrant_t})
-      quadrant=quadrant_ptr[]
-      println("ptr init: $(quadrant.p.user_data)")
-    end 
-
-    function refine_replace_callback_2d(::Ptr{p4est_t},
+      function refine_replace_callback_2d(::Ptr{p4est_t},
                                         which_tree::p4est_topidx_t,
                                         num_outgoing::Cint,
                                         outgoing_ptr::Ptr{Ptr{p4est_quadrant_t}},
@@ -1503,20 +1381,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
         end
      end
 
-#  {
-#     int quadrant_index;
-#     int *quadrant_data;
-#     P4EST_ASSERT(which_tree   == 0);
-#     P4EST_ASSERT(num_outgoing == 1);
-#     P4EST_ASSERT(num_incoming == P4EST_CHILDREN);
-#     for (quadrant_index=0; quadrant_index < P4EST_CHILDREN; quadrant_index++)
-#     {
-#       quadrant_data = (int *) incoming[quadrant_index]->p.user_data;
-#       *quadrant_data = FEMPAR_do_nothing_flag;
-#     }
-#  }
-    
-    refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
     refine_replace_callback_2d_c = 
        @cfunction($refine_replace_callback_2d, Cvoid, (Ptr{p4est_t}, 
                                                        p4est_topidx_t, 
@@ -1524,20 +1388,128 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                                        Ptr{Ptr{p4est_quadrant_t}}, 
                                                        Cint, 
                                                        Ptr{Ptr{p4est_quadrant_t}}))
-
     
-    init_refine_callback_2d = @cfunction($init_refine_callback_2d, Cvoid, 
-    (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+    refine_replace_callback_c = refine_replace_callback_2d_c     
+
+    else
+      @assert Dc==3
+      function init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
+        which_tree::p4est_topidx_t,
+        quadrant_ptr::Ptr{p8est_quadrant_t})
+        # Extract a reference to the tree which_tree
+        forest = forest_ptr[]
+        tree = p8est_tree_array_index(forest.trees, which_tree)[]
+        quadrant = quadrant_ptr[]
+        q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
+        @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
+        user_data = unsafe_wrap(Array, 
+                                Ptr{Cint}(forest.user_pointer), 
+                                current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+        unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+        current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
+        current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+        return nothing
+      end
+      init_fn_callback_3d_c = @cfunction($init_fn_callback_3d, 
+                                        Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+      init_fn_callback_c = init_fn_callback_3d_c
+
+
+       function coarsen_callback_3d(forest_ptr::Ptr{p8est_t},
+                                   which_tree::p4est_topidx_t,
+                                   quadrant_ptr::Ptr{Ptr{p8est_quadrant_t}})
+
+        num_children=get_num_children(Val{3})
+        println("num_children=$(num_children)")
+        quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
+        coarsen=Cint(1)
+        for quadrant_index=1:num_children
+          quadrant = quadrants[quadrant_index][]
+          # I have noticed that new quadrants created as by-product
+          # of the refininement process have quadrant.p.user_data == C_NULL
+          # Not sure why ... The following if-end takes care of this.
+          if (quadrant.p.user_data) == C_NULL
+            return Cint(0)
+          end
+          println("coarsen wrap: $(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])")
+          is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+          println("is_coarsen_flag=$(is_coarsen_flag)")
+          if (!is_coarsen_flag) 
+            return Cint(0)
+          end
+        end  
+        return coarsen
+      end 
+      coarsen_fn_callback_3d_c = @cfunction($coarsen_callback_3d, 
+                                            Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
+      coarsen_fn_callback_c = coarsen_fn_callback_3d_c
+
+      function refine_replace_callback_3d(::Ptr{p8est_t},
+                                        which_tree::p4est_topidx_t,
+                                        num_outgoing::Cint,
+                                        outgoing_ptr::Ptr{Ptr{p8est_quadrant_t}},
+                                        num_incoming::Cint,
+                                        incoming_ptr::Ptr{Ptr{p8est_quadrant_t}})
+        num_children=get_num_children(Val{3}) 
+        @assert num_outgoing==1 
+        @assert num_incoming==num_children
+        outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
+        quadrant = outgoing[1][]
+        println("quadrant_index out : $(1) 
+                   quadrant_level out: $(quadrant.level) 
+                   ptr out: $(quadrant.p.user_data)")
+        incoming=unsafe_wrap(Array, incoming_ptr, num_children)
+        for quadrant_index=1:num_children
+          quadrant = incoming[quadrant_index][]
+          println("quadrant_index: $(quadrant_index) 
+                   quadrant_level: $(quadrant.level) 
+                   ptr: $(quadrant.p.user_data)")
+          if (quadrant.p.user_data) != C_NULL
+             unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
+          end
+        end
+     end
+
+     refine_replace_callback_3d_c = 
+       @cfunction($refine_replace_callback_3d, Cvoid, (Ptr{p8est_t}, 
+                                                       p4est_topidx_t, 
+                                                       Cint, 
+                                                       Ptr{Ptr{p8est_quadrant_t}}, 
+                                                       Cint, 
+                                                       Ptr{Ptr{p8est_quadrant_t}}))
+
+     refine_replace_callback_c = refine_replace_callback_3d_c
+    end                                     
+
+    map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
+      # The length of the local flags array has to match the number of 
+      # cells in the model. This includes both owned and ghost cells. 
+      # Only the flags for owned cells are actually taken into account. 
+      @assert num_cells(lmodel)==length(flags)
+      println("flags: $(flags)")
+      pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
+    end
+    
+    function refine_callback_2d(::Ptr{p4est_t},
+      which_tree::p4est_topidx_t,
+      quadrant_ptr::Ptr{p4est_quadrant_t})
+      quadrant = quadrant_ptr[]
+      println("PPPP: $(Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]))")
+      return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
+    end
+    refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+
+
+
     
     # Copy input p4est, refine and balance
     ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
     pXest_refine!(Val{Dc}, ptr_new_pXest,
                   refine_callback_2d_c,
-                  refine_replace_callback_2d_c,
-                  init_fn_c=init_refine_callback_2d)
+                  refine_replace_callback_c)
     pXest_coarsen!(Val{Dc}, ptr_new_pXest, coarsen_fn_callback_c)
     pXest_balance!(Val{Dc}, ptr_new_pXest)
-    p4est_update_flags!(model.ptr_pXest,ptr_new_pXest)
+    pXest_update_flags!(Val{Dc},model.ptr_pXest,ptr_new_pXest)
 
     # Extract ghost and lnodes
     ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
@@ -1721,7 +1693,7 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
 end
 
 
-function _p4est_tree_array_index(::Type{Val{Dc}},trees,itree) where Dc
+function _pXest_tree_array_index(::Type{Val{Dc}},trees,itree) where Dc
   if (Dc==2)
     return p4est_tree_array_index(trees,itree)
   elseif (Dc==3)
@@ -1729,7 +1701,7 @@ function _p4est_tree_array_index(::Type{Val{Dc}},trees,itree) where Dc
   end
 end
 
-function _p4est_comm_find_owner(::Type{Val{Dc}},ptr_pXest,itree,quad,guess) where Dc
+function _pXest_comm_find_owner(::Type{Val{Dc}},ptr_pXest,itree,quad,guess) where Dc
   if (Dc==2)
     return p4est_comm_find_owner(ptr_pXest,itree,quad,guess)
   elseif (Dc==3)
@@ -1737,7 +1709,7 @@ function _p4est_comm_find_owner(::Type{Val{Dc}},ptr_pXest,itree,quad,guess) wher
   end
 end
 
-function _p4est_quadrant_array_index(::Type{Val{Dc}}, quadrants, iquad) where Dc
+function _pXest_quadrant_array_index(::Type{Val{Dc}}, quadrants, iquad) where Dc
   if (Dc==2)
     return p4est_quadrant_array_index(quadrants, iquad)
   elseif (Dc==3)
@@ -1746,13 +1718,29 @@ function _p4est_quadrant_array_index(::Type{Val{Dc}}, quadrants, iquad) where Dc
 end
 
 
-function _p4est_quadrant_is_equal(::Type{Val{Dc}},  q1, q2) where Dc
+function _pXest_quadrant_is_equal(::Type{Val{Dc}},  q1, q2) where Dc
   if (Dc==2)
     return p4est_quadrant_is_equal(q1,q2)
   elseif (Dc==3)
     return p8est_quadrant_is_equal(q1, q2)
   end
 end
+
+function _pXest_quadrant_is_parent(::Type{Val{Dc}}, q1, q2) where Dc
+  if (Dc==2)
+    return p4est_quadrant_is_parent(q1,q2)
+  elseif (Dc==3)
+    return p8est_quadrant_is_parent(q1,q2)
+  end
+end 
+
+function _pXest_quadrant_compare(::Type{Val{Dc}}, q1, q2) where Dc
+  if (Dc==2)
+    return p4est_quadrant_compare(q1,q2)
+  elseif (Dc==3)
+    return p8est_quadrant_compare(q1,q2)
+  end
+end 
 
 function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr_pXest_new) where Dc
   pXest_old   = ptr_pXest_old[]
@@ -1765,12 +1753,12 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
   current_old_quad_index = 1
 
   for itree = 0:num_trees-1
-    tree = _p4est_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
+    tree = _pXest_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
     num_quads = Cint(tree.quadrants.elem_count)
 
     for iquad = 0:num_quads-1
-      q = _p4est_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
-      new_rank = _p4est_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
+      q = _pXest_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
+      new_rank = _pXest_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
 
       if (new_rank != my_rank)
         if (!(new_rank+1 in keys(ranks_count)))
@@ -1781,9 +1769,9 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
         old2new[current_old_quad_index] = 0
       else
         current_new_quad_index = 1
-        new_tree = _p4est_tree_array_index(Val{Dc},pXest_new.trees,pXest_new.first_local_tree)[]
+        new_tree = _pXest_tree_array_index(Val{Dc},pXest_new.trees,pXest_new.first_local_tree)[]
         for t = pXest_new.first_local_tree:pXest_new.last_local_tree
-          new_tree = _p4est_tree_array_index(Val{Dc},pXest_new.trees,t)[]
+          new_tree = _pXest_tree_array_index(Val{Dc},pXest_new.trees,t)[]
           if t == itree
             break
           end
@@ -1792,8 +1780,8 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
         found = false
         num_quads_new = Cint(new_tree.quadrants.elem_count)
         for iquad_new = 0:num_quads_new-1
-          q_new = _p4est_quadrant_array_index(Val{Dc},new_tree.quadrants, iquad_new)
-          found = _p4est_quadrant_is_equal(Val{Dc},q,q_new)!=0
+          q_new = _pXest_quadrant_array_index(Val{Dc},new_tree.quadrants, iquad_new)
+          found = _pXest_quadrant_is_equal(Val{Dc},q,q_new)!=0
           if found
             break
           end
@@ -2172,7 +2160,7 @@ function p8est_lnodes_decode(face_code,
     for i=0:3
       if ((work & 0x0001)!=0)
         e = p8est_corner_edges[c+1,i+1]
-        hanging_edge[e+1] = (hanging_edge[e] == -1) ? 0 : 2
+        hanging_edge[e+1] = (hanging_edge[e+1] == -1) ? 0 : 2
         hanging_edge[e+1] += (cwork & 0x0001)
       end
       cwork >>= 1

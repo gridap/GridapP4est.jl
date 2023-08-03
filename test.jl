@@ -13,11 +13,34 @@ f(x) = -Δ(u)(x)
 degree = 2*order+1
 
 MPI.Init()
-ranks=distribute_with_mpi(LinearIndices((2,)))
-coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
-dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+ranks=distribute_with_mpi(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
 
-function test(ranks,dmodel)
+function test_2d(order)
+    coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+    test_refine_and_coarsen_at_once(ranks,dmodel,order)
+    rdmodel=dmodel
+    for i=1:5
+     rdmodel=test(ranks,rdmodel,order)
+    end
+end 
+
+function test_3d(order)
+    coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+    test_refine_and_coarsen_at_once(ranks,dmodel,order)
+    rdmodel=dmodel
+    for i=1:5
+     rdmodel=test(ranks,rdmodel,order)
+    end
+end 
+
+function test(ranks,dmodel,order)
+    # Define manufactured functions
+    u(x) = x[1]+x[2]^order
+    f(x) = -Δ(u)(x)
+    degree = 2*order+1
+
     map(ranks,partition(dmodel.dmodel.face_gids[end])) do rank, indices
         print("$(rank): $(local_to_owner(indices))"); print("\n") 
     end 
@@ -158,12 +181,14 @@ function test(ranks,dmodel)
     fmodel_red
 end
 
-function test_refine_and_coarsen_at_once(ranks,dmodel)
+function test_refine_and_coarsen_at_once(ranks,
+            dmodel::OctreeDistributedDiscreteModel{Dc},
+            order) where Dc
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag        
         if (rank==1)
-           flags[1:4].=coarsen_flag
+           flags[1:2^Dc].=coarsen_flag
         else 
            flags[own_length(indices)]=refine_flag
         end 
@@ -171,7 +196,6 @@ function test_refine_and_coarsen_at_once(ranks,dmodel)
     end
     fmodel,glue=refine(dmodel,ref_coarse_flags);
 
-    order=1
     reffe=ReferenceFE(lagrangian,Float64,order)
     VH=FESpace(dmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
     UH=TrialFESpace(VH,u)
@@ -222,14 +246,9 @@ function test_refine_and_coarsen_at_once(ranks,dmodel)
     tol=1e-8
     @assert el2 < tol
 end
-test_refine_and_coarsen_at_once(ranks,dmodel);
 
-function f()
-  rdmodel=dmodel
-  for i=1:5
-   rdmodel=test(ranks,rdmodel)
-  end
-end
-f()
+
+test_2d(1)
+#test_3d(1)
 
 
