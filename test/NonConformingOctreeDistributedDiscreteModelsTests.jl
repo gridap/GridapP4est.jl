@@ -146,12 +146,12 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   end
 
   MPI.Init()
-  parts = distribute_with_mpi(LinearIndices((1,)))
+  parts = distribute_with_mpi(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
 
   function test(TVDc::Type{Val{Dc}}, perm, order) where Dc
     # This is for debuging
     coarse_model = setup_model(TVDc,perm)
-    model = OctreeDistributedDiscreteModel(parts, coarse_model, 1)
+    model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
 
     ref_coarse_flags=map(parts) do _
       [refine_flag,nothing_flag]
@@ -190,36 +190,8 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     @assert eh1 < tol
   end 
 
-  test(Val{2},1,1)
-  test(Val{2},1,2)
-  test(Val{2},1,3)
-
-  test(Val{2},2,1)
-  test(Val{2},2,2)
-  test(Val{2},2,3)
-
-  test(Val{2},3,1)
-  test(Val{2},3,2)
-  test(Val{2},3,3)
-
-  test(Val{2},4,1)
-  test(Val{2},4,2)
-  test(Val{2},4,3)
-
-  test(Val{3},1,1)
-  test(Val{3},1,2)
-  test(Val{3},1,3)
-
-  test(Val{3},2,1)
-  test(Val{3},2,2)
-  test(Val{3},2,3)
-
-  test(Val{3},3,1)
-  test(Val{3},3,2)
-  test(Val{3},3,3)
-
-  test(Val{3},4,1)
-  test(Val{3},4,2)
-  test(Val{3},4,3)
+  for Dc=2:3, perm=1:4, order=1:3
+    test(Val{Dc},perm,order)
+  end
 
 end

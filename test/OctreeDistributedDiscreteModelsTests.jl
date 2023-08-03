@@ -34,7 +34,7 @@ module OctreeDistributedDiscreteModelsTests
       else
         if rank < lsize
           comm=MPI.Comm_split(root_comm,0,0)
-          level_parts[l] = distribute_with_mpi(LinearIndices((lsize,)),comm;duplicate_comm=false)
+          level_parts[l] = distribute_with_mpi(LinearIndices((lsize,));comm=comm,duplicate_comm=false)
         else
           comm=MPI.Comm_split(root_comm,mpi_undefined,mpi_undefined)
           level_parts[l] = MPIVoidVector(eltype(parts))
@@ -68,7 +68,7 @@ module OctreeDistributedDiscreteModelsTests
     vmodel2      = GridapP4est.VoidOctreeDistributedDiscreteModel(coarse_model,ranks)
 
     # Refining and distributing
-    fmodel , rglue  = refine(model,level_parts[1])
+    fmodel , rglue  = refine(model,parts=level_parts[1])
     dfmodel, dglue  = redistribute(fmodel)
 
     # FESpaces tests
@@ -94,7 +94,7 @@ module OctreeDistributedDiscreteModelsTests
       map(model.dmodel.models,model_back.dmodel.models) do m1, m2
         Ωh1  = Triangulation(m1)
         dΩh1 = Measure(Ωh1,2)
-        Ωh2OctreeDistributedDiscreteModelsTests.jl  = Triangulation(m2)
+        Ωh2  = Triangulation(m2)
         dΩh2 = Measure(Ωh2,2)
         sum(∫(1)dΩh1) ≈ sum(∫(1)dΩh2)
       end

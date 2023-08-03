@@ -372,30 +372,37 @@ function pXest_update_flags!(::Type{Val{Dc}}, ptr_pXest_old, ptr_pXest_new) wher
   @assert num_trees == Cint(pXest_new.connectivity[].num_trees)
 
   num_children = get_num_children(Val{Dc})
-
+  global_iquad_new = 0
+  global_iquad_old = 0
   for itree = 0:num_trees-1
    tree_old = _pXest_tree_array_index(Val{Dc},pXest_old.trees,itree)[]
    tree_new = _pXest_tree_array_index(Val{Dc},pXest_new.trees,itree)[]
    num_quads_old = Cint(tree_old.quadrants.elem_count)
-   iquad_new = 0
-   iquad_old = 0
-   while iquad_old < num_quads_old
-     q_old = _pXest_quadrant_array_index(Val{Dc},tree_old.quadrants,iquad_old)
-     q_new = _pXest_quadrant_array_index(Val{Dc},tree_new.quadrants,iquad_new)
+   local_iquad_old=0
+   local_iquad_new=0
+   while local_iquad_old < num_quads_old
+     q_old = _pXest_quadrant_array_index(Val{Dc},tree_old.quadrants,local_iquad_old)
+     q_new = _pXest_quadrant_array_index(Val{Dc},tree_new.quadrants,local_iquad_new)
      if (_pXest_quadrant_compare(Val{Dc},q_old,q_new) == 0)     # q_old was not refined nor coarsened
-       flags[iquad_old+1] = nothing_flag
-       iquad_new += 1
-       iquad_old += 1
+       flags[global_iquad_old+1] = nothing_flag
+       global_iquad_new += 1
+       global_iquad_old += 1
+       local_iquad_new += 1
+       local_iquad_old += 1
      elseif (_pXest_quadrant_is_parent(Val{Dc},q_old,q_new)!=0) # q_old was refined
-       flags[iquad_old+1] = refine_flag
-       iquad_new += num_children
-       iquad_old += 1
+       flags[global_iquad_old+1] = refine_flag
+       global_iquad_new += num_children
+       global_iquad_old += 1
+       local_iquad_new += num_children
+       local_iquad_old += 1
      elseif (_pXest_quadrant_is_parent(Val{Dc},q_new,q_old)!=0) # q_old and its siblings were coarsened 
        for i=0:num_children-1
-         flags[iquad_old+i+1] = coarsen_flag
+         flags[global_iquad_old+i+1] = coarsen_flag
        end
-       iquad_old += num_children
-       iquad_new += 1
+       global_iquad_old += num_children
+       global_iquad_new += 1
+       local_iquad_old += num_children
+       local_iquad_new += 1
      else
        @assert false
      end
@@ -1142,11 +1149,12 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
           fcell_to_child_id[c+child-1] = child
         end
         c = c + num_children
-      elseif (flags[cell]==nothing_flag || flags[cell]==coarsen_flag)
+      elseif (flags[cell]==nothing_flag)
         fine_to_coarse_faces_map[c] = cell
         fcell_to_child_id[c] = 1
         c=c+1
-      else 
+      else
+        @assert flags[cell]!=coarsen_flag 
         error("Unknown AMR flag")
       end
     end
@@ -1262,7 +1270,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
                                                  model.dmodel,
                                                  fmodel)
 
-      non_conforming_glue = _create_conforming_model_non_conforming_glue(model.dmodel)
+      non_conforming_glue = _create_conforming_model_non_conforming_glue(fmodel)
                                            
 
       ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
@@ -1585,9 +1593,12 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                                 cmodel,
                                                 model.dmodel)
 
+     nc_glue=_create_conforming_model_non_conforming_glue(cmodel)
+
      c_octree_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                     model.parts,
                                     cmodel,
+                                    nc_glue,
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
                                     ptr_new_pXest,
@@ -1982,9 +1993,12 @@ function _redistribute_parts_supset_parts_redistributed(
     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
 
+    non_conforming_glue = _create_conforming_model_non_conforming_glue(fmodel)
+
     red_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                                parts_redistributed_model,
                                                fmodel,
+                                               non_conforming_glue,
                                                model.coarse_model,
                                                model.ptr_pXest_connectivity,
                                                ptr_pXest_new,
