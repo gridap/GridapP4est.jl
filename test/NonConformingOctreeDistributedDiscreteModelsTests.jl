@@ -146,14 +146,14 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   end
 
   MPI.Init()
-  parts = distribute_with_mpi(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
+  ranks = distribute_with_mpi(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
 
   function test(TVDc::Type{Val{Dc}}, perm, order) where Dc
     # This is for debuging
     coarse_model = setup_model(TVDc,perm)
-    model = OctreeDistributedDiscreteModel(parts, coarse_model, 0)
+    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 0)
 
-    ref_coarse_flags=map(parts) do _
+    ref_coarse_flags=map(ranks) do _
       [refine_flag,nothing_flag]
     end 
     dmodel,adaptivity_glue=refine(model,ref_coarse_flags)
@@ -212,8 +212,6 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     dmodel,glue=refine(dmodel,ref_coarse_flags);
     test_solve(dmodel,order)
   end
-
-  end 
 
   for Dc=2:3, perm=1:4, order=1:3
     test(Val{Dc},perm,order)
