@@ -63,6 +63,7 @@ jobs:
           make --quiet install
           rm -rf $ROOT_DIR/$TAR_FILE $SOURCES_DIR
           cd $CURR_DIR    
+      - uses: julia-actions/julia-buildpkg@latest
 
       - name: add MPIPreferences
         shell: julia --color=yes --project=. {0}
@@ -75,8 +76,7 @@ jobs:
         run: |
           using MPIPreferences
           MPIPreferences.use_system_binary()
-                         
-      - uses: julia-actions/julia-buildpkg@latest
+
       # - uses: julia-actions/julia-runtest@v1
       # - uses: julia-actions/julia-processcoverage@v1
       - run: echo $PWD  

@@ -159,35 +159,60 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     dmodel,adaptivity_glue=refine(model,ref_coarse_flags)
     non_conforming_glue=dmodel.non_conforming_glue
 
-    # Define manufactured functions
-    u(x) = x[1]+x[2]^order
-    f(x) = -Δ(u)(x)
 
-    # FE Spaces
-    reffe = ReferenceFE(lagrangian,Float64,order)
-    V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
-    U = TrialFESpace(V,u)
+    function test_solve(dmodel,order)
+      # Define manufactured functions
+      u(x) = x[1]+x[2]^order
+      f(x) = -Δ(u)(x)
 
-    # Define integration mesh and quadrature
-    degree = 2*order+1
-    Ω = Triangulation(dmodel)
-    dΩ = Measure(Ω,degree)
+      # FE Spaces
+      reffe = ReferenceFE(lagrangian,Float64,order)
+      V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
+      U = TrialFESpace(V,u)
 
-    a(u,v) = ∫( ∇(v)⊙∇(u) )*dΩ
-    b(v) = ∫(v*f)*dΩ
+      # Define integration mesh and quadrature
+      degree = 2*order+1
+      Ω = Triangulation(dmodel)
+      dΩ = Measure(Ω,degree)
 
-    op = AffineFEOperator(a,b,U,V)
-    uh = solve(op)
+      a(u,v) = ∫( ∇(v)⊙∇(u) )*dΩ
+      b(v) = ∫(v*f)*dΩ
 
-    e = u - uh
+      op = AffineFEOperator(a,b,U,V)
+      uh = solve(op)
 
-    # Compute errors
-    el2 = sqrt(sum( ∫( e*e )*dΩ ))
-    eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩ ))
+      e = u - uh
 
-    tol=1e-8
-    @assert el2 < tol
-    @assert eh1 < tol
+      # Compute errors
+      el2 = sqrt(sum( ∫( e*e )*dΩ ))
+      eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩ ))
+
+      tol=1e-8
+      @assert el2 < tol
+      @assert eh1 < tol
+    end
+    test_solve(dmodel,order)
+
+    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
+      flags=zeros(Cint,length(indices))
+      flags.=nothing_flag
+      
+      flags[1]=refine_flag
+      flags[own_length(indices)]=refine_flag
+
+      # To create some unbalance
+      if (rank%2==0 && own_length(indices)>1)
+          flags[div(own_length(indices),2)]=refine_flag
+      end     
+
+      print("rank: $(rank) flags: $(flags)"); print("\n")
+      flags
+    end 
+
+    dmodel,glue=refine(dmodel,ref_coarse_flags);
+    test_solve(dmodel,order)
+  end
+
   end 
 
   for Dc=2:3, perm=1:4, order=1:3
