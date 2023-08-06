@@ -250,7 +250,7 @@ function pXest_partition!(::Type{Val{Dc}}, ptr_pXest) where Dc
     # same parent are assigned to different partitions
     p4est_partition(ptr_pXest, 0, C_NULL)
   else
-    p4est_partition(ptr_pXest, 0, C_NULL)
+    p8est_partition(ptr_pXest, 0, C_NULL)
   end
 end
 
