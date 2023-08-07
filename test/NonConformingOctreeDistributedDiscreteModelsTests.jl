@@ -137,28 +137,10 @@ module NonConformingOctreeDistributedDiscreteModelsTests
         m
   end
 
-  ## Refine those cells with even identifier    (0,2,4,6,8,...)
-  ## Leave untouched cells with odd identifier  (1,3,5,7,9,...)
-  function allocate_and_set_refinement_and_coarsening_flags(forest_ptr::Ptr{p4est_t})
-    forest = forest_ptr[]
-    tree = p4est_tree_array_index(forest.trees, 0)[]
-    return [i != 1 ? nothing_flag : refine_flag for i = 1:tree.quadrants.elem_count]
-  end
-
   MPI.Init()
   ranks = distribute_with_mpi(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
 
   function test(TVDc::Type{Val{Dc}}, perm, order) where Dc
-    # This is for debuging
-    coarse_model = setup_model(TVDc,perm)
-    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 0)
-
-    ref_coarse_flags=map(ranks) do _
-      [refine_flag,nothing_flag]
-    end 
-    dmodel,adaptivity_glue=refine(model,ref_coarse_flags)
-    non_conforming_glue=dmodel.non_conforming_glue
-
 
     function test_solve(dmodel,order)
       # Define manufactured functions
@@ -187,33 +169,55 @@ module NonConformingOctreeDistributedDiscreteModelsTests
       el2 = sqrt(sum( ∫( e*e )*dΩ ))
       eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩ ))
 
-      tol=1e-8
+      tol=1e-6
+      println("$(el2) < $(tol)")
+      println("$(eh1) < $(tol)")
       @assert el2 < tol
       @assert eh1 < tol
     end
-    test_solve(dmodel,order)
 
-    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
-      flags=zeros(Cint,length(indices))
-      flags.=nothing_flag
-      
-      flags[1]=refine_flag
-      flags[own_length(indices)]=refine_flag
+    # This is for debuging
+    coarse_model = setup_model(TVDc,perm)
+    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 0)
 
-      # To create some unbalance
-      if (rank%2==0 && own_length(indices)>1)
-          flags[div(own_length(indices),2)]=refine_flag
-      end     
+    #test_solve(model,order)
 
-      print("rank: $(rank) flags: $(flags)"); print("\n")
-      flags
+
+    ref_coarse_flags=map(ranks) do _
+      [refine_flag,nothing_flag]
     end 
+    dmodel,adaptivity_glue=adapt(model,ref_coarse_flags)
+    non_conforming_glue=dmodel.non_conforming_glue
 
-    dmodel,glue=refine(dmodel,ref_coarse_flags);
     test_solve(dmodel,order)
+    for i=1:3
+      ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
+        flags=zeros(Cint,length(indices))
+        flags.=nothing_flag
+        
+        #flags[1]=refine_flag
+        flags[own_length(indices)]=refine_flag
+
+        # # To create some unbalance
+        # if (rank%2==0 && own_length(indices)>1)
+        #     flags[div(own_length(indices),2)]=refine_flag
+        # end     
+
+        print("rank: $(rank) flags: $(flags)"); print("\n")
+        flags
+      end 
+
+      dmodel,glue=adapt(dmodel,ref_coarse_flags);
+      writevtk(Triangulation(dmodel),"trian")
+      map(dmodel.dmodel.models) do model
+        top=GridapDistributed.get_grid_topology(model)
+        Gridap.Geometry.compute_cell_permutations(top,1)
+      end
+      # test_solve(dmodel,order)
+    end
   end
 
-  for Dc=2:3, perm=1:4, order=1:3
+  for Dc=2:3, perm=1:4, order=1:4
     test(Val{Dc},perm,order)
   end
 

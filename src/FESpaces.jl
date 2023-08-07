@@ -198,7 +198,6 @@ function _generate_constraints!(Df,
                 # Go over dofs of ocell_lface
                 for (ifdof, icdof) in enumerate(face_dofs[ocell_lface])
                     pifdof = node_permutations[oface_dim][pindex][ifdof]
-                    println("XXXX: $(ifdof) $(pifdof)")
                     ldof_coarse = face_dofs[ocell_lface][pifdof]
                     coeffs[ifdof] =
                         ref_constraints[face_subface_ldof_to_cell_ldof[oface_dim][ocell_lface_within_dim][subface][ldof_subface], ldof_coarse]
@@ -213,9 +212,9 @@ function _generate_constraints!(Df,
             end
         end 
     end
-    println("sDOF_to_dof [$(Df)]= $(sDOF_to_dof)")
-    println("sDOF_to_dofs [$(Df)]= $(sDOF_to_dofs)")
-    println("sDOF_to_coeffs [$(Df)]= $(sDOF_to_coeffs)")
+    @debug "sDOF_to_dof [$(Df)]= $(sDOF_to_dof)"
+    @debug "sDOF_to_dofs [$(Df)]= $(sDOF_to_dofs)"
+    @debug "sDOF_to_coeffs [$(Df)]= $(sDOF_to_coeffs)"
 end
 
 # count how many different owner faces
@@ -249,8 +248,7 @@ function _compute_owner_faces_pindex_and_lids(Df,
             end
         end
     end
-
-    println("%%%: $(owner_faces_lids)")
+    @debug "owner_faces_lids: $(owner_faces_lids)"
 
     num_face_vertices = length(first(lface_to_cvertices))
     owner_face_vertex_ids = Vector{Int}(undef, num_face_vertices * num_owner_faces)
@@ -272,8 +270,7 @@ function _compute_owner_faces_pindex_and_lids(Df,
             end
         end
     end
-
-    println("???: $(owner_face_vertex_ids)")
+    @debug "owner_face_vertex_ids: $(owner_face_vertex_ids)"
 
     owner_faces_pindex = Vector{Int}(undef, num_owner_faces)
     for owner_face in keys(owner_faces_lids)
@@ -305,6 +302,8 @@ function _compute_owner_faces_pindex_and_lids(Df,
         end
         @assert pindexfound "Valid pindex not found"
     end
+    @debug "owner_faces_pindex: $(owner_faces_pindex)"
+
     owner_faces_pindex, owner_faces_lids
 end
 
@@ -322,11 +321,11 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         Tuple(Gridap.Geometry.get_faces(topo, Dc, d) for d = 0:Dc-1)
     end
     num_regular_faces = map(non_conforming_glue) do ncglue
-        println("regular= ", Tuple(ncglue.num_regular_faces[d] for d = 1:Dc))
+        @debug "num_regular_faces=$(Tuple(ncglue.num_regular_faces[d] for d = 1:Dc))"
         Tuple(ncglue.num_regular_faces[d] for d = 1:Dc)
     end
     num_hanging_faces = map(non_conforming_glue) do ncglue
-        println("hanging= ", Tuple(ncglue.num_hanging_faces[d] for d = 1:Dc))
+        @debug "num_hanging_faces=$(Tuple(ncglue.num_hanging_faces[d] for d = 1:Dc))"
         Tuple(ncglue.num_hanging_faces[d] for d = 1:Dc)
     end
     hanging_faces_glue = map(non_conforming_glue) do ncglue
@@ -590,15 +589,15 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, reff
 
     local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
         result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
-        println("result=", result)
+        @debug "fe_space_with_linear_constraints_cell_dof_ids=$(result)"
         result
     end
     nldofs = map(num_free_dofs,spaces_w_constraints)
     cell_gids = get_cell_gids(model)
     gids=GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
     map(partition(gids)) do indices 
-        println("[$(part_id(indices))]: l2g=$(local_to_global(indices))")
-        println("[$(part_id(indices))]: l2o=$(local_to_owner(indices))")
+        @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
+        @debug "[$(part_id(indices))]: l2o_cell_gids=$(local_to_owner(indices))"
     end 
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)

@@ -431,9 +431,6 @@ function generate_node_coordinates(::Type{Val{Dc}},
                                                      pvxy)
 
             end
-          #  if (MPI.Comm_rank(comm.comm)==0)
-          #     println(vxy)
-          #  end
            node_coordinates[cell_lids[current]]=Point{Dc,Float64}(vxy...)
            current=current+1
          end
@@ -506,9 +503,6 @@ function generate_face_labeling(parts,
      num_vertices=Gridap.Geometry.num_faces(topology,0)
      vertex_to_entity=zeros(Int,num_vertices)
      cell_vertices=Gridap.Geometry.get_faces(topology,Dc,0)
-    #  if part==1
-    #    println(cell_vertices)
-    #  end
 
      # Corner iterator callback
      function jcorner_callback(pinfo     :: Ptr{p8est_iter_corner_info_t},
@@ -531,25 +525,17 @@ function generate_face_labeling(parts,
         end
         corner=sides[1].corner+1
         ref_cornergid=cell_vertices[ref_cell][corner]
-        if (MPI.Comm_rank(parts.comm)==0)
-          println("XXX ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides, " ", corner)
-        end
         if (info.tree_boundary!=0 && info.tree_boundary==CONNECT_CORNER)
               # The current corner is also a corner of the coarse mesh
               coarse_cornergid=coarse_cell_vertices[tree][corner]
-              println("AAA vertex_to_entity[$(ref_cornergid)]")
               vertex_to_entity[ref_cornergid]=
                  coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid]
         else
           if vertex_to_entity[ref_cornergid]==0
-            #println("BBB vertex_to_entity[$(ref_cornergid)]")
             # We are on the interior of a tree (if we did not touch it yet)
             vertex_to_entity[ref_cornergid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
           end
         end
-        # if (MPI.Comm_rank(comm.comm)==0)
-        #   println("YYY ", cell_vertices)
-        # end
         nothing
      end
 
@@ -573,12 +559,6 @@ function generate_face_labeling(parts,
             poly_edget_range=Gridap.ReferenceFEs.get_dimrange(polytope,1)
             poly_first_edget=first(poly_edget_range)
             poly_facet=poly_first_edget+edge-1
-
-            #  if (MPI.Comm_rank(comm.comm)==0)
-            #    coarse_edgetgid=coarse_cell_edgets[tree][edge]
-            #    coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
-            #    println("PPP ", ref_cell, " ", edge, " TB ", info.tree_boundary, " ", nsides, " ",coarse_edgetgid, " ",  coarse_edgetgid_entity)
-            #  end
             if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P8EST_CONNECT_EDGE)
               coarse_edgetgid=coarse_cell_edgets[tree][edge]
               coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
@@ -588,8 +568,6 @@ function generate_face_labeling(parts,
                   ref_edgetgid=cell_edgets[ref_cell][edge]
                   edget_to_entity[ref_edgetgid]=coarse_edgetgid_entity
                 else
-                  println("CCC ", ref_cell, " ", poly_incident_face)
-                  println("DDD ", cell_vertices[ref_cell])
                   ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
                   vertex_to_entity[ref_cornergid]=coarse_edgetgid_entity
                 end
@@ -665,11 +643,6 @@ function generate_face_labeling(parts,
           poly_first_facet=first(poly_facet_range)
           poly_facet=poly_first_facet+gridap_facet-1
 
-          # if (MPI.Comm_rank(comm.comm)==0)
-          #   coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
-          #   coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
-          #   println("PPP ", ref_cell, " ", gridap_facet, " ", info.tree_boundary, " ", nsides, " ",coarse_facetgid, " ",  coarse_facetgid_entity)
-          # end
           if (info.tree_boundary!=0)
             coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
             coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
@@ -685,10 +658,6 @@ function generate_face_labeling(parts,
                 edget_to_entity[ref_edgetgid]=coarse_facetgid_entity
               else
                 ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
-                # if (MPI.Comm_rank(comm.comm)==0)
-                #    println("CCC ", ref_cell, " ", ref_cornergid, " ", info.tree_boundary, " ", nsides)
-                # end
-                # println("CCCC vertex_to_entity[$(ref_cornergid)]")
                 vertex_to_entity[ref_cornergid]=coarse_facetgid_entity
               end
             end
@@ -726,29 +695,7 @@ function generate_face_labeling(parts,
             end 
             process_facet(tree,face,ref_cell)
           end 
-        end 
-        # is_boundary=info.tree_boundary
-        # println("===========================")
-        # println("ref_cell: ",ref_cell)
-        # println("face nsides: ",nsides)
-        # println("is boundary: ",is_boundary)
-        # println("---------------------------")
-        # println("side1 treeid: ",sides[1].treeid+1)
-        # println("side1 face: ",sides[1].face)
-        # println("side1 is_hanging: ",sides[1].is_hanging)
-        # println("side1 is.full is_ghost: ",sides[1].is.full.is_ghost)
-        # println("side1 is.full quadid: ",sides[1].is.full.quadid)
-        # println("side1 is.hanging is_ghost: ",sides[1].is.hanging.is_ghost)
-        # println("side1 is.hanging quadid: ",sides[1].is.hanging.quadid)
-
-        # println("---------------------------")
-        # println("side2 treeid: ",sides[2].treeid+1)
-        # println("side2 face: ",sides[2].face)
-        # println("side2 is_hanging: ",sides[2].is_hanging)
-        # println("side2 is.full is_ghost: ",sides[2].is.full.is_ghost)
-        # println("side2 is.full quadid: ",sides[2].is.full.quadid)
-        # println("side2 is.hanging is_ghost: ",sides[2].is.hanging.is_ghost)
-        # println("side2 is.hanging quadid: ",sides[2].is.hanging.quadid)
+        end
       end 
       nothing
     end
@@ -769,7 +716,6 @@ function generate_face_labeling(parts,
       info=pinfo[]
       tree=info.treeid+1
       cell=owned_trees_offset[tree]+info.quadid+1
-      #println("XXX $(tree) $(cell)")
       cell_to_entity[cell]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
       nothing
     end
@@ -837,12 +783,6 @@ function generate_face_labeling(parts,
 
  face_labeling =
   map(faces_to_entity...) do faces_to_entity...
-    # if (part == 1)
-    #    println("XXX", faces_to_entity[1])
-    #    println("XXX", faces_to_entity[2])
-    #    println("XXX", faces_to_entity[3])
-    #    #println("XXX", faces_to_entity[4])
-    # end
     d_to_dface_to_entity       = Vector{Vector{Int}}(undef,Dc+1)
     d_to_dface_to_entity[1]    = faces_to_entity[1]
     if (Dc==3)
@@ -856,32 +796,6 @@ function generate_face_labeling(parts,
   end
   face_labeling
 end
-
-
-
-# function p4est_connectivity_print(pconn::Ptr{p4est_connectivity_t})
-#   # struct p4est_connectivity
-#   #   num_vertices::p4est_topidx_t
-#   #   num_trees::p4est_topidx_t
-#   #   num_corners::p4est_topidx_t
-#   #   vertices::Ptr{Cdouble}
-#   #   tree_to_vertex::Ptr{p4est_topidx_t}
-#   #   tree_attr_bytes::Csize_t
-#   #   tree_to_attr::Cstring
-#   #   tree_to_tree::Ptr{p4est_topidx_t}
-#   #   tree_to_face::Ptr{Int8}
-#   #   tree_to_corner::Ptr{p4est_topidx_t}
-#   #   ctt_offset::Ptr{p4est_topidx_t}
-#   #   corner_to_tree::Ptr{p4est_topidx_t}
-#   #   corner_to_corner::Ptr{Int8}
-#   # end
-#   conn = pconn[]
-#   println("num_vertices=$(conn.num_vertices)")
-#   println("num_trees=$(conn.num_trees)")
-#   println("num_corners=$(conn.num_corners)")
-#   vertices=unsafe_wrap(Array, conn.vertices, conn.num_vertices*3)
-#   println("vertices=$(vertices)")
-# end
 
 function _fill_data!(data,entry::Integer,k)
   data[k]=entry

@@ -21,6 +21,7 @@ module GridapP4est
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
+  export adapt
   export refine
   export coarsen
   export redistribute

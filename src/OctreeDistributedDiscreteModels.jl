@@ -478,7 +478,6 @@ function _compute_fine_to_coarse_model_glue(
       num_cells_coarse = num_cells(cmodel_local)
       reffe  = LagrangianRefFE(Float64,polytope,1)
       rrules = Fill(Gridap.Adaptivity.RefinementRule(reffe,2),num_cells_coarse)
-      println("fcell_to_child_id: ", fcell_to_child_id)
       AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
@@ -727,7 +726,6 @@ function _compute_fine_to_coarse_model_glue(
          end
       end    
     end
-    println("rrr: $(fgids_data)")
     fgids_snd     = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
     fgids_rcv     = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
     child_id_snd = PArrays.JaggedArray(child_ids_data,clids_snd.ptrs)
@@ -793,7 +791,6 @@ function _compute_fine_to_coarse_model_glue(
               snd_buffer_data[i]=1
             end    
           end
-          println("XXX: $(snd_buffer_data)")
           snd_buffer   = PArrays.JaggedArray(snd_buffer_data,clids_snd.ptrs)
           rcv_buffer   = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
           snd_buffer, rcv_buffer
@@ -812,7 +809,6 @@ function _compute_fine_to_coarse_model_glue(
           fine_to_coarse_faces_map[end].ptrs[fcell+1]=
               fine_to_coarse_faces_map[end].ptrs[fcell]+fine_to_coarse_faces_map[end].ptrs[fcell+1]
         end
-        println("PTRS2: $(fine_to_coarse_faces_map[end].ptrs)")
         resize!(fine_to_coarse_faces_map[end].data,fine_to_coarse_faces_map[end].ptrs[end]-1)
         resize!(fcell_to_child_id.data,fine_to_coarse_faces_map[end].ptrs[end]-1)
       end
@@ -877,7 +873,6 @@ function _compute_fine_to_coarse_model_glue(
                fcell_to_child_id.data[ptrs[lid]] = child_id_rcv.data[i]
             end
           end
-          print("lids_rcv: $(lids_rcv.data) ptrs: $(ptrs) data: $(data) fcell_to_child_id.data: $(fcell_to_child_id.data)"); print("\n")
         end
       end
   end
@@ -905,6 +900,9 @@ function _compute_fine_to_coarse_model_glue(
           lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(cgids)))
           glo_to_loc = global_to_local(fpartition)
           tmp_ptrs=Dict((i=>f2c_ptrs[i] for i=own_length(fpartition)+1:local_length(fpartition)))
+          @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] child_id_rcv.data=$(child_id_rcv.data)"
+          @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fgids_rcv_data=$(fgids_rcv.data)"
+          @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] tmp_ptrs=$(tmp_ptrs)"
           for i in 1:length(lids_rcv.data)
             gid_fine        = fgids_rcv.data[i]
             child_id_coarse = child_id_rcv.data[i]
@@ -916,15 +914,11 @@ function _compute_fine_to_coarse_model_glue(
               pos=tmp_ptrs[lid_fine]
               f2c_data[pos]=lid_coarse
               fchild_id_data[pos]=child_id_coarse
-              tmp_ptrs[pos]+=1
-              println("i: $(i) tmp_ptrs: $(tmp_ptrs)")
+              @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] f2c_data[$(pos)]=$(lid_coarse))"
+              @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fchild_id_data[$(pos)]=$(child_id_coarse))"
+              tmp_ptrs[lid_fine]+=1
             end
           end
-          print("jkl: $(lids_rcv.data) 
-                 opoppo $(fgids_rcv.data) 
-                 ptrs: $(f2c_ptrs) 
-                 data: $(f2c_data) 
-                 fchild_id_data: $(fchild_id_data)"); print("\n")
         end
       end
   end
@@ -963,27 +957,19 @@ function _compute_fine_to_coarse_model_glue(
                                                                     cmodel,
                                                                     f1,
                                                                     f3)
-  println("AAAA: $(typeof(fchild_id_rcv))")
-  println("BBBB: $(typeof(fchild_id_snd))")
 
   if coarsen 
     _update_fine_to_coarse_faces_map_ptrs_with_ghost_data!(f1,
                                                            f3,
                                                            cparts,
                                                            cmodel,
-                                                           fmodel)
-
-    println("AAAA: $(typeof(fchild_id_rcv))")
-    println("BBBB: $(typeof(fchild_id_snd))")                                                       
+                                                           fmodel)                                                     
 
     fgids_snd, fgids_rcv, cchild_id_snd, cchild_id_rcv = setup_communication_buffers_coarse_partition(cparts,
                                                                                                       cmodel,
                                                                                                       fmodel,
                                                                                                       f1,
-                                                                                                      f3)
-
-    println("AAAA: $(typeof(fchild_id_rcv))")
-    println("BBBB: $(typeof(fchild_id_snd))")                                                                                                     
+                                                                                                      f3)         
   end
 
   
@@ -1043,6 +1029,8 @@ function _compute_fine_to_coarse_model_glue(
       f(x)=x==nothing_flag ? 1 : 2
       coarse_cell_to_rrule=map(f,flags)
       rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
+      @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fine_to_coarse_faces_map[end]: $(fine_to_coarse_faces_map[end])"
+      @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id: $(fcell_to_child_id)"
       AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
@@ -1056,7 +1044,6 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
                                                         coarsen) where Dc
 
   function _setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
-    println("PPP: $(flags)")
     num_children = get_num_children(Val{Dc})
     fine_to_coarse_faces_map_ptrs = Vector{Int}(undef,num_f_cells+1)
     fine_to_coarse_faces_map_ptrs[1]=1
@@ -1094,7 +1081,6 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
     for j=c:num_f_cells
       fine_to_coarse_faces_map_ptrs[j+1]=fine_to_coarse_faces_map_ptrs[j]
     end
-    println("PTRS: $(fine_to_coarse_faces_map_ptrs)")
     fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     fcell_to_child_id_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     cell=1
@@ -1102,7 +1088,6 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
     while cell <= num_o_c_cells
       if (flags[cell]==refine_flag)
         for child = 1:num_children
-          print(fine_to_coarse_faces_map_ptrs[c]); print("  $(child) \n")
           fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
           fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = child
         end 
@@ -1133,7 +1118,6 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
         end
       end
     end
-    println("XXX: ", fine_to_coarse_faces_map_data)
     Gridap.Arrays.Table(fine_to_coarse_faces_map_data, fine_to_coarse_faces_map_ptrs),
              Gridap.Arrays.Table(fcell_to_child_id_data, fine_to_coarse_faces_map_ptrs)
   end
@@ -1291,7 +1275,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
    end
 end
 
-function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
                                   refinement_and_coarsening_flags::MPIArray{<:Vector};
                                   parts=nothing) where {Dc,Dp}
 
@@ -1316,16 +1300,12 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
         quadrant = quadrant_ptr[]
         q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
         @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
-        println("kjfksjfksf: 
-                $(unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer), current_quadrant_index_among_trees+1))")
         user_data = unsafe_wrap(Array, 
                                 Ptr{Cint}(forest.user_pointer), 
                                 current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-        println("user_data: $(user_data[])")
         unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
         current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
         current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-        println("current_quadrant_index_among_trees = ", current_quadrant_index_among_trees)
         return nothing
       end
       init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
@@ -1338,7 +1318,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                    quadrant_ptr::Ptr{Ptr{p4est_quadrant_t}})
 
         num_children=get_num_children(Val{2})
-        println("num_children=$(num_children)")
         quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
         coarsen=Cint(1)
         for quadrant_index=1:num_children
@@ -1349,9 +1328,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
           if (quadrant.p.user_data) == C_NULL
             return Cint(0)
           end
-          println("coarsen wrap: $(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])")
           is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
-          println("is_coarsen_flag=$(is_coarsen_flag)")
           if (!is_coarsen_flag) 
             return Cint(0)
           end
@@ -1374,15 +1351,9 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
         @assert num_incoming==num_children
         outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
         quadrant = outgoing[1][]
-        println("quadrant_index out : $(1) 
-                   quadrant_level out: $(quadrant.level) 
-                   ptr out: $(quadrant.p.user_data)")
         incoming=unsafe_wrap(Array, incoming_ptr, num_children)
         for quadrant_index=1:num_children
           quadrant = incoming[quadrant_index][]
-          println("quadrant_index: $(quadrant_index) 
-                   quadrant_level: $(quadrant.level) 
-                   ptr: $(quadrant.p.user_data)")
           if (quadrant.p.user_data) != C_NULL
              unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
           end
@@ -1428,7 +1399,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                    quadrant_ptr::Ptr{Ptr{p8est_quadrant_t}})
 
         num_children=get_num_children(Val{3})
-        println("num_children=$(num_children)")
         quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
         coarsen=Cint(1)
         for quadrant_index=1:num_children
@@ -1439,9 +1409,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
           if (quadrant.p.user_data) == C_NULL
             return Cint(0)
           end
-          println("coarsen wrap: $(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])")
           is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
-          println("is_coarsen_flag=$(is_coarsen_flag)")
           if (!is_coarsen_flag) 
             return Cint(0)
           end
@@ -1463,15 +1431,9 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
         @assert num_incoming==num_children
         outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
         quadrant = outgoing[1][]
-        println("quadrant_index out : $(1) 
-                   quadrant_level out: $(quadrant.level) 
-                   ptr out: $(quadrant.p.user_data)")
         incoming=unsafe_wrap(Array, incoming_ptr, num_children)
         for quadrant_index=1:num_children
           quadrant = incoming[quadrant_index][]
-          println("quadrant_index: $(quadrant_index) 
-                   quadrant_level: $(quadrant.level) 
-                   ptr: $(quadrant.p.user_data)")
           if (quadrant.p.user_data) != C_NULL
              unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
           end
@@ -1494,7 +1456,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       # cells in the model. This includes both owned and ghost cells. 
       # Only the flags for owned cells are actually taken into account. 
       @assert num_cells(lmodel)==length(flags)
-      println("flags: $(flags)")
       pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
     end
     
@@ -1502,7 +1463,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp},
       which_tree::p4est_topidx_t,
       quadrant_ptr::Ptr{p4est_quadrant_t})
       quadrant = quadrant_ptr[]
-      println("PPPP: $(Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]))")
       return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
     end
     refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
@@ -1770,7 +1730,6 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
     for iquad = 0:num_quads-1
       q = _pXest_quadrant_array_index(Val{Dc},tree.quadrants, iquad)
       new_rank = _pXest_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
-
       if (new_rank != my_rank)
         if (!(new_rank+1 in keys(ranks_count)))
           push!(lst_ranks,new_rank+1)
@@ -1933,7 +1892,6 @@ function _redistribute_parts_supset_parts_redistributed(
     Psub=num_parts(subset_comm)
     first_global_quadrant=Int64((Float64(N)*Float64(psub-1))/(Float64(Psub)))
     @assert first_global_quadrant>=0 && first_global_quadrant<N
-    # print("$(N) $(Psub) $(psub): $(first_global_quadrant)","\n")
   else
     first_global_quadrant=N
   end
@@ -2200,11 +2158,6 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
-  #println("### faces ###")
-  #println("num_regular_faces: $(PArrays.getany(num_regular_faces))")
-  #println("num_hanging_faces: $(PArrays.getany(num_hanging_faces))")
-  #println("gridap_cell_faces: $(PArrays.getany(gridap_cell_faces))")
-  #println(PArrays.getany(hanging_faces_glue))
 
   nlvertices = map(non_conforming_glue) do ncglue
     ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
@@ -2216,9 +2169,6 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
                                              ptr_pXest_connectivity,
                                              ptr_pXest,
                                              ptr_pXest_ghost)
-
-
-  # println("node_coordinates: $(PArrays.getany(node_coordinates))")
 
   grid,topology=generate_grid_and_topology(Val{Dc},
                                            gridap_cell_faces[1],
@@ -2314,20 +2264,18 @@ function _build_map_from_faces_to_cell_lface(vnodes, element_nodes, face_code)
   p4est_gface_to_gcell_p4est_lface
 end 
 
-function _build_map_from_faces_edges_to_cell_lface_ledge(lnodes)
+function _build_map_from_faces_edges_to_cell_lface_ledge(vnodes, element_nodes, face_code)
     n_cell_faces    = num_cell_faces(Val{3})
     n_cell_edges    = num_cell_edges(Val{3})
 
-    element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
-    face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
     hanging_face = Vector{Cint}(undef, n_cell_faces)
     hanging_edge = Vector{Cint}(undef, n_cell_edges)
 
     # Build a map from faces to (cell,lface)
     p4est_gface_to_gcell_p4est_lface = Dict{Int,Tuple{Int,Int}}()
     p4est_gedge_to_gcell_p4est_ledge = Dict{Int,Tuple{Int,Int}}()
-    for cell = 1:lnodes.num_local_elements
-      start = (cell - 1) * lnodes.vnodes + 1
+    for cell = 1:length(face_code)
+      start = (cell - 1) * vnodes + 1
       p4est_cell_faces = view(element_nodes, start:start+n_cell_faces-1)
       p4est_cell_edges = view(element_nodes, start+n_cell_faces:start+n_cell_faces+n_cell_edges-1)
 
@@ -2456,8 +2404,8 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   fetch_vector_ghost_values!(element_nodes_with_ghosts, cache_element_nodes_with_ghosts) |> wait
 
   map(element_nodes_with_ghosts,face_code_with_ghosts,partition(cell_prange)) do element_nodes_with_ghosts, face_code_with_ghosts, indices
-    print("ENDES[$(part_id(indices))]: $(element_nodes_with_ghosts.data)"); print("\n") 
-    print("FCODS[$(part_id(indices))]: $(face_code_with_ghosts)"); print("\n")
+    @debug "ENDES[$(part_id(indices))]: $(element_nodes_with_ghosts.data)"
+    @debug "FCODS[$(part_id(indices))]: $(face_code_with_ghosts)"
   end
 
   if (Dc==2)
@@ -2500,7 +2448,9 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     else 
       p4est_gface_to_gcell_p4est_lface, 
          p4est_gedge_to_gcell_p4est_ledge = 
-           _build_map_from_faces_edges_to_cell_lface_ledge(lnodes)
+           _build_map_from_faces_edges_to_cell_lface_ledge(lnodes.vnodes, 
+                                                            element_nodes_with_ghosts.data, 
+                                                            face_code_with_ghosts)
     end 
 
     PXEST_2_GRIDAP_VERTEX = pXest_2_gridap_vertex(Val{Dc})
@@ -2537,7 +2487,8 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       end
       gridap_cell_edges_data = Vector{Int}(undef, num_local_elements * n_cell_edges)
       gridap_cell_edges_data .= -1
-      hanging_edges_pairs_to_owner_face = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
+      hanging_edges_cell_ledge_to_owner_face_half = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
+      owner_edge_subedge_to_cell_ledge = Dict{Tuple{Int,Int},Tuple{Int,Int}}()
       hanging_vertices_pairs_to_owner_edge = Dict{Tuple{Int,Int},Int}()
       regular_edges_p4est_to_gridap = Dict{Int,Int}()
     end 
@@ -2685,10 +2636,11 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
             if (Dc==3)
               for (i,ledge_within_face) in enumerate(p8est_subface_to_hanging_edges_within_subface[half+1,:])
                 p4est_ledge=p8est_face_edges[p4est_lface,ledge_within_face+1]
+                gridap_ledge = PXEST_2_GRIDAP_EDGE[p4est_ledge+1]
                 # Identify the two edges which are hanging within the face
-                hanging_edges_pairs_to_owner_face[(cell, PXEST_2_GRIDAP_EDGE[p4est_ledge+1])] =
+                hanging_edges_cell_ledge_to_owner_face_half[(cell, gridap_ledge)] =
                     (owner_face,-p8est_subface_to_hanging_edges_within_face[half+1,i])
-                gridap_cell_edges[PXEST_2_GRIDAP_EDGE[p4est_ledge+1]] = hanging_edge_from_face_code
+                gridap_cell_edges[gridap_ledge] = hanging_edge_from_face_code
               end 
             end 
 
@@ -2750,48 +2702,38 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
                 
                 # Process hanging vertex
                 p4est_hanging_lvertex = p8est_edge_corners[p4est_ledge, hanging_vertex_lvertex_within_edge+1]
-                owner_edge = p4est_cell_edges[p4est_ledge]
+                p4est_owner_edge = p4est_cell_edges[p4est_ledge]
                 hanging_vertices_pairs_to_owner_edge[(cell, 
-                                                      PXEST_2_GRIDAP_VERTEX[p4est_hanging_lvertex+1])] = owner_edge
+                                                      PXEST_2_GRIDAP_VERTEX[p4est_hanging_lvertex+1])] = p4est_owner_edge
 
                 # Process hanging edge
-                hanging_edges_pairs_to_owner_face[(cell, PXEST_2_GRIDAP_EDGE[p4est_ledge])] = 
-                   (owner_edge,regular_vertex_lvertex_within_edge+1)
+                subedge = regular_vertex_lvertex_within_edge+1
+                owner_edge_subedge_pair=(p4est_owner_edge,subedge)
+                gridap_ledge=PXEST_2_GRIDAP_EDGE[p4est_ledge]
+                hanging_edges_cell_ledge_to_owner_face_half[(cell, gridap_ledge)] = owner_edge_subedge_pair
+                if (!haskey(owner_edge_subedge_to_cell_ledge,owner_edge_subedge_pair))
+                  owner_edge_subedge_to_cell_ledge[owner_edge_subedge_pair] = (cell,gridap_ledge)
+                end
               end 
             end 
         end
-
       end
     end
   end 
 
+    function is_ghost(cell)
+      cell>own_length(indices)
+    end
+
     # Go over all touched hanging faces and start 
     # assigning IDs from the last num_regular_faces ID
     # For each hanging face, keep track of (owner_cell,lface)
-    println("regular_faces_p4est_to_gridap [$(part_id(partition(cell_prange).item))]: $(regular_faces_p4est_to_gridap)")
-    println("hanging_faces_pairs_to_owner_face[$(part_id(partition(cell_prange).item))]: $(hanging_faces_pairs_to_owner_face)")
-
     # Go over all hanging faces 
     # Detect if the owner face is in a ghost cell. 
     # If not in a ghost cell or touched 
     # Else 
     #   The current face becomes a regular face 
     # end 
-    function is_ghost(cell)
-      cell>own_length(indices)
-    end
-    # for key in keys(hanging_faces_pairs_to_owner_face)
-    #   (cell, lface) = key
-    #   (owner_p4est_gface, half) = hanging_faces_pairs_to_owner_face[key]
-    #   if (is_ghost(cell) && !(haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
-    #      # Current face becomes a regular face (locally)
-    #      num_regular_faces[Dc]+=1
-    #      start_gridap_faces = (cell - 1) * n_cell_faces
-    #      gridap_cell_faces_data[start_gridap_faces+lface] = num_regular_faces[Dc]
-    #   end     
-    # end  
-
-
     hanging_faces_owner_cell_and_lface =
       Vector{Tuple{Int,Int,Int}}(undef, length(keys(hanging_faces_pairs_to_owner_face)))
     num_hanging_faces[Dc] = 0
@@ -2802,6 +2744,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       start_gridap_faces = (cell - 1) * n_cell_faces
       gridap_cell_faces_data[start_gridap_faces+lface] = num_regular_faces[Dc] + num_hanging_faces[Dc]
       if (!(is_ghost(cell)) || haskey(regular_faces_p4est_to_gridap,owner_p4est_gface))  
+        @assert haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)
         (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
         hanging_faces_owner_cell_and_lface[num_hanging_faces[Dc]] =
           (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface], half)
@@ -2811,22 +2754,7 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       end
     end
 
-    println("AAA: $(gridap_cell_faces_data)")
-
-    # owner_p4est_gface_to_regular_vertex = Dict{Int,Int}()
-    # for key in keys(hanging_vertices_pairs_to_owner_face)
-    #   (cell, lvertex) = key
-    #   owner_p4est_gface = hanging_vertices_pairs_to_owner_face[key]
-    #   if (is_ghost(cell) && !(haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
-    #     if !(haskey(owner_p4est_gface_to_regular_vertex, owner_p4est_gface))
-    #       num_regular_faces[1] += 1
-    #       owner_p4est_gface_to_regular_vertex[owner_p4est_gface] = num_regular_faces[1]
-    #     end 
-    #     start_gridap_vertices = (cell - 1) * n_cell_vertices
-    #     gridap_cell_vertices_data[start_gridap_vertices+lvertex] = 
-    #         owner_p4est_gface_to_regular_vertex[owner_p4est_gface]
-    #   end 
-    # end 
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]  gridap_cell_faces_data: $(gridap_cell_faces_data)"
 
 
     # Go over all touched hanging vertices and start 
@@ -2844,7 +2772,6 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
         owner_p4est_gface_to_hanging_vertex[owner_p4est_gface] = num_hanging_faces[1]
         if (!is_ghost(cell) || (haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
           (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
-          owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface]
           push!(hanging_vertices_owner_cell_and_lface,
             (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface],half))
         else
@@ -2856,67 +2783,132 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
                                                           owner_p4est_gface_to_hanging_vertex[owner_p4est_gface] 
     end
 
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]  gridap_cell_vertices_data: $(gridap_cell_vertices_data)"
+      
     if (Dc==3)
+      half=1
+      owner_p4est_gedge_to_hanging_vertex = Dict{Int,Int}()
+      for key in keys(hanging_vertices_pairs_to_owner_edge)
+        (cell, lvertex) = key
+        owner_p4est_gedge = hanging_vertices_pairs_to_owner_edge[key]
+        if !(haskey(owner_p4est_gedge_to_hanging_vertex, owner_p4est_gedge))
+          num_hanging_faces[1] += 1
+          owner_p4est_gedge_to_hanging_vertex[owner_p4est_gedge] = num_hanging_faces[1]
+          if (!is_ghost(cell) || (haskey(regular_edges_p4est_to_gridap,owner_p4est_gedge)))
+              (owner_cell, p4est_ledge) = p4est_gedge_to_gcell_p4est_ledge[owner_p4est_gedge]
+              push!(hanging_vertices_owner_cell_and_lface,
+                      (owner_cell, n_cell_vertices+PXEST_2_GRIDAP_EDGE[p4est_ledge],half))
+          else 
+            push!(hanging_vertices_owner_cell_and_lface,(-1, -1,-1))
+          end
+        end
+        start_gridap_vertices = (cell - 1) * n_cell_vertices
+        gridap_cell_vertices_data[start_gridap_vertices+lvertex] = num_regular_faces[1] +
+                                                owner_p4est_gedge_to_hanging_vertex[owner_p4est_gedge]
+      end 
+
+
       # Go over all touched hanging edges and start 
       # assigning IDs from the last num_regular_edge ID
       # For each hanging edge, keep track of (owner_cell,lface/ledge)
       hanging_edges_owner_cell_and_lface = Tuple{Int,Int,Int}[]
-
-      owner_gridap_gface_half_to_hanging_edge = Dict{Tuple{Int,Int},Int}()
-      owner_gridap_gedge_half_to_hanging_edge = Dict{Tuple{Int,Int},Int}()
+      owner_p4est_gface_half_to_hanging_edge = Dict{Tuple{Int,Int},Int}()
+      owner_p4est_gedge_subedge_to_hanging_edge = Dict{Tuple{Int,Int},Int}()
       num_hanging_faces[2] = 0
-      for key in keys(hanging_edges_pairs_to_owner_face)
+      ledge_to_cvertices = Gridap.ReferenceFEs.get_faces(HEX, 1, 0)
+      # The following loop needs (1) the pairs to be traversed in increased order by cell ID;
+      # (2) gridap cell vertices to be already completed
+      for key in sort(collect(keys(hanging_edges_cell_ledge_to_owner_face_half)))
         (cell, ledge) = key
-        (owner_p4est_gface_or_gedge, half) = hanging_edges_pairs_to_owner_face[key]
+        (owner_p4est_gface_or_gedge, half) = hanging_edges_cell_ledge_to_owner_face_half[key]
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] own_length=$(own_length(indices)) cell=$(cell) ledge=$(ledge) owner_p4est_gface_or_gedge=$(owner_p4est_gface_or_gedge) half=$(half)"
         if (half<0) # hanging edge is within a coarser face 
-          owner_gridap_gface = regular_faces_p4est_to_gridap[owner_p4est_gface_or_gedge]
-          if !(haskey(owner_gridap_gface_half_to_hanging_edge, (owner_gridap_gface,half)))
+          owner_p4est_gface = owner_p4est_gface_or_gedge
+          if !(haskey(owner_p4est_gface_half_to_hanging_edge, (owner_p4est_gface,half)))
             num_hanging_faces[2] += 1
-            owner_gridap_gface_half_to_hanging_edge[(owner_gridap_gface,half)] = num_hanging_faces[2]
-            (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface_or_gedge]
-            push!(hanging_edges_owner_cell_and_lface,
-              (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface],half))
+            owner_p4est_gface_half_to_hanging_edge[(owner_p4est_gface,half)] = num_hanging_faces[2]
+            if (!is_ghost(cell) || (haskey(regular_faces_p4est_to_gridap,owner_p4est_gface)))
+              (owner_cell, p4est_lface) = p4est_gface_to_gcell_p4est_lface[owner_p4est_gface]
+              push!(hanging_edges_owner_cell_and_lface,
+                    (owner_cell, n_cell_vertices+n_cell_edges+PXEST_2_GRIDAP_FACE[p4est_lface],half))
+            else
+              push!(hanging_edges_owner_cell_and_lface,(-1, -1, -1))
+            end 
           end
           start_gridap_edges = (cell - 1) * n_cell_edges
           gridap_cell_edges_data[start_gridap_edges+ledge] = num_regular_faces[2] + 
-                        owner_gridap_gface_half_to_hanging_edge[(owner_gridap_gface,half)]
+                        owner_p4est_gface_half_to_hanging_edge[(owner_p4est_gface,half)]
 
-        else          # hanging edge is within a coarser edge
+        else # hanging edge is within a coarser edge
           @assert half==1 || half==2
-          owner_gridap_gedge = regular_edges_p4est_to_gridap[owner_p4est_gface_or_gedge]
-          if !(haskey(owner_gridap_gedge_half_to_hanging_edge, (owner_gridap_gedge,half)))
-            num_hanging_faces[2] += 1
-            owner_gridap_gedge_half_to_hanging_edge[(owner_gridap_gedge,half)] = num_hanging_faces[2]
-            (owner_cell, p4est_ledge) = p4est_gedge_to_gcell_p4est_ledge[owner_p4est_gface_or_gedge]
-            push!(hanging_edges_owner_cell_and_lface,
-              (owner_cell, n_cell_vertices+PXEST_2_GRIDAP_EDGE[p4est_ledge],half))
+          owner_p4est_gedge = owner_p4est_gface_or_gedge
+          owner_gedge_pair = (owner_p4est_gedge,half)
+          if (haskey(owner_edge_subedge_to_cell_ledge,owner_gedge_pair))
+            (owner_cell, owner_cell_ledge) = owner_edge_subedge_to_cell_ledge[owner_gedge_pair]
+            if (owner_cell==cell)
+              @assert owner_cell_ledge == ledge
+              num_hanging_faces[2] += 1
+              owner_p4est_gedge_subedge_to_hanging_edge[(owner_p4est_gedge,half)] = num_hanging_faces[2]
+              if (!is_ghost(cell) || (haskey(regular_edges_p4est_to_gridap,owner_p4est_gedge)))
+                (owner_cell, p4est_ledge) = p4est_gedge_to_gcell_p4est_ledge[owner_p4est_gedge]
+                push!(hanging_edges_owner_cell_and_lface,
+                     (owner_cell, n_cell_vertices+PXEST_2_GRIDAP_EDGE[p4est_ledge],half))
+              else
+                push!(hanging_edges_owner_cell_and_lface,(-1, -1, -1))
+              end
+              start_gridap_edges = (cell - 1) * n_cell_edges
+              gridap_cell_edges_data[start_gridap_edges+ledge] = num_regular_faces[2] + num_hanging_faces[2] 
+            else
+              haskey_first_subedge  = haskey(owner_p4est_gedge_subedge_to_hanging_edge,(owner_p4est_gedge,1))
+              haskey_second_subedge = haskey(owner_p4est_gedge_subedge_to_hanging_edge,(owner_p4est_gedge,2))
+              if (!(is_ghost(cell)))
+                @assert haskey_first_subedge && haskey_second_subedge
+              else
+                @assert haskey_first_subedge || haskey_second_subedge
+              end 
+              if (haskey_first_subedge && haskey_second_subedge)
+                # The following code is required as we may have edges 
+                # with different orientations at the inter-octree boundaries
+                match=true
+                start_gridap_vertices_cell = (cell - 1) * n_cell_vertices
+                start_gridap_vertices_cell_owner = (owner_cell - 1) * n_cell_vertices
+                for lvertex_cell in ledge_to_cvertices[ledge]
+                  vertex_cell=gridap_cell_vertices_data[start_gridap_vertices_cell+lvertex_cell]
+                  found=false
+                  # Go over vertices of owner_cell_ledge in owner_cell 
+                  for lvertex_owner_cell in ledge_to_cvertices[owner_cell_ledge]
+                    vertex_owner_cell=gridap_cell_vertices_data[start_gridap_vertices_cell_owner+lvertex_owner_cell]
+                    if (vertex_owner_cell==vertex_cell)
+                      found=true
+                      break
+                    end
+                  end
+                  if (!found)
+                    match=false
+                    break
+                  end
+                end
+                if (match)
+                  owner_half=half
+                else 
+                  owner_half=half==1 ? 2 : 1
+                end 
+              elseif (haskey_first_subedge)
+                owner_half=1
+              elseif (haskey_second_subedge)
+                owner_half=2
+              end 
+              @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] cell=$(cell) ledge=$(ledge) owner_p4est_gface_or_gedge=$(owner_p4est_gface_or_gedge) half=$(half) owner_half=$(owner_half)"
+              start_gridap_edges = (cell - 1) * n_cell_edges
+              gridap_cell_edges_data[start_gridap_edges+ledge] = 
+                 num_regular_faces[2] + owner_p4est_gedge_subedge_to_hanging_edge[(owner_p4est_gedge,owner_half)] 
+            end
           end
-          start_gridap_edges = (cell - 1) * n_cell_edges
-          gridap_cell_edges_data[start_gridap_edges+ledge] = num_regular_faces[2] + 
-               owner_gridap_gedge_half_to_hanging_edge[(owner_gridap_gedge,half)]
         end
-      end 
-      
-      half=1
-      owner_gridap_gedge_to_hanging_vertex = Dict{Int,Int}()
-      for key in keys(hanging_vertices_pairs_to_owner_edge)
-        (cell, lvertex) = key
-        owner_p4est_gedge = hanging_vertices_pairs_to_owner_edge[key]
-        owner_gridap_gedge = regular_edges_p4est_to_gridap[owner_p4est_gedge]
-        if !(haskey(owner_gridap_gedge_to_hanging_vertex, owner_gridap_gedge))
-          num_hanging_faces[1] += 1
-          owner_gridap_gedge_to_hanging_vertex[owner_gridap_gedge] = num_hanging_faces[1]
-          (owner_cell, p4est_ledge) = p4est_gedge_to_gcell_p4est_ledge[owner_p4est_gedge]
-          push!(hanging_vertices_owner_cell_and_lface,
-            (owner_cell, n_cell_vertices+PXEST_2_GRIDAP_EDGE[p4est_ledge],half))
-        end
-        start_gridap_vertices = (cell - 1) * n_cell_vertices
-        gridap_cell_vertices_data[start_gridap_vertices+lvertex] = num_regular_faces[1] +
-                                                       owner_gridap_gedge_to_hanging_vertex[owner_gridap_gedge]
       end
+      @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] gridap_cell_edges_data: $(gridap_cell_edges_data)"
     end
 
-    println("XXX: $(gridap_cell_vertices_data)")
 
     gridap_cell_faces = Vector{JaggedArray}(undef,Dc)
     gridap_cell_faces[1] = JaggedArray(gridap_cell_vertices_data,gridap_cell_vertices_ptrs)

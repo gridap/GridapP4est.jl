@@ -3,6 +3,11 @@ using Gridap
 using GridapP4est 
 using GridapDistributed
 using MPI
+using Logging
+
+
+debug_logger = ConsoleLogger(stderr, Logging.Debug)
+global_logger(debug_logger); # Enable the debug logger globally
 
 
 # Define integration mesh and quadrature
@@ -31,7 +36,7 @@ function test_3d(order)
     test_refine_and_coarsen_at_once(ranks,dmodel,order)
     rdmodel=dmodel
     for i=1:5
-     rdmodel=test(ranks,rdmodel,order)
+      rdmodel=test(ranks,rdmodel,order)
     end
 end 
 
@@ -40,10 +45,6 @@ function test(ranks,dmodel,order)
     u(x) = x[1]+x[2]^order
     f(x) = -Δ(u)(x)
     degree = 2*order+1
-
-    map(ranks,partition(dmodel.dmodel.face_gids[end])) do rank, indices
-        print("$(rank): $(local_to_owner(indices))"); print("\n") 
-    end 
     reffe=ReferenceFE(lagrangian,Float64,order)
     VH=FESpace(dmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
     UH=TrialFESpace(VH,u)
@@ -57,24 +58,16 @@ function test(ranks,dmodel,order)
         # To create some unbalance
         if (rank%2==0 && own_length(indices)>1)
             flags[div(own_length(indices),2)]=refine_flag
-        end     
-
-        print("rank: $(rank) flags: $(flags)"); print("\n")
+        end
         flags
     end 
-    fmodel,glue=refine(dmodel,ref_coarse_flags);
-    map(ranks,glue) do rank, glue 
-        if rank==2
-        print(glue.n2o_faces_map[end]); print("\n")
-        print(glue.refinement_rules); print("\n")
-        end  
-    end
-
+    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    # map(ranks,glue) do rank, glue 
+    #   if rank==2
+    #     print(glue.n2o_faces_map[end]); print("\n")
+    #   end  
+    # end
     Vh=FESpace(fmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
-    map(ranks,partition(Vh.gids)) do rank, indices 
-        print("$(rank): $(local_to_owner(indices))"); print("\n")
-        print("$(rank): $(local_to_global(indices))"); print("\n")
-    end 
     Uh=TrialFESpace(Vh,u)
 
     ΩH  = Triangulation(dmodel)
@@ -165,17 +158,10 @@ function test(ranks,dmodel,order)
     @assert el2 < tol
 
 
-    map(Vhred.spaces) do space
-        if (MPI.Comm_rank(MPI.COMM_WORLD)==1)
-           println("XXXX: $(get_cell_dof_ids(space.space))")
-        end  
-    end 
-
     uhred2 = GridapP4est.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
     e = u - uhred2
     el2 = sqrt(sum( ∫( e*e )*dΩhred ))
     tol=1e-8
-    println(el2)
     @assert el2 < tol
 
     fmodel_red
@@ -194,7 +180,7 @@ function test_refine_and_coarsen_at_once(ranks,
         end 
         flags
     end
-    fmodel,glue=refine(dmodel,ref_coarse_flags);
+    fmodel,glue=adapt(dmodel,ref_coarse_flags);
 
     reffe=ReferenceFE(lagrangian,Float64,order)
     VH=FESpace(dmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
@@ -247,8 +233,7 @@ function test_refine_and_coarsen_at_once(ranks,
     @assert el2 < tol
 end
 
-
 test_2d(1)
-#test_3d(1)
+test_3d(1)
 
 
