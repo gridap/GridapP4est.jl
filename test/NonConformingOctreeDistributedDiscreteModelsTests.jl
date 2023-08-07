@@ -137,10 +137,8 @@ module NonConformingOctreeDistributedDiscreteModelsTests
         m
   end
 
-  MPI.Init()
-  ranks = distribute_with_mpi(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
 
-  function test(TVDc::Type{Val{Dc}}, perm, order) where Dc
+  function test(ranks,TVDc::Type{Val{Dc}}, perm, order) where Dc
 
     function test_solve(dmodel,order)
       # Define manufactured functions
@@ -217,8 +215,11 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     end
   end
 
-  for Dc=2:3, perm=1:4, order=1:4
-    test(Val{Dc},perm,order)
+  function run(distribute)
+    ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
+    for Dc=2:3, perm=1:4, order=1:4
+       test(ranks,Val{Dc},perm,order)
+    end
   end
 
 end
