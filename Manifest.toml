@@ -269,7 +269,7 @@ uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 deps = ["AbstractTrees", "BSON", "BlockArrays", "Combinatorics", "DataStructures", "DocStringExtensions", "FastGaussQuadrature", "FileIO", "FillArrays", "ForwardDiff", "JLD2", "JSON", "LineSearches", "LinearAlgebra", "NLsolve", "NearestNeighbors", "PolynomialBases", "QuadGK", "Random", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "Test", "WriteVTK"]
 git-tree-sha1 = "4765f40f182559866cad17a61aef41c9bb437c21"
 repo-rev = "relaxing_adaptivity_glue_invariants_for_distributed_case"
-repo-url = "../Gridap.jl"
+repo-url = "https://github.com/gridap/Gridap.jl"
 uuid = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
 version = "0.17.17"
 
