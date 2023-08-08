@@ -267,7 +267,7 @@ uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 
 [[deps.Gridap]]
 deps = ["AbstractTrees", "BSON", "BlockArrays", "Combinatorics", "DataStructures", "DocStringExtensions", "FastGaussQuadrature", "FileIO", "FillArrays", "ForwardDiff", "JLD2", "JSON", "LineSearches", "LinearAlgebra", "NLsolve", "NearestNeighbors", "PolynomialBases", "QuadGK", "Random", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "Test", "WriteVTK"]
-git-tree-sha1 = "bb75d025b4637211eab8da9882b7556880ee2f1f"
+git-tree-sha1 = "4765f40f182559866cad17a61aef41c9bb437c21"
 repo-rev = "relaxing_adaptivity_glue_invariants_for_distributed_case"
 repo-url = "../Gridap.jl"
 uuid = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
@@ -540,7 +540,7 @@ version = "2.7.2"
 
 [[deps.PartitionedArrays]]
 deps = ["CircularArrays", "Distances", "FillArrays", "IterativeSolvers", "LinearAlgebra", "MPI", "Printf", "Random", "SparseArrays", "SparseMatricesCSR"]
-git-tree-sha1 = "f10702da1fda04d93e8e9918afa9d6173b9777eb"
+git-tree-sha1 = "e04ce6095650ed6ced618f77158b2f90121d0496"
 repo-rev = "master"
 repo-url = "https://github.com/fverdugo/PartitionedArrays.jl"
 uuid = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
