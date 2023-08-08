@@ -658,28 +658,6 @@ function _compute_fine_to_coarse_model_glue(
     end |> tuple_of_arrays
   end 
 
-  function _setup_clid_to_pos_and_ptrs_clids_touched(clids_snd)
-    # Determine distintic cells there are in clids_snd
-    # and associate them a unique identifier
-    clid_to_pos = Dict{Int,Int}()
-    current_pos = 1 
-    for clid in clids_snd.data
-      if (!haskey(clid_to_pos,clid))
-        clid_to_pos[clid] = current_pos
-        current_pos += 1
-      end
-    end 
-
-    n_clid_touched = length(keys(clid_to_pos))
-    ptrs_clid_touched  = Vector{Int}(undef,n_clid_touched+1)
-    ptrs_clid_touched .= 0
-    for i in 1:length(clids_snd.data)
-      ptrs_clid_touched[clid_to_pos[clids_snd.data[i]]+1] += 1
-    end
-    PArrays.length_to_ptrs!(ptrs_clid_touched)
-    clid_to_pos,ptrs_clid_touched
-  end
-
   function _setup_communication_buffers_coarse_partition(
     fine_to_coarse_faces_map::AbstractVector{<:Gridap.Arrays.Table},
     fcell_to_child_id::Gridap.Arrays.Table,
@@ -690,41 +668,35 @@ function _compute_fine_to_coarse_model_glue(
     flids_rcv,flids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
     clids_rcv,clids_snd = map(PArrays.getany,assembly_local_indices(cpartition))
 
-    clid_to_pos,ptrs_clid_touched=_setup_clid_to_pos_and_ptrs_clids_touched(clids_snd)
-
     fgids_data   = Vector{Int}(undef,length(clids_snd.data))
     fgids_data  .= -1
     
     child_ids_data = Vector{Int}(undef,length(clids_snd.data))
     child_ids_data .= -1
 
-    data_clid_touched = Vector{Int}(undef,ptrs_clid_touched[end]-1)
-    for i in 1:length(clids_snd.data)
-      data_clid_touched[ptrs_clid_touched[clid_to_pos[clids_snd.data[i]]]] = i
-      ptrs_clid_touched[clid_to_pos[clids_snd.data[i]]] += 1
-    end
-    PArrays.rewind_ptrs!(ptrs_clid_touched)
-
     f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
     f2c_map_data = fine_to_coarse_faces_map[end].data
     fchild_id_data = fcell_to_child_id.data
     fl2g         = local_to_global(PArrays.getany(fpartition))
-    for (i,fcell) in enumerate(flids_snd.data)
-      # fcell coarsened ...
-      if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
-         for j=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
-            ccell = f2c_map_data[j]
-            child_id = fchild_id_data[j]
-            if (haskey(clid_to_pos,ccell))
-              pos = clid_to_pos[ccell]
-              for k=ptrs_clid_touched[pos]:ptrs_clid_touched[pos+1]-1
-                l=data_clid_touched[k]
-                fgids_data[l]  = fl2g[fcell]
-                child_ids_data[l] = child_id 
-              end 
-            end 
-         end
-      end    
+
+    for i=1:length(flids_snd.ptrs)-1
+      for j=flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
+        fcell = flids_snd.data[i]
+        # fcell coarsened ...
+        if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
+          for k=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
+              ccell = f2c_map_data[k]
+              child_id = fchild_id_data[k]
+              # find ccell in clids_snd[i]:clids_snd[i+1]-1
+              for l=clids_snd.ptrs[i]:clids_snd.ptrs[i+1]-1
+                if (clids_snd.data[l]==ccell)
+                  fgids_data[l]  = fl2g[fcell]
+                  child_ids_data[l] = child_id 
+                end
+              end
+          end
+        end   
+      end 
     end
     fgids_snd     = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
     fgids_rcv     = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
@@ -773,26 +745,33 @@ function _compute_fine_to_coarse_model_glue(
           @assert fine_to_coarse_faces_map[end].ptrs === fcell_to_child_id.ptrs
           cpartition = get_cell_gids(cmodel)
           clids_rcv,clids_snd = map(PArrays.getany,assembly_local_indices(partition(cpartition)))
-          clid_to_pos,ptrs_clid_touched=_setup_clid_to_pos_and_ptrs_clids_touched(clids_snd)
           f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs
           f2c_map_data = fine_to_coarse_faces_map[end].data
-          snd_buffer_data = Vector{Int}(undef,length(clids_snd.data))
+          snd_buffer_data = Vector{Int}(undef,length(flids_snd.data))
           snd_buffer_data .= 0 
-          for (i,fcell) in enumerate(flids_snd.data)
-            # fcell coarsened ...
-            if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
-               for j=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
-                  ccell = f2c_map_data[j]
-                  if (haskey(clid_to_pos,ccell))
-                    snd_buffer_data[i]+=1 
-                  end
-               end
-            else 
-              snd_buffer_data[i]=1
-            end    
+
+          for i=1:length(flids_snd.ptrs)-1
+            for j=flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
+              fcell = flids_snd.data[j]
+              # fcell coarsened ...
+              if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
+                for k=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
+                   ccell = f2c_map_data[k]
+                   # find ccell in clids_snd[i]:clids_snd[i+1]-1
+                   for l=clids_snd.ptrs[i]:clids_snd.ptrs[i+1]-1
+                      if (clids_snd.data[l]==ccell)
+                        snd_buffer_data[j]+=1 
+                        break
+                      end
+                   end
+                end  
+              else 
+                snd_buffer_data[j]=1
+              end  
+            end 
           end
-          snd_buffer   = PArrays.JaggedArray(snd_buffer_data,clids_snd.ptrs)
-          rcv_buffer   = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
+          snd_buffer   = PArrays.JaggedArray(snd_buffer_data,flids_snd.ptrs)
+          rcv_buffer   = PArrays.JaggedArray(Vector{Int}(undef,length(flids_rcv.data)),flids_rcv.ptrs)
           snd_buffer, rcv_buffer
         else 
           Gridap.Helpers.@notimplemented  
@@ -868,6 +847,7 @@ function _compute_fine_to_coarse_model_glue(
             lid = lids_rcv.data[i]
             gid = cgids_rcv.data[i]
             if gid!=-1
+               @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] gid=$(gid) $(ptrs[lid+1]-ptrs[lid])"
                @assert (ptrs[lid+1]-ptrs[lid])==1
                data[ptrs[lid]] = glo_to_loc[gid]
                fcell_to_child_id.data[ptrs[lid]] = child_id_rcv.data[i]
@@ -903,6 +883,7 @@ function _compute_fine_to_coarse_model_glue(
           @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] child_id_rcv.data=$(child_id_rcv.data)"
           @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fgids_rcv_data=$(fgids_rcv.data)"
           @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] tmp_ptrs=$(tmp_ptrs)"
+          @assert length(lids_rcv.data)==length(fgids_rcv.data)
           for i in 1:length(lids_rcv.data)
             gid_fine        = fgids_rcv.data[i]
             child_id_coarse = child_id_rcv.data[i]
@@ -1031,7 +1012,8 @@ function _compute_fine_to_coarse_model_glue(
       rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fine_to_coarse_faces_map[end]: $(fine_to_coarse_faces_map[end])"
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id: $(fcell_to_child_id)"
-      AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
+      GT=isa(fine_to_coarse_faces_map[end],Vector{<:AbstractVector{<:Integer}}) ? Gridap.Adaptivity.RefinementGlue() : Gridap.Adaptivity.MixedGlue()
+      AdaptivityGlue(GT,fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
 end
