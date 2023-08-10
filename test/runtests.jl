@@ -50,19 +50,19 @@ function run_tests(testdir)
         for ip in np
           if MPI.MPI_LIBRARY == "OpenMPI" || (isdefined(MPI, :OpenMPI) && MPI.MPI_LIBRARY == MPI.OpenMPI)
             if ! image_file_exists
-              cmd = `$cmd -n $(ip) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+              cmd2 = `$cmd -n $(ip) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
             else
-              cmd = `$cmd -n $(ip) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) -J$(image_file_path) --project=. $(joinpath(testdir, f)) $(split(extra_args))`
+              cmd2 = `$cmd -n $(ip) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) -J$(image_file_path) --project=. $(joinpath(testdir, f)) $(split(extra_args))`
             end
           else
             if ! image_file_exists
-              cmd = `$cmd -n $(ip) $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+              cmd2 = `$cmd -n $(ip) $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
             else
-              cmd = `$cmd -n $(ip) $(Base.julia_cmd()) -J$(image_file_path) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+              cmd2 = `$cmd -n $(ip) $(Base.julia_cmd()) -J$(image_file_path) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
             end
           end 
-          @show cmd
-          run(cmd)
+          @show cmd2
+          run(cmd2)
         end 
      end 
       @test true
