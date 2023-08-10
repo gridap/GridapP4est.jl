@@ -1829,7 +1829,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old =
        _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
 
-  glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
+  glue = GridapDistributed.RedistributeGlue(parts,model.parts,parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
 
   # Extract ghost and lnodes
   ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest_new)
@@ -1912,7 +1912,9 @@ function _redistribute_parts_supset_parts_redistributed(
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old =
        _to_pdata(model.parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
 
-  glue = GridapDistributed.RedistributeGlue(parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
+  glue = GridapDistributed.RedistributeGlue(parts_redistributed_model,model.parts,
+                                            parts_rcv,parts_snd,lids_rcv,lids_snd,
+                                            old2new,new2old)
 
   if (i_am_in(subset_comm))
     # p4est_vtk_write_file(ptr_pXest_new, C_NULL, "ptr_pXest_new")
