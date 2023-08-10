@@ -34,39 +34,40 @@ function run_tests(testdir)
     @time @testset "$f" for f in testfiles
       MPI.mpiexec() do cmd
         if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl"]
-          np = 4
+          np = [4]
           extra_args = "-s 2 2 -r 2"
         elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl"]
-          np = 4
+          np = [4]
           extra_args = ""
         elseif f in ["NonConformingOctreeDistributedDiscreteModelsTests.jl"]
-          np = 1
+          np = [1,2,4]
           extra_args = ""
         else
-          np = nprocs
+          np = [nprocs]
           extra_args = ""
         end
-        if MPI.MPI_LIBRARY == "OpenMPI" || (isdefined(MPI, :OpenMPI) && MPI.MPI_LIBRARY == MPI.OpenMPI)
-          if ! image_file_exists
-            cmd = `$cmd -n $(np) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+        for ip in np
+          if MPI.MPI_LIBRARY == "OpenMPI" || (isdefined(MPI, :OpenMPI) && MPI.MPI_LIBRARY == MPI.OpenMPI)
+            if ! image_file_exists
+              cmd = `$cmd -n $(ip) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+            else
+              cmd = `$cmd -n $(ip) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) -J$(image_file_path) --project=. $(joinpath(testdir, f)) $(split(extra_args))`
+            end
           else
-            cmd = `$cmd -n $(np) --allow-run-as-root --oversubscribe $(Base.julia_cmd()) --project=$(repodir) -J$(image_file_path) --project=. $(joinpath(testdir, f)) $(split(extra_args))`
-          end
-        else
-          if ! image_file_exists
-            cmd = `$cmd -n $(np) $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
-          else
-            cmd = `$cmd -n $(np) $(Base.julia_cmd()) -J$(image_file_path) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
-          end
-
+            if ! image_file_exists
+              cmd = `$cmd -n $(ip) $(Base.julia_cmd()) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+            else
+              cmd = `$cmd -n $(ip) $(Base.julia_cmd()) -J$(image_file_path) --project=$(repodir) $(joinpath(testdir, f)) $(split(extra_args))`
+            end
+          end 
+          @show cmd
+          run(cmd)
         end 
-        @show cmd
-        run(cmd)
-        @test true
+     end 
+      @test true
       end
-    end
-end
+    end  
 
 run_tests(joinpath(@__DIR__,"mpi"))
 

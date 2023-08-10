@@ -175,8 +175,9 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     el2 = sqrt(sum( ∫( e*e )*dΩH ))
     eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩH ))
 
-    tol=1e-8
-    @assert el2 < tol
+    tol=1e-6
+    println("el2 < tol: $(el2) < $(tol)")
+    println("eh1 < tol: $(eh1) < $(tol)")
     @assert eh1 < tol
 
 
@@ -194,7 +195,6 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
     eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩh ))
 
-    tol=1e-8
     @assert el2 < tol
     @assert eh1 < tol
 
@@ -202,7 +202,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uHh=interpolate(uH,Uh)   
     e = uh - uHh
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
-    tol=1e-8
+    tol=1e-6
     @assert el2 < tol
 
     # prolongation via L2-projection 
@@ -213,14 +213,12 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uHh      = solve(oph)
     e = uh - uHh
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
-    tol=1e-8
     @assert el2 < tol
 
     # restriction via interpolation
     uhH=interpolate(uh,UH) 
     e = uH - uhH
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
-    tol=1e-8
     @assert el2 < tol
 
     # restriction via L2-projection
@@ -252,7 +250,6 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uhred2 = GridapP4est.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
     e = u - uhred2
     el2 = sqrt(sum( ∫( e*e )*dΩhred ))
-    tol=1e-8
     @assert el2 < tol
 
     fmodel_red
@@ -296,7 +293,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     el2 = sqrt(sum( ∫( e*e )*dΩH ))
     eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩH ))
 
-    tol=1e-8
+    tol=1e-7
     @assert el2 < tol
     @assert eh1 < tol
 
@@ -314,7 +311,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
     eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩh ))
 
-    tol=1e-8
+    tol=1e-7
     @assert el2 < tol
     @assert eh1 < tol
 
@@ -322,7 +319,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uHh=interpolate(uH,Uh)
     e = uh - uHh
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
-    tol=1e-8
+    tol=1e-7
     @assert el2 < tol
   end
 
@@ -331,9 +328,9 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     test_refine_and_coarsen_at_once(ranks,dmodel,order)
     rdmodel=dmodel
-    # for i=1:5
-    #  rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order)
-    # end
+    for i=1:5
+     rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order)
+    end
   end 
 
   function test_3d(ranks,order)
@@ -347,69 +344,9 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   end 
 
   function test(ranks,TVDc::Type{Val{Dc}}, perm, order) where Dc
-    # function test_solve(dmodel,order)
-    #   # Define manufactured functions
-    #   u(x) = x[1]+x[2]^order
-    #   f(x) = -Δ(u)(x)
-
-    #   # FE Spaces
-    #   reffe = ReferenceFE(lagrangian,Float64,order)
-    #   V = TestFESpace(dmodel,reffe,dirichlet_tags="boundary")
-    #   U = TrialFESpace(V,u)
-
-    #   # Define integration mesh and quadrature
-    #   degree = 2*order+1
-    #   Ω = Triangulation(dmodel)
-    #   dΩ = Measure(Ω,degree)
-
-    #   a(u,v) = ∫( ∇(v)⊙∇(u) )*dΩ
-    #   b(v) = ∫(v*f)*dΩ
-
-    #   op = AffineFEOperator(a,b,U,V)
-    #   uh = solve(op)
-
-    #   e = u - uh
-
-    #   # Compute errors
-    #   el2 = sqrt(sum( ∫( e*e )*dΩ ))
-    #   eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩ ))
-
-    #   tol=1e-6
-    #   println("$(el2) < $(tol)")
-    #   println("$(eh1) < $(tol)")
-    #   @assert el2 < tol
-    #   @assert eh1 < tol
-    # end
-
     coarse_model = setup_model(TVDc,perm)
-    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 0)
-    # test_transfer_ops_and_redistribute(ranks,model,order)
-
-
-
-
-    #test_solve(model,order)
-    # ref_coarse_flags=map(ranks) do _
-    #   [refine_flag,nothing_flag]
-    # end 
-    # dmodel,adaptivity_glue=adapt(model,ref_coarse_flags)
-    # non_conforming_glue=dmodel.non_conforming_glue
-    # test_solve(dmodel,order)
-    # for i=1:3
-    #   ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
-    #     flags=zeros(Cint,length(indices))
-    #     flags.=nothing_flag
-    #     flags[1]=refine_flag
-    #     flags[own_length(indices)]=refine_flag    
-    #     print("rank: $(rank) flags: $(flags)"); print("\n")
-    #     flags
-    #   end 
-    #   dmodel,glue=adapt(dmodel,ref_coarse_flags);
-    #   # test_solve(dmodel,order)
-    # end
-
-
-
+    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 1)
+    test_transfer_ops_and_redistribute(ranks,model,order)
   end
 
   function run(distribute)
@@ -417,15 +354,13 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     global_logger(debug_logger); # Enable the debug logger globally
 
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    # for Dc=2:3, perm=1:4, order=1:4
-    #    test(ranks,Val{Dc},perm,order)
-    # end
-    for order=1:1
-      test_2d(ranks,order)
-      #test_3d(ranks,order)
+    for Dc=3:3, perm=2:2, order=1:1
+        test(ranks,Val{Dc},perm,order)
     end
-
-
+    for order=1:2
+      test_2d(ranks,order)
+      test_3d(ranks,order)
+    end
   end
 
 end

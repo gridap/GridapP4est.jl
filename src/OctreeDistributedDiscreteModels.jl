@@ -681,7 +681,7 @@ function _compute_fine_to_coarse_model_glue(
 
     for i=1:length(flids_snd.ptrs)-1
       for j=flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
-        fcell = flids_snd.data[i]
+        fcell = flids_snd.data[j]
         # fcell coarsened ...
         if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
           for k=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
@@ -1012,7 +1012,7 @@ function _compute_fine_to_coarse_model_glue(
       rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fine_to_coarse_faces_map[end]: $(fine_to_coarse_faces_map[end])"
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id: $(fcell_to_child_id)"
-      GT=isa(fine_to_coarse_faces_map[end],Vector{<:AbstractVector{<:Integer}}) ? Gridap.Adaptivity.RefinementGlue() : Gridap.Adaptivity.MixedGlue()
+      GT=isa(fine_to_coarse_faces_map,Vector{<:AbstractVector{<:Integer}}) ? Gridap.Adaptivity.RefinementGlue() : Gridap.Adaptivity.MixedGlue()
       AdaptivityGlue(GT,fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
