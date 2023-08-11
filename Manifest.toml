@@ -253,9 +253,9 @@ version = "2.21.1"
 
 [[deps.ForwardDiff]]
 deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "LogExpFunctions", "NaNMath", "Preferences", "Printf", "Random", "SpecialFunctions"]
-git-tree-sha1 = "00e252f4d706b3d55a8863432e742bf5717b498d"
+git-tree-sha1 = "cf0fe81336da9fb90944683b8c41984b08793dad"
 uuid = "f6369f11-7733-5829-9624-2563aa707210"
-version = "0.10.35"
+version = "0.10.36"
 weakdeps = ["StaticArrays"]
 
     [deps.ForwardDiff.extensions]
@@ -268,14 +268,14 @@ uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 [[deps.Gridap]]
 deps = ["AbstractTrees", "BSON", "BlockArrays", "Combinatorics", "DataStructures", "DocStringExtensions", "FastGaussQuadrature", "FileIO", "FillArrays", "ForwardDiff", "JLD2", "JSON", "LineSearches", "LinearAlgebra", "NLsolve", "NearestNeighbors", "PolynomialBases", "QuadGK", "Random", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "Test", "WriteVTK"]
 git-tree-sha1 = "4765f40f182559866cad17a61aef41c9bb437c21"
-repo-rev = "relaxing_adaptivity_glue_invariants_for_distributed_case"
+repo-rev = "master"
 repo-url = "https://github.com/gridap/Gridap.jl"
 uuid = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
 version = "0.17.17"
 
 [[deps.GridapDistributed]]
 deps = ["FillArrays", "Gridap", "LinearAlgebra", "MPI", "PartitionedArrays", "SparseArrays", "SparseMatricesCSR", "WriteVTK"]
-git-tree-sha1 = "0daf5dd8686681f72d43d5a29fc4f196aa000eae"
+git-tree-sha1 = "1e6d8a1dbfef49dd31bd4f58d72539f2c3a586ae"
 repo-rev = "fixing_psparse_matrix_assembly_col_partition"
 repo-url = "https://github.com/gridap/GridapDistributed.jl"
 uuid = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
@@ -540,11 +540,11 @@ version = "2.7.2"
 
 [[deps.PartitionedArrays]]
 deps = ["CircularArrays", "Distances", "FillArrays", "IterativeSolvers", "LinearAlgebra", "MPI", "Printf", "Random", "SparseArrays", "SparseMatricesCSR"]
-git-tree-sha1 = "e04ce6095650ed6ced618f77158b2f90121d0496"
+git-tree-sha1 = "7d690c708fae6707c56dccdd80dd49f0a40b7fd6"
 repo-rev = "master"
 repo-url = "https://github.com/fverdugo/PartitionedArrays.jl"
 uuid = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
-version = "0.3.2"
+version = "0.3.3"
 
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]

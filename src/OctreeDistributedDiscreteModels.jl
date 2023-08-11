@@ -123,7 +123,7 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
                                         num_uniform_refinements) where {Dc,Dp}
   comm = parts.comm
-  if i_am_in(comm)
+  if GridapDistributed.i_am_in(comm)
     ptr_pXest_connectivity,
       ptr_pXest,
         ptr_pXest_ghost,
@@ -419,7 +419,7 @@ function _compute_fine_to_coarse_model_glue(
   fgids = get_cell_gids(fmodel)
   f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,
                                        partition(fgids)) do fmodel, fpartition
-    if (!(i_am_in(cparts)))
+    if (!(GridapDistributed.i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing, Int[], Int[]
     else
@@ -454,7 +454,7 @@ function _compute_fine_to_coarse_model_glue(
   PArrays.exchange_fetch!(cgids_rcv,cgids_snd,ExchangeGraph(parts_snd,parts_rcv))
 
   map(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
-    if (i_am_in(cparts))
+    if (GridapDistributed.i_am_in(cparts))
       cgids=get_cell_gids(cmodel)
       cpartition = PArrays.getany(partition(cgids))
       # Note: Reversing snd and rcv
@@ -470,7 +470,7 @@ function _compute_fine_to_coarse_model_glue(
 
   # Create distributed glue
   map(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
-    if (!(i_am_in(cparts)))
+    if (!(GridapDistributed.i_am_in(cparts)))
       nothing
     else
       polytope=(Dc==2 ? QUAD : HEX)
@@ -575,7 +575,7 @@ function _compute_fine_to_coarse_model_glue(
                                               fcell_to_child_id::Union{Nothing,MPIArray})
     fgids=get_cell_gids(fmodel)
     map(fmodel.models,fine_to_coarse_faces_map,fcell_to_child_id) do fmodel, fine_to_coarse_faces_map, fcell_to_child_id
-      if (!(i_am_in(cparts)))
+      if (!(GridapDistributed.i_am_in(cparts)))
         # cmodel might be distributed among less processes than fmodel
         Int[], Int[], Int[], Int[]
       else
@@ -645,7 +645,7 @@ function _compute_fine_to_coarse_model_glue(
                                               fcell_to_child_id::Union{Nothing,MPIArray})
     fgids=get_cell_gids(fmodel)
     map(fmodel.models,fine_to_coarse_faces_map,fcell_to_child_id) do fmodel, fine_to_coarse_faces_map, fcell_to_child_id
-      if (!(i_am_in(cparts)))
+      if (!(GridapDistributed.i_am_in(cparts)))
         # cmodel might be distributed among less processes than fmodel
         Int[], Int[], Int[], Int[]
       else
@@ -741,7 +741,7 @@ function _compute_fine_to_coarse_model_glue(
                                 fcell_to_child_id,
                                 flids_rcv,
                                 flids_snd) do fine_to_coarse_faces_map,fcell_to_child_id,flids_rcv,flids_snd
-        if (i_am_in(cparts))
+        if (GridapDistributed.i_am_in(cparts))
           @assert fine_to_coarse_faces_map[end].ptrs === fcell_to_child_id.ptrs
           cpartition = get_cell_gids(cmodel)
           clids_rcv,clids_snd = map(PArrays.getany,assembly_local_indices(partition(cpartition)))
@@ -806,7 +806,7 @@ function _compute_fine_to_coarse_model_glue(
                                                                    fcell_to_child_id, 
                                                                    cgids_rcv,
                                                                    child_id_rcv
-        if (i_am_in(cparts))
+        if (GridapDistributed.i_am_in(cparts))
           cgids=get_cell_gids(cmodel)
           cpartition = PArrays.getany(partition(cgids))
           # Note: Reversing snd and rcv
@@ -835,7 +835,7 @@ function _compute_fine_to_coarse_model_glue(
                                                                                 fcell_to_child_id, 
                                                                                 cgids_rcv,
                                                                                 child_id_rcv
-        if (i_am_in(cparts))
+        if (GridapDistributed.i_am_in(cparts))
           data=fine_to_coarse_faces_map[end].data
           ptrs=fine_to_coarse_faces_map[end].ptrs
           cgids=get_cell_gids(cmodel)
@@ -870,7 +870,7 @@ function _compute_fine_to_coarse_model_glue(
           fgids_rcv, 
           child_id_rcv, 
           partition(fgids)) do fine_to_coarse_faces_map, fcell_to_child_id, fgids_rcv, child_id_rcv, fpartition
-        if (i_am_in(cparts))
+        if (GridapDistributed.i_am_in(cparts))
           f2c_data=fine_to_coarse_faces_map[end].data
           f2c_ptrs=fine_to_coarse_faces_map[end].ptrs
           fchild_id_data=fcell_to_child_id.data
@@ -919,7 +919,7 @@ function _compute_fine_to_coarse_model_glue(
   f1,f2,f3 = map(fmodel.models,
                  partition(fgids),
                  refinement_and_coarsening_flags) do fmodel, fpartition, flags
-    if (!(i_am_in(cparts)))
+    if (!(GridapDistributed.i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing
     else
@@ -992,7 +992,7 @@ function _compute_fine_to_coarse_model_glue(
                                                    fine_to_coarse_faces_dim, 
                                                    fcell_to_child_id,
                                                    flags
-    if (!(i_am_in(cparts)))
+    if (!(GridapDistributed.i_am_in(cparts)))
       nothing
     else
       ## The following lines are a replacement for WhiteRefinementRule()
@@ -1194,7 +1194,7 @@ end
 
 function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; parts=nothing) where {Dc,Dp}
    old_comm = model.parts.comm
-   if (i_am_in(old_comm))
+   if (GridapDistributed.i_am_in(old_comm))
      # Copy and refine input p4est
      ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
      pXest_uniformly_refine!(Val{Dc}, ptr_new_pXest)
@@ -1203,14 +1203,14 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
    end
 
    new_comm = isa(parts,Nothing) ? old_comm : parts.comm
-   if i_am_in(new_comm)
+   if GridapDistributed.i_am_in(new_comm)
       if !isa(parts,Nothing)
         aux = ptr_new_pXest
         ptr_new_pXest = _p4est_to_new_comm(ptr_new_pXest,
                                            model.ptr_pXest_connectivity,
                                            model.parts.comm,
                                            parts.comm)
-        if i_am_in(old_comm)
+        if GridapDistributed.i_am_in(old_comm)
           pXest_destroy(Val{Dc},aux)
         end
       end
@@ -1506,7 +1506,7 @@ end
 
 function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
   comm = model.parts.comm
-  if (i_am_in(comm))
+  if (GridapDistributed.i_am_in(comm))
     # Copy and refine input p4est
     ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
     pXest_uniformly_coarsen!(Val{Dc}, ptr_new_pXest)
@@ -1514,7 +1514,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
     ptr_new_pXest=nothing
   end
 
-  if (i_am_in(comm))
+  if (GridapDistributed.i_am_in(comm))
      # Extract ghost and lnodes
      ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
      ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
@@ -1567,13 +1567,13 @@ function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
 end
 
 function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
-  if (i_am_in(new_comm))
+  if (GridapDistributed.i_am_in(new_comm))
     new_comm_num_parts    = num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
 
     pXest_conn = ptr_pXest_conn[]
     pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
-    if (i_am_in(old_comm))
+    if (GridapDistributed.i_am_in(old_comm))
       pXest = ptr_pXest[]
       old_comm_num_parts = num_parts(old_comm)
       old_global_first_quadrant = unsafe_wrap(Array,
@@ -1608,14 +1608,14 @@ function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
 end
 
 function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
-  @assert i_am_in(old_comm)
+  @assert GridapDistributed.i_am_in(old_comm)
   pXest = ptr_pXest[]
   pXest_conn = ptr_pXest_conn[]
 
   pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
   p4est_comm_count_pertree(ptr_pXest,pertree)
 
-  if (i_am_in(new_comm))
+  if (GridapDistributed.i_am_in(new_comm))
     new_comm_num_parts = num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
     pXest=ptr_pXest[]
@@ -1757,18 +1757,18 @@ function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr
 end
 
 function is_included(partsA,partsB)
-  @assert i_am_in(partsA.comm) || i_am_in(partsB.comm)
+  @assert GridapDistributed.i_am_in(partsA.comm) || GridapDistributed.i_am_in(partsB.comm)
   is_included(partsA.comm,partsB.comm)
 end
 
 function is_included(commA::MPI.Comm,commB::MPI.Comm)
-  @assert i_am_in(commA) || i_am_in(commB)
+  @assert GridapDistributed.i_am_in(commA) || GridapDistributed.i_am_in(commB)
   num_partsA=num_parts(commA)
   num_partsB=num_parts(commB)
   if (num_partsA==num_partsB)
     return false
   end
-  if (i_am_in(commA) && i_am_in(commB))
+  if (GridapDistributed.i_am_in(commA) && GridapDistributed.i_am_in(commB))
     result=num_partsA < num_partsB
     if (result)
       result=MPI.Allreduce(Int8(result),MPI.LOR,commB)
@@ -1777,7 +1777,7 @@ function is_included(commA::MPI.Comm,commB::MPI.Comm)
     end
   else
     result=false
-    if (i_am_in(commB))
+    if (GridapDistributed.i_am_in(commB))
       result=MPI.Allreduce(Int8(result),MPI.LOR,commB)
     else
       result=MPI.Allreduce(Int8(result),MPI.LOR,commA)
@@ -1793,7 +1793,7 @@ function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc
                                         parts_redistributed_model=model.parts) where {Dc,Dp}
   parts = (parts_redistributed_model === model.parts) ? model.parts : parts_redistributed_model
   comm  = parts.comm
-  if (i_am_in(model.parts.comm) || i_am_in(parts.comm))
+  if (GridapDistributed.i_am_in(model.parts.comm) || GridapDistributed.i_am_in(parts.comm))
     if (parts_redistributed_model !== model.parts)
       A=is_included(model.parts,parts_redistributed_model)
       B=is_included(parts_redistributed_model,model.parts)
@@ -1867,7 +1867,7 @@ function _redistribute_parts_supset_parts_redistributed(
   subset_comm = parts_redistributed_model.comm
   supset_comm = model.parts.comm
   N=num_cells(model)
-  if (i_am_in(subset_comm))
+  if (GridapDistributed.i_am_in(subset_comm))
     # This piece of code replicates the logic behind the
     # "p4est_partition_cut_gloidx" function in the p4est library
     psub=PArrays.getany(parts_redistributed_model)
@@ -1916,7 +1916,7 @@ function _redistribute_parts_supset_parts_redistributed(
                                             parts_rcv,parts_snd,lids_rcv,lids_snd,
                                             old2new,new2old)
 
-  if (i_am_in(subset_comm))
+  if (GridapDistributed.i_am_in(subset_comm))
     # p4est_vtk_write_file(ptr_pXest_new, C_NULL, "ptr_pXest_new")
 
     # Extract ghost and lnodes

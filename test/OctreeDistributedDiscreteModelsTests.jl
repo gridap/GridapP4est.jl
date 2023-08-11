@@ -89,7 +89,7 @@ module OctreeDistributedDiscreteModelsTests
     # Coarsening
     model_back,glue = coarsen(f_model_tasks_L2_back)
 
-    if i_am_in(level_parts[2])
+    if GridapDistributed.i_am_in(level_parts[2])
       @test num_cells(model_back)==num_cells(model)
       map(model.dmodel.models,model_back.dmodel.models) do m1, m2
         Ωh1  = Triangulation(m1)

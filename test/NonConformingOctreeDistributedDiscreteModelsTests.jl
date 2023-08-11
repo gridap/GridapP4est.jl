@@ -247,7 +247,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     @assert el2 < tol
 
 
-    uhred2 = GridapP4est.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
+    uhred2 = GridapDistributed.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
     e = u - uhred2
     el2 = sqrt(sum( ∫( e*e )*dΩhred ))
     @assert el2 < tol
