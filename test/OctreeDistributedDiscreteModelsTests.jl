@@ -37,7 +37,7 @@ module OctreeDistributedDiscreteModelsTests
           level_parts[l] = distribute_with_mpi(LinearIndices((lsize,));comm=comm,duplicate_comm=false)
         else
           comm=MPI.Comm_split(root_comm,mpi_undefined,mpi_undefined)
-          level_parts[l] = MPIVoidVector(eltype(parts))
+          level_parts[l] = GridapDistributed.MPIVoidVector(eltype(parts))
         end
       end
     end
