@@ -350,8 +350,8 @@ module NonConformingOctreeDistributedDiscreteModelsTests
   end
 
   function run(distribute)
-    debug_logger = ConsoleLogger(stderr, Logging.Debug)
-    global_logger(debug_logger); # Enable the debug logger globally
+    # debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    # global_logger(debug_logger); # Enable the debug logger globally
 
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     for Dc=3:3, perm=2:2, order=1:1

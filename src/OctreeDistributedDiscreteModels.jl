@@ -1568,14 +1568,14 @@ end
 
 function _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   if (GridapDistributed.i_am_in(new_comm))
-    new_comm_num_parts    = num_parts(new_comm)
+    new_comm_num_parts    = GridapDistributed.num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
 
     pXest_conn = ptr_pXest_conn[]
     pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
     if (GridapDistributed.i_am_in(old_comm))
       pXest = ptr_pXest[]
-      old_comm_num_parts = num_parts(old_comm)
+      old_comm_num_parts = GridapDistributed.num_parts(old_comm)
       old_global_first_quadrant = unsafe_wrap(Array,
                                               pXest.global_first_quadrant,
                                               old_comm_num_parts+1)
@@ -1616,10 +1616,10 @@ function _p4est_to_new_comm_old_supset_new(ptr_pXest, ptr_pXest_conn, old_comm, 
   p4est_comm_count_pertree(ptr_pXest,pertree)
 
   if (GridapDistributed.i_am_in(new_comm))
-    new_comm_num_parts = num_parts(new_comm)
+    new_comm_num_parts = GridapDistributed.num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
     pXest=ptr_pXest[]
-    old_comm_num_parts = num_parts(old_comm)
+    old_comm_num_parts = GridapDistributed.num_parts(old_comm)
     old_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
                                             old_comm_num_parts+1)
@@ -1763,8 +1763,8 @@ end
 
 function is_included(commA::MPI.Comm,commB::MPI.Comm)
   @assert GridapDistributed.i_am_in(commA) || GridapDistributed.i_am_in(commB)
-  num_partsA=num_parts(commA)
-  num_partsB=num_parts(commB)
+  num_partsA=GridapDistributed.num_parts(commA)
+  num_partsB=GridapDistributed.num_parts(commB)
   if (num_partsA==num_partsB)
     return false
   end
@@ -1871,14 +1871,14 @@ function _redistribute_parts_supset_parts_redistributed(
     # This piece of code replicates the logic behind the
     # "p4est_partition_cut_gloidx" function in the p4est library
     psub=PArrays.getany(parts_redistributed_model)
-    Psub=num_parts(subset_comm)
+    Psub=GridapDistributed.num_parts(subset_comm)
     first_global_quadrant=Int64((Float64(N)*Float64(psub-1))/(Float64(Psub)))
     @assert first_global_quadrant>=0 && first_global_quadrant<N
   else
     first_global_quadrant=N
   end
 
-  Psup=num_parts(supset_comm)
+  Psup=GridapDistributed.num_parts(supset_comm)
   psub=PArrays.getany(model.parts)
   num_cells_per_part=Vector{Cint}(undef, Psup+1)
   parts_offsets=MPI.Allgather(first_global_quadrant,supset_comm)

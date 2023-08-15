@@ -267,7 +267,7 @@ uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 
 [[deps.Gridap]]
 deps = ["AbstractTrees", "BSON", "BlockArrays", "Combinatorics", "DataStructures", "DocStringExtensions", "FastGaussQuadrature", "FileIO", "FillArrays", "ForwardDiff", "JLD2", "JSON", "LineSearches", "LinearAlgebra", "NLsolve", "NearestNeighbors", "PolynomialBases", "QuadGK", "Random", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "Test", "WriteVTK"]
-git-tree-sha1 = "4765f40f182559866cad17a61aef41c9bb437c21"
+git-tree-sha1 = "f0f0e5d783ea0fec4e44d5e1585b95196e27ef3b"
 repo-rev = "master"
 repo-url = "https://github.com/gridap/Gridap.jl"
 uuid = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
@@ -275,7 +275,7 @@ version = "0.17.17"
 
 [[deps.GridapDistributed]]
 deps = ["FillArrays", "Gridap", "LinearAlgebra", "MPI", "PartitionedArrays", "SparseArrays", "SparseMatricesCSR", "WriteVTK"]
-git-tree-sha1 = "1e6d8a1dbfef49dd31bd4f58d72539f2c3a586ae"
+git-tree-sha1 = "916a803e5526dc5baf21383b6cb2b2ea24599a03"
 repo-rev = "fixing_psparse_matrix_assembly_col_partition"
 repo-url = "https://github.com/gridap/GridapDistributed.jl"
 uuid = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
@@ -643,9 +643,9 @@ version = "0.6.7"
 
 [[deps.SpecialFunctions]]
 deps = ["IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
-git-tree-sha1 = "7beb031cf8145577fbccacd94b8a8f4ce78428d3"
+git-tree-sha1 = "e2cfc4012a19088254b3950b85c3c1d8882d864d"
 uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
-version = "2.3.0"
+version = "2.3.1"
 
     [deps.SpecialFunctions.extensions]
     SpecialFunctionsChainRulesCoreExt = "ChainRulesCore"
