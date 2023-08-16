@@ -442,12 +442,12 @@ function _compute_fine_to_coarse_model_glue(
     end
   end |> tuple_of_arrays 
 
-  # # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
-  # dfcell_to_child_id = map(f3) do fcell_to_child_id
-  #  !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
-  # end
-  # cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
-  # fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
+  # Nearest Neighbors comm: Get data for ghosts (from coarse cells owned by neighboring processors)
+  dfcell_to_child_id = map(f3) do fcell_to_child_id
+   !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
+  end
+  cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
+  fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
   
   # Note: Reversing snd and rcv 
   parts_rcv, parts_snd = assembly_neighbors(partition(fgids))
