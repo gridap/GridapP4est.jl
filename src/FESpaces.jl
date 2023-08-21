@@ -613,20 +613,20 @@ end
 
 # Generates a new DistributedSingleFieldFESpace composed 
 # by local FE spaces with linear multipoint constraints added
-function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, reffe; kwargs...) where {Dc}
+function _generate_fespace(model::OctreeDistributedDiscreteModel{Dc}, reffe; kwargs...) where {Dc}
     order = reffe[2][2]
     spaces_wo_constraints = map(local_views(model)) do m
         FESpace(m, reffe; kwargs...)
     end
     ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe)
-    cell_polytope = Dc == 2 ? QUAD : HEX
+    cell_polytope = (Dc == 2) ? QUAD : HEX
     rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
-    face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc - 1)
+    face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc-1)
     face_subface_ldof_to_cell_ldof[Dc-1] =
-        Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(order for _ = 1:Dc), Dc - 1)
+        Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), Dc-1)
     if (Dc == 3)
         face_subface_ldof_to_cell_ldof[1] =
-            Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(order for _ = 1:Dc), 1)
+            Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), 1)
     end
     sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
         generate_constraints(model, spaces_wo_constraints, reffe, ref_constraints, face_subface_ldof_to_cell_ldof)
@@ -645,11 +645,24 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, reff
     end
     nldofs = map(num_free_dofs,spaces_w_constraints)
     cell_gids = get_cell_gids(model)
-    gids=GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
+    gids = GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
     map(partition(gids)) do indices 
         @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
         @debug "[$(part_id(indices))]: l2o_cell_gids=$(local_to_owner(indices))"
     end 
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)
+end
+
+# We need these methods to resolve ambiguities in the dispatch
+function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel, 
+                                 reffe::Tuple{Gridap.ReferenceFEs.ReferenceFEName,Any,Any}; 
+                                 kwargs...)
+    _generate_fespace(model, reffe; kwargs...)
+end
+
+function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel, 
+                                 reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any}; 
+                                 kwargs...)
+    _generate_fespace(model, reffe; kwargs...)
 end
