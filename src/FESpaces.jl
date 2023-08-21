@@ -613,7 +613,9 @@ end
 
 # Generates a new DistributedSingleFieldFESpace composed 
 # by local FE spaces with linear multipoint constraints added
-function _generate_fespace(model::OctreeDistributedDiscreteModel{Dc}, reffe; kwargs...) where {Dc}
+function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
+                                 reffe::Tuple{Gridap.ReferenceFEs.ReferenceFEName,Any,Any}; 
+                                 kwargs...) where {Dc}
     order = reffe[2][2]
     spaces_wo_constraints = map(local_views(model)) do m
         FESpace(m, reffe; kwargs...)
@@ -654,15 +656,8 @@ function _generate_fespace(model::OctreeDistributedDiscreteModel{Dc}, reffe; kwa
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)
 end
 
-# We need these methods to resolve ambiguities in the dispatch
-function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel, 
-                                 reffe::Tuple{Gridap.ReferenceFEs.ReferenceFEName,Any,Any}; 
-                                 kwargs...)
-    _generate_fespace(model, reffe; kwargs...)
-end
-
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel, 
                                  reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any}; 
                                  kwargs...)
-    _generate_fespace(model, reffe; kwargs...)
+    FESpace(model.dmodel,reffe; kwargs...)
 end
