@@ -3,28 +3,18 @@ const nothing_flag  = Cint(0)
 const refine_flag   = Cint(1)
 const coarsen_flag  = Cint(2)
 
-struct NonConformingGlue{Dc,
-                         A,
-                         B,
-                         C}
-                         #A<:AbstractVector{<:AbstractVector{<:Integer}},
-                         #B<:AbstractVector{<:AbstractVector{<:Integer}},
-                         #C<:AbstractVector{<:AbstractVector{<:Tuple{<:Integer,:Integer,Integer}}}}
-  num_regular_faces  :: A 
-  num_hanging_faces  :: B
-  hanging_faces_glue :: C
-  function NonConformingGlue(num_regular_faces,
-                             num_hanging_faces,
-                             hanging_faces_glue)
-    Dc=length(num_regular_faces)
+struct NonConformingGlue{Dc,A,B,C}
+  num_regular_faces  :: A # <:AbstractVector{<:AbstractVector{<:Integer}}
+  num_hanging_faces  :: B # <:AbstractVector{<:AbstractVector{<:Integer}}
+  hanging_faces_glue :: C # <:AbstractVector{<:AbstractVector{<:Tuple{<:Integer,:Integer,Integer}}}}
+  function NonConformingGlue(num_regular_faces,num_hanging_faces,hanging_faces_glue)
+    Dc = length(num_regular_faces)
     @assert length(num_hanging_faces)==Dc
     @assert length(hanging_faces_glue)==Dc
-    A=typeof(num_regular_faces)
-    B=typeof(num_hanging_faces)
-    C=typeof(hanging_faces_glue)
-    new{Dc,A,B,C}(num_regular_faces,
-                  num_hanging_faces,
-                  hanging_faces_glue)
+    A = typeof(num_regular_faces)
+    B = typeof(num_hanging_faces)
+    C = typeof(hanging_faces_glue)
+    new{Dc,A,B,C}(num_regular_faces,num_hanging_faces,hanging_faces_glue)
   end
 end
 
@@ -38,10 +28,9 @@ function _create_conforming_model_non_conforming_glue(model::GridapDistributed.D
       num_regular_faces[d]=num_faces(model,d-1)
       num_hanging_faces[d]=0
     end
-    NonConformingGlue(num_regular_faces,
-                      num_hanging_faces,
-                      hanging_faces_glue)
+    NonConformingGlue(num_regular_faces,num_hanging_faces,hanging_faces_glue)
   end
+  return non_conforming_glue
 end
 
 mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
@@ -346,21 +335,6 @@ function pXest_reset_data!(::Type{Val{Dc}}, ptr_pXest, data_size, init_fn_c, use
   end
 end
 
-
-# [c/e][child_id][flid]->clid
-const rrule_f_to_c_lid_2D=Vector{Vector{Vector{UInt8}}}(
-  [
-   [[1,1,3,1], [1,2,1,4], [3,1,3,2], [1,4,2,4]],  # c
-   [[1,1,3,1], [1,1,1,4], [1,2,3,1], [1,2,1,4]]   # e
-  ])
-
-# [c/e][child_id][flid]->clid_dim
-const rrule_f_to_c_dim_2D=Vector{Vector{Vector{UInt8}}}(
-  [
-   [[0,1,1,2], [1,0,2,1], [1,2,0,1], [2,1,1,0]],  # c
-   [[1,2,1,2], [1,2,2,1], [2,1,1,2], [2,1,2,1]]   # e
-  ])
- 
 function pXest_update_flags!(::Type{Val{Dc}}, ptr_pXest_old, ptr_pXest_new) where Dc
   pXest_old = ptr_pXest_old[]
   pXest_new = ptr_pXest_new[]
@@ -446,7 +420,7 @@ function _compute_fine_to_coarse_model_glue(
   dfcell_to_child_id = map(f3) do fcell_to_child_id
    !isa(fcell_to_child_id,Nothing) ? fcell_to_child_id : Int[]
   end
-  cache=fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
+  cache = fetch_vector_ghost_values_cache(dfcell_to_child_id,partition(fgids))
   fetch_vector_ghost_values!(dfcell_to_child_id,cache) |> wait
   
   # Note: Reversing snd and rcv 
@@ -455,7 +429,7 @@ function _compute_fine_to_coarse_model_glue(
 
   map(f1,cgids_rcv) do fine_to_coarse_faces_map, cgids_rcv
     if (GridapDistributed.i_am_in(cparts))
-      cgids=get_cell_gids(cmodel)
+      cgids = get_cell_gids(cmodel)
       cpartition = PArrays.getany(partition(cgids))
       # Note: Reversing snd and rcv
       lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(fgids)))
@@ -469,11 +443,11 @@ function _compute_fine_to_coarse_model_glue(
   end
 
   # Create distributed glue
-  map(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
+  glue = map(f1,f2,f3) do fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
     if (!(GridapDistributed.i_am_in(cparts)))
       nothing
     else
-      polytope=(Dc==2 ? QUAD : HEX)
+      polytope = (Dc==2 ? QUAD : HEX)
       cmodel_local = PArrays.getany(cmodel.models)
       num_cells_coarse = num_cells(cmodel_local)
       reffe  = LagrangianRefFE(Float64,polytope,1)
@@ -481,6 +455,7 @@ function _compute_fine_to_coarse_model_glue(
       AdaptivityGlue(fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
+  return glue
 end
 
 function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc},
@@ -557,7 +532,7 @@ function _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,
     if (flags[cell]!=coarsen_flag)
       break
     end
-    cell=cell+1
+    cell = cell+1
   end
   return cell,cell==e+1
 end
@@ -596,13 +571,13 @@ function _compute_fine_to_coarse_model_glue(
         cpartition::AbstractLocalIndices)
     # Note: Reversing snd and rcv
     lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
-    cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[end][lids_snd.data]]
-    cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
-    cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+    cgids_data = local_to_global(cpartition)[fine_to_coarse_faces_map[end][lids_snd.data]]
+    cgids_snd  = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
+    cgids_rcv  = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
     cell_child_id_data = fcell_to_child_id[lids_snd.data]
-    cell_child_id_snd = PArrays.JaggedArray(cell_child_id_data,lids_snd.ptrs)
+    cell_child_id_snd  = PArrays.JaggedArray(cell_child_id_data,lids_snd.ptrs)
     fcell_child_id_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
-    cgids_snd, cgids_rcv, cell_child_id_snd, fcell_child_id_rcv
+    return cgids_snd, cgids_rcv, cell_child_id_snd, fcell_child_id_rcv
   end
 
   function _setup_communication_buffers_fine_partition(
@@ -614,11 +589,8 @@ function _compute_fine_to_coarse_model_glue(
     # Note: Reversing snd and rcv
     lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
 
-    cgids_data   = Vector{Int}(undef,length(lids_snd.data))
-    cgids_data  .= -1 
-
-    fcell_child_id_data = Vector{Int}(undef,length(lids_snd.data))
-    fcell_child_id_data .= -1
+    cgids_data  = fill(-1,length(lids_snd.data))
+    fcell_child_id_data = fill(-1,length(lids_snd.data))
     
     f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
     f2c_map_data = fine_to_coarse_faces_map[end].data
@@ -631,11 +603,11 @@ function _compute_fine_to_coarse_model_glue(
         fcell_child_id_data[i] = fcell_to_child_id.data[f2c_map_ptrs[fcell]]
       end
     end 
-    cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
-    cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
+    cgids_snd = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
+    cgids_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
     cell_child_id_snd = PArrays.JaggedArray(fcell_child_id_data,lids_snd.ptrs)
     cell_child_id_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
-    cgids_snd, cgids_rcv, cell_child_id_snd, cell_child_id_rcv
+    return cgids_snd, cgids_rcv, cell_child_id_snd, cell_child_id_rcv
   end
 
   function setup_communication_buffers_coarse_partition(cparts,
@@ -643,7 +615,7 @@ function _compute_fine_to_coarse_model_glue(
                                               fmodel,
                                               fine_to_coarse_faces_map::Union{Nothing,MPIArray},
                                               fcell_to_child_id::Union{Nothing,MPIArray})
-    fgids=get_cell_gids(fmodel)
+    fgids = get_cell_gids(fmodel)
     map(fmodel.models,fine_to_coarse_faces_map,fcell_to_child_id) do fmodel, fine_to_coarse_faces_map, fcell_to_child_id
       if (!(GridapDistributed.i_am_in(cparts)))
         # cmodel might be distributed among less processes than fmodel
@@ -668,27 +640,24 @@ function _compute_fine_to_coarse_model_glue(
     flids_rcv,flids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
     clids_rcv,clids_snd = map(PArrays.getany,assembly_local_indices(cpartition))
 
-    fgids_data   = Vector{Int}(undef,length(clids_snd.data))
-    fgids_data  .= -1
-    
-    child_ids_data = Vector{Int}(undef,length(clids_snd.data))
-    child_ids_data .= -1
+    fgids_data   = fill(-1,length(clids_snd.data))
+    child_ids_data = fill(-1,length(clids_snd.data))
 
-    f2c_map_ptrs = fine_to_coarse_faces_map[end].ptrs 
-    f2c_map_data = fine_to_coarse_faces_map[end].data
+    f2c_map_ptrs   = fine_to_coarse_faces_map[end].ptrs 
+    f2c_map_data   = fine_to_coarse_faces_map[end].data
     fchild_id_data = fcell_to_child_id.data
-    fl2g         = local_to_global(PArrays.getany(fpartition))
+    fl2g           = local_to_global(PArrays.getany(fpartition))
 
-    for i=1:length(flids_snd.ptrs)-1
-      for j=flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
+    for i = 1:length(flids_snd.ptrs)-1
+      for j = flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
         fcell = flids_snd.data[j]
         # fcell coarsened ...
         if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
-          for k=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
+          for k = f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
               ccell = f2c_map_data[k]
               child_id = fchild_id_data[k]
               # find ccell in clids_snd[i]:clids_snd[i+1]-1
-              for l=clids_snd.ptrs[i]:clids_snd.ptrs[i+1]-1
+              for l = clids_snd.ptrs[i]:clids_snd.ptrs[i+1]-1
                 if (clids_snd.data[l]==ccell)
                   fgids_data[l]  = fl2g[fcell]
                   child_ids_data[l] = child_id 
@@ -698,11 +667,11 @@ function _compute_fine_to_coarse_model_glue(
         end   
       end 
     end
-    fgids_snd     = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
-    fgids_rcv     = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
+    fgids_snd    = PArrays.JaggedArray(fgids_data,clids_snd.ptrs)
+    fgids_rcv    = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
     child_id_snd = PArrays.JaggedArray(child_ids_data,clids_snd.ptrs)
     child_id_rcv = PArrays.JaggedArray(Vector{Int}(undef,length(clids_rcv.data)),clids_rcv.ptrs)
-    fgids_snd, fgids_rcv, child_id_snd, child_id_rcv
+    return fgids_snd, fgids_rcv, child_id_snd, child_id_rcv
   end
 
   function _check_if_coarsen(Dc,
@@ -713,12 +682,12 @@ function _compute_fine_to_coarse_model_glue(
     cell = 1
     while cell <= num_o_c_cells
       if (flags[cell]==coarsen_flag)
-        cell,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        cell,coarsen = _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
         if coarsen
           return true
         end 
       else 
-        cell=cell+1
+        cell = cell+1
       end
     end
     return false
@@ -750,15 +719,15 @@ function _compute_fine_to_coarse_model_glue(
           snd_buffer_data = Vector{Int}(undef,length(flids_snd.data))
           snd_buffer_data .= 0 
 
-          for i=1:length(flids_snd.ptrs)-1
-            for j=flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
+          for i = 1:length(flids_snd.ptrs)-1
+            for j = flids_snd.ptrs[i]:flids_snd.ptrs[i+1]-1
               fcell = flids_snd.data[j]
               # fcell coarsened ...
               if (f2c_map_ptrs[fcell+1]-f2c_map_ptrs[fcell]>1)
-                for k=f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
+                for k = f2c_map_ptrs[fcell]:f2c_map_ptrs[fcell+1]-1
                    ccell = f2c_map_data[k]
                    # find ccell in clids_snd[i]:clids_snd[i+1]-1
-                   for l=clids_snd.ptrs[i]:clids_snd.ptrs[i+1]-1
+                   for l = clids_snd.ptrs[i]:clids_snd.ptrs[i+1]-1
                       if (clids_snd.data[l]==ccell)
                         snd_buffer_data[j]+=1 
                         break
@@ -770,8 +739,8 @@ function _compute_fine_to_coarse_model_glue(
               end  
             end 
           end
-          snd_buffer   = PArrays.JaggedArray(snd_buffer_data,flids_snd.ptrs)
-          rcv_buffer   = PArrays.JaggedArray(Vector{Int}(undef,length(flids_rcv.data)),flids_rcv.ptrs)
+          snd_buffer = PArrays.JaggedArray(snd_buffer_data,flids_snd.ptrs)
+          rcv_buffer = PArrays.JaggedArray(Vector{Int}(undef,length(flids_rcv.data)),flids_rcv.ptrs)
           snd_buffer, rcv_buffer
         else 
           Gridap.Helpers.@notimplemented  
@@ -807,7 +776,7 @@ function _compute_fine_to_coarse_model_glue(
                                                                    cgids_rcv,
                                                                    child_id_rcv
         if (GridapDistributed.i_am_in(cparts))
-          cgids=get_cell_gids(cmodel)
+          cgids = get_cell_gids(cmodel)
           cpartition = PArrays.getany(partition(cgids))
           # Note: Reversing snd and rcv
           lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(fgids)))
@@ -836,9 +805,9 @@ function _compute_fine_to_coarse_model_glue(
                                                                                 cgids_rcv,
                                                                                 child_id_rcv
         if (GridapDistributed.i_am_in(cparts))
-          data=fine_to_coarse_faces_map[end].data
-          ptrs=fine_to_coarse_faces_map[end].ptrs
-          cgids=get_cell_gids(cmodel)
+          data  = fine_to_coarse_faces_map[end].data
+          ptrs  = fine_to_coarse_faces_map[end].ptrs
+          cgids = get_cell_gids(cmodel)
           cpartition = PArrays.getany(partition(cgids))
           # Note: Reversing snd and rcv
           lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(fgids)))
@@ -846,7 +815,7 @@ function _compute_fine_to_coarse_model_glue(
           for i in 1:length(lids_rcv.data)
             lid = lids_rcv.data[i]
             gid = cgids_rcv.data[i]
-            if gid!=-1
+            if gid != -1
                @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] gid=$(gid) $(ptrs[lid+1]-ptrs[lid])"
                @assert (ptrs[lid+1]-ptrs[lid])==1
                data[ptrs[lid]] = glo_to_loc[gid]
@@ -871,10 +840,10 @@ function _compute_fine_to_coarse_model_glue(
           child_id_rcv, 
           partition(fgids)) do fine_to_coarse_faces_map, fcell_to_child_id, fgids_rcv, child_id_rcv, fpartition
         if (GridapDistributed.i_am_in(cparts))
-          f2c_data=fine_to_coarse_faces_map[end].data
-          f2c_ptrs=fine_to_coarse_faces_map[end].ptrs
-          fchild_id_data=fcell_to_child_id.data
-          cgids=get_cell_gids(cmodel)
+          f2c_data = fine_to_coarse_faces_map[end].data
+          f2c_ptrs = fine_to_coarse_faces_map[end].ptrs
+          fchild_id_data = fcell_to_child_id.data
+          cgids = get_cell_gids(cmodel)
           cpartition = PArrays.getany(partition(cgids))
           # Note: Reversing snd and rcv
           lids_rcv,_ = map(PArrays.getany,assembly_local_indices(partition(cgids)))
@@ -908,11 +877,11 @@ function _compute_fine_to_coarse_model_glue(
 
   # Check if there is at least one part in which a cell was coarsened
   cgids = get_cell_gids(cmodel)
-  coarsen_array=map(partition(cgids),refinement_and_coarsening_flags) do cpartition,flags
+  coarsen_array = map(partition(cgids),refinement_and_coarsening_flags) do cpartition,flags
     _check_if_coarsen(Dc,cpartition,flags) 
-  end 
+  end
   or_func(a,b)=a || b
-  coarsen=PArrays.getany(reduction(or_func,coarsen_array;destination=:all,init=false))
+  coarsen = PArrays.getany(reduction(or_func,coarsen_array;destination=:all,init=false))
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
@@ -953,20 +922,19 @@ function _compute_fine_to_coarse_model_glue(
                                                                                                       f3)         
   end
 
-  
   cgids = get_cell_gids(cmodel)
-  cache=fetch_vector_ghost_values_cache(refinement_and_coarsening_flags,partition(cgids))
+  cache = fetch_vector_ghost_values_cache(refinement_and_coarsening_flags,partition(cgids))
   fetch_vector_ghost_values!(refinement_and_coarsening_flags,cache) |> wait
   
   # Note: Reversing snd and rcv 
   fparts_rcv, fparts_snd = assembly_neighbors(partition(fgids))
-  graph=ExchangeGraph(fparts_snd,fparts_rcv)
+  graph = ExchangeGraph(fparts_snd,fparts_rcv)
   PArrays.exchange_fetch!(cgids_rcv,cgids_snd,graph)
   PArrays.exchange_fetch!(fchild_id_rcv,fchild_id_snd,graph)
 
   if coarsen 
     cparts_rcv, cparts_snd = assembly_neighbors(partition(cgids))
-    graph=ExchangeGraph(cparts_snd,cparts_rcv)
+    graph = ExchangeGraph(cparts_snd,cparts_rcv)
     PArrays.exchange_fetch!(fgids_rcv,fgids_snd,graph)
     PArrays.exchange_fetch!(cchild_id_rcv,cchild_id_snd,graph)
     _update_fine_to_coarse_faces_map_with_fgids_ghost_data!(f1,
@@ -988,34 +956,33 @@ function _compute_fine_to_coarse_model_glue(
 
 
   # Create distributed glue
-  map(f1,f2,f3,refinement_and_coarsening_flags) do fine_to_coarse_faces_map, 
-                                                   fine_to_coarse_faces_dim, 
-                                                   fcell_to_child_id,
-                                                   flags
+  glue = map(f1,f2,f3,refinement_and_coarsening_flags) do fine_to_coarse_faces_map, 
+                                                          fine_to_coarse_faces_dim, 
+                                                          fcell_to_child_id,
+                                                          flags
     if (!(GridapDistributed.i_am_in(cparts)))
       nothing
     else
       ## The following lines are a replacement for WhiteRefinementRule()
       ## to have the types of rrule_nothing_flag and rrule_refinement_flag
       ## to be 100% equivalent for all type parameters
-      polytope=(Dc==2 ? QUAD : HEX)
+      polytope  = (Dc==2 ? QUAD : HEX)
       partition = Gridap.ReferenceFEs.tfill(1,Val{Dc}())
-      ref_grid = UnstructuredGrid(compute_reference_grid(polytope,partition))
+      ref_grid  = UnstructuredGrid(compute_reference_grid(polytope,partition))
       rrule_nothing_flag = 
          Gridap.Adaptivity.RefinementRule(Gridap.Adaptivity.WithoutRefinement(),polytope,ref_grid)
       
       reffe  = LagrangianRefFE(Float64,polytope,1)
-      rrule_refinement_flag = 
-          Gridap.Adaptivity.RefinementRule(reffe,2)
-      f(x)=x==nothing_flag ? 1 : 2
-      coarse_cell_to_rrule=map(f,flags)
-      rrules=Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
+      rrule_refinement_flag = Gridap.Adaptivity.RefinementRule(reffe,2)
+      coarse_cell_to_rrule  = map(x -> (x==nothing_flag) ? 1 : 2,flags)
+      rrules = Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fine_to_coarse_faces_map[end]: $(fine_to_coarse_faces_map[end])"
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id: $(fcell_to_child_id)"
-      GT=isa(fine_to_coarse_faces_map,Vector{<:AbstractVector{<:Integer}}) ? Gridap.Adaptivity.RefinementGlue() : Gridap.Adaptivity.MixedGlue()
+      GT = isa(fine_to_coarse_faces_map,Vector{<:AbstractVector{<:Integer}}) ? Gridap.Adaptivity.RefinementGlue() : Gridap.Adaptivity.MixedGlue()
       AdaptivityGlue(GT,fine_to_coarse_faces_map,fcell_to_child_id,rrules)
     end
   end
+  return glue
 end
 
 function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc},
@@ -1027,60 +994,66 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
 
   function _setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
     num_children = get_num_children(Val{Dc})
+
+    # Count cell children: 
     fine_to_coarse_faces_map_ptrs = Vector{Int}(undef,num_f_cells+1)
-    fine_to_coarse_faces_map_ptrs[1]=1
-    cell=1
+    fine_to_coarse_faces_map_ptrs[1] = 1
+    cell = 1
     c = 1
-    while cell <= num_o_c_cells
-      if (flags[cell]==nothing_flag) 
-        fine_to_coarse_faces_map_ptrs[c+1]=fine_to_coarse_faces_map_ptrs[c]+1
-        cell=cell+1
-        c=c+1
-      elseif (flags[cell]==refine_flag)
-        for child=1:num_children
-          fine_to_coarse_faces_map_ptrs[c+1]=fine_to_coarse_faces_map_ptrs[c]+1
-          c=c+1
+    while cell <= num_o_c_cells # For each coarse cell
+      if (flags[cell]==nothing_flag)    # Cell not touched 
+        fine_to_coarse_faces_map_ptrs[c+1] = fine_to_coarse_faces_map_ptrs[c]+1
+        cell = cell+1
+        c = c+1
+      elseif (flags[cell]==refine_flag) # Cell is refined 
+        for child = 1:num_children
+          fine_to_coarse_faces_map_ptrs[c+1] = fine_to_coarse_faces_map_ptrs[c]+1
+          c = c+1
         end
-        cell=cell+1
-      else
+        cell = cell+1
+      else                             # Cell is coarsened
         @assert flags[cell]==coarsen_flag
-        cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        cell_fwd,coarsen = _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
         if coarsen
           @assert cell_fwd-cell==num_children
-          fine_to_coarse_faces_map_ptrs[c+1]=fine_to_coarse_faces_map_ptrs[c]+num_children
-          cell=cell+num_children
-          c=c+1
+          fine_to_coarse_faces_map_ptrs[c+1] = fine_to_coarse_faces_map_ptrs[c]+num_children
+          cell = cell+num_children
+          c = c+1
         else 
-          for j=c:c+(cell_fwd-cell+1) 
-            fine_to_coarse_faces_map_ptrs[j+1]=fine_to_coarse_faces_map_ptrs[j]+1
-            c=c+1
+          for j = c:c+(cell_fwd-cell+1) 
+            fine_to_coarse_faces_map_ptrs[j+1] = fine_to_coarse_faces_map_ptrs[j]+1
+            c = c+1
           end
-          cell=cell_fwd
-          c=c+cell_fwd-cell
+          cell = cell_fwd
+          c = c+cell_fwd-cell
         end
       end
     end
-    for j=c:num_f_cells
-      fine_to_coarse_faces_map_ptrs[j+1]=fine_to_coarse_faces_map_ptrs[j]
+
+    # Counts to pointers: 
+    for j = c:num_f_cells
+      fine_to_coarse_faces_map_ptrs[j+1] = fine_to_coarse_faces_map_ptrs[j]
     end
+
+    # Fill children data: 
     fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     fcell_to_child_id_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
-    cell=1
+    cell = 1
     c = 1
     while cell <= num_o_c_cells
-      if (flags[cell]==refine_flag)
+      if (flags[cell]==refine_flag)      # Cell is refined
         for child = 1:num_children
           fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
           fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = child
         end 
         c = c + num_children
-        cell=cell+1
-      elseif (flags[cell]==nothing_flag)
+        cell = cell+1
+      elseif (flags[cell]==nothing_flag) # Cell is not touched
         fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=cell
         fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
-        c=c+1
-        cell=cell+1
-      else
+        c = c+1
+        cell = cell+1
+      else                               # Cell is coarsened
         @assert flags[cell]==coarsen_flag
         cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
         if coarsen
@@ -1089,13 +1062,13 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
             fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
             cell=cell+1
           end 
-          c=c+1
+          c = c+1
         else 
-          for j=cell:cell_fwd-1 
+          for j = cell:cell_fwd-1 
             fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=j
             fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
-            c=c+1
-            cell=cell+1
+            c = c+1
+            cell = cell+1
           end
         end
       end
@@ -1131,9 +1104,9 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
   if coarsen
     fine_to_coarse_faces_map = Vector{Gridap.Arrays.Table{Int,Vector{Int},Vector{Int}}}(undef,Dc+1)
-    a,b=_setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
-    fine_to_coarse_faces_map[Dc+1]=a
-    fcell_to_child_id=b
+    a,b = _setup_fine_to_coarse_faces_map_table(Dc,flags,num_o_c_cells,num_f_cells)
+    fine_to_coarse_faces_map[Dc+1] = a
+    fcell_to_child_id = b
     # In the future we should also have here the code to also setup
     # fine_to_coarse_faces_map for lower dimensional objects
   else
@@ -1261,247 +1234,238 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                   refinement_and_coarsening_flags::MPIArray{<:Vector};
                                   parts=nothing) where {Dc,Dp}
 
-    Gridap.Helpers.@notimplementedif parts!=nothing
+  Gridap.Helpers.@notimplementedif parts!=nothing
 
-    # Variables which are updated accross calls to init_fn_callback_2d
-    current_quadrant_index_within_tree = Cint(0)
-    current_quadrant_index_among_trees = Cint(0)
+  # Variables which are updated accross calls to init_fn_callback_2d
+  current_quadrant_index_within_tree = Cint(0)
+  current_quadrant_index_among_trees = Cint(0)
 
-    # This C callback function is called once per quadtree quadrant. Here we are assuming
-    # that p4est->user_pointer has been set prior to the first call to this call
-    # back function to an array of ints with as many entries as forest quadrants. This call back function
-    # initializes the quadrant->p.user_data void * pointer of all quadrants such that it
-    # points to the corresponding entry in the global array mentioned in the previous sentence.
-    if (Dc==2)
-      function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
-        which_tree::p4est_topidx_t,
-        quadrant_ptr::Ptr{p4est_quadrant_t})
-        # Extract a reference to the tree which_tree
-        forest = forest_ptr[]
-        tree = p4est_tree_array_index(forest.trees, which_tree)[]
-        quadrant = quadrant_ptr[]
-        q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-        @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
-        user_data = unsafe_wrap(Array, 
-                                Ptr{Cint}(forest.user_pointer), 
-                                current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-        unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-        current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-        current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-        return nothing
-      end
-      init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
-                                        Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
-      init_fn_callback_c = init_fn_callback_2d_c
-
-
-      function coarsen_callback_2d(forest_ptr::Ptr{p4est_t},
-                                   which_tree::p4est_topidx_t,
-                                   quadrant_ptr::Ptr{Ptr{p4est_quadrant_t}})
-
-        num_children=get_num_children(Val{2})
-        quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
-        coarsen=Cint(1)
-        for quadrant_index=1:num_children
-          quadrant = quadrants[quadrant_index][]
-          # I have noticed that new quadrants created as by-product
-          # of the refininement process have quadrant.p.user_data == C_NULL
-          # Not sure why ... The following if-end takes care of this.
-          if (quadrant.p.user_data) == C_NULL
-            return Cint(0)
-          end
-          is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
-          if (!is_coarsen_flag) 
-            return Cint(0)
-          end
-        end  
-        return coarsen
-      end 
-      coarsen_fn_callback_2d_c = @cfunction($coarsen_callback_2d, 
-                                            Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
-      coarsen_fn_callback_c = coarsen_fn_callback_2d_c
-
-
-      function refine_replace_callback_2d(::Ptr{p4est_t},
-                                        which_tree::p4est_topidx_t,
-                                        num_outgoing::Cint,
-                                        outgoing_ptr::Ptr{Ptr{p4est_quadrant_t}},
-                                        num_incoming::Cint,
-                                        incoming_ptr::Ptr{Ptr{p4est_quadrant_t}})
-        num_children=get_num_children(Val{2}) 
-        @assert num_outgoing==1 
-        @assert num_incoming==num_children
-        outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
-        quadrant = outgoing[1][]
-        incoming=unsafe_wrap(Array, incoming_ptr, num_children)
-        for quadrant_index=1:num_children
-          quadrant = incoming[quadrant_index][]
-          if (quadrant.p.user_data) != C_NULL
-             unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
-          end
-        end
-     end
-
-    refine_replace_callback_2d_c = 
-       @cfunction($refine_replace_callback_2d, Cvoid, (Ptr{p4est_t}, 
-                                                       p4est_topidx_t, 
-                                                       Cint, 
-                                                       Ptr{Ptr{p4est_quadrant_t}}, 
-                                                       Cint, 
-                                                       Ptr{Ptr{p4est_quadrant_t}}))
-    
-    refine_replace_callback_c = refine_replace_callback_2d_c     
-
-    else
-      @assert Dc==3
-      function init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
-        which_tree::p4est_topidx_t,
-        quadrant_ptr::Ptr{p8est_quadrant_t})
-        # Extract a reference to the tree which_tree
-        forest = forest_ptr[]
-        tree = p8est_tree_array_index(forest.trees, which_tree)[]
-        quadrant = quadrant_ptr[]
-        q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-        @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
-        user_data = unsafe_wrap(Array, 
-                                Ptr{Cint}(forest.user_pointer), 
-                                current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-        unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-        current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-        current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-        return nothing
-      end
-      init_fn_callback_3d_c = @cfunction($init_fn_callback_3d, 
-                                        Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
-      init_fn_callback_c = init_fn_callback_3d_c
-
-
-       function coarsen_callback_3d(forest_ptr::Ptr{p8est_t},
-                                   which_tree::p4est_topidx_t,
-                                   quadrant_ptr::Ptr{Ptr{p8est_quadrant_t}})
-
-        num_children=get_num_children(Val{3})
-        quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
-        coarsen=Cint(1)
-        for quadrant_index=1:num_children
-          quadrant = quadrants[quadrant_index][]
-          # I have noticed that new quadrants created as by-product
-          # of the refininement process have quadrant.p.user_data == C_NULL
-          # Not sure why ... The following if-end takes care of this.
-          if (quadrant.p.user_data) == C_NULL
-            return Cint(0)
-          end
-          is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
-          if (!is_coarsen_flag) 
-            return Cint(0)
-          end
-        end  
-        return coarsen
-      end 
-      coarsen_fn_callback_3d_c = @cfunction($coarsen_callback_3d, 
-                                            Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
-      coarsen_fn_callback_c = coarsen_fn_callback_3d_c
-
-      function refine_replace_callback_3d(::Ptr{p8est_t},
-                                        which_tree::p4est_topidx_t,
-                                        num_outgoing::Cint,
-                                        outgoing_ptr::Ptr{Ptr{p8est_quadrant_t}},
-                                        num_incoming::Cint,
-                                        incoming_ptr::Ptr{Ptr{p8est_quadrant_t}})
-        num_children=get_num_children(Val{3}) 
-        @assert num_outgoing==1 
-        @assert num_incoming==num_children
-        outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
-        quadrant = outgoing[1][]
-        incoming=unsafe_wrap(Array, incoming_ptr, num_children)
-        for quadrant_index=1:num_children
-          quadrant = incoming[quadrant_index][]
-          if (quadrant.p.user_data) != C_NULL
-             unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
-          end
-        end
-     end
-
-     refine_replace_callback_3d_c = 
-       @cfunction($refine_replace_callback_3d, Cvoid, (Ptr{p8est_t}, 
-                                                       p4est_topidx_t, 
-                                                       Cint, 
-                                                       Ptr{Ptr{p8est_quadrant_t}}, 
-                                                       Cint, 
-                                                       Ptr{Ptr{p8est_quadrant_t}}))
-
-     refine_replace_callback_c = refine_replace_callback_3d_c
-    end                                     
-
-    map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
-      # The length of the local flags array has to match the number of 
-      # cells in the model. This includes both owned and ghost cells. 
-      # Only the flags for owned cells are actually taken into account. 
-      @assert num_cells(lmodel)==length(flags)
-      pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
-    end
-    
-    function refine_callback_2d(::Ptr{p4est_t},
+  # This C callback function is called once per quadtree quadrant. Here we are assuming
+  # that p4est->user_pointer has been set prior to the first call to this call
+  # back function to an array of ints with as many entries as forest quadrants. This call back function
+  # initializes the quadrant->p.user_data void * pointer of all quadrants such that it
+  # points to the corresponding entry in the global array mentioned in the previous sentence.
+  if (Dc==2)
+    function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
       which_tree::p4est_topidx_t,
       quadrant_ptr::Ptr{p4est_quadrant_t})
+      # Extract a reference to the tree which_tree
+      forest = forest_ptr[]
+      tree = p4est_tree_array_index(forest.trees, which_tree)[]
       quadrant = quadrant_ptr[]
-      return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
+      q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
+      @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
+      user_data = unsafe_wrap(Array, 
+                              Ptr{Cint}(forest.user_pointer), 
+                              current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+      unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+      current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
+      current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+      return nothing
     end
-    refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+    init_fn_callback_2d_c = @cfunction($init_fn_callback_2d, 
+                                      Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+    init_fn_callback_c = init_fn_callback_2d_c
 
 
+    function coarsen_callback_2d(forest_ptr::Ptr{p4est_t},
+                                  which_tree::p4est_topidx_t,
+                                  quadrant_ptr::Ptr{Ptr{p4est_quadrant_t}})
 
+      num_children=get_num_children(Val{2})
+      quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
+      coarsen=Cint(1)
+      for quadrant_index=1:num_children
+        quadrant = quadrants[quadrant_index][]
+        # I have noticed that new quadrants created as by-product
+        # of the refininement process have quadrant.p.user_data == C_NULL
+        # Not sure why ... The following if-end takes care of this.
+        if (quadrant.p.user_data) == C_NULL
+          return Cint(0)
+        end
+        is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+        if (!is_coarsen_flag) 
+          return Cint(0)
+        end
+      end  
+      return coarsen
+    end 
+    coarsen_fn_callback_2d_c = @cfunction($coarsen_callback_2d, 
+                                          Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
+    coarsen_fn_callback_c = coarsen_fn_callback_2d_c
+
+
+    function refine_replace_callback_2d(::Ptr{p4est_t},
+                                      which_tree::p4est_topidx_t,
+                                      num_outgoing::Cint,
+                                      outgoing_ptr::Ptr{Ptr{p4est_quadrant_t}},
+                                      num_incoming::Cint,
+                                      incoming_ptr::Ptr{Ptr{p4est_quadrant_t}})
+      num_children=get_num_children(Val{2}) 
+      @assert num_outgoing==1 
+      @assert num_incoming==num_children
+      outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
+      quadrant = outgoing[1][]
+      incoming=unsafe_wrap(Array, incoming_ptr, num_children)
+      for quadrant_index=1:num_children
+        quadrant = incoming[quadrant_index][]
+        if (quadrant.p.user_data) != C_NULL
+            unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
+        end
+      end
+    end
+
+    refine_replace_callback_2d_c = 
+      @cfunction($refine_replace_callback_2d, Cvoid, (Ptr{p4est_t}, 
+                                                      p4est_topidx_t, 
+                                                      Cint, 
+                                                      Ptr{Ptr{p4est_quadrant_t}}, 
+                                                      Cint, 
+                                                      Ptr{Ptr{p4est_quadrant_t}}))
+  
+    refine_replace_callback_c = refine_replace_callback_2d_c     
+
+  else
+    @assert Dc==3
+    function init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
+      which_tree::p4est_topidx_t,
+      quadrant_ptr::Ptr{p8est_quadrant_t})
+      # Extract a reference to the tree which_tree
+      forest = forest_ptr[]
+      tree = p8est_tree_array_index(forest.trees, which_tree)[]
+      quadrant = quadrant_ptr[]
+      q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
+      @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
+      user_data = unsafe_wrap(Array, 
+                              Ptr{Cint}(forest.user_pointer), 
+                              current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
+      unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+      current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
+      current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
+      return nothing
+    end
+    init_fn_callback_3d_c = @cfunction($init_fn_callback_3d, 
+                                      Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+    init_fn_callback_c = init_fn_callback_3d_c
+
+
+    function coarsen_callback_3d(forest_ptr::Ptr{p8est_t},
+                                  which_tree::p4est_topidx_t,
+                                  quadrant_ptr::Ptr{Ptr{p8est_quadrant_t}})
+
+      num_children=get_num_children(Val{3})
+      quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
+      coarsen=Cint(1)
+      for quadrant_index=1:num_children
+        quadrant = quadrants[quadrant_index][]
+        # I have noticed that new quadrants created as by-product
+        # of the refininement process have quadrant.p.user_data == C_NULL
+        # Not sure why ... The following if-end takes care of this.
+        if (quadrant.p.user_data) == C_NULL
+          return Cint(0)
+        end
+        is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+        if (!is_coarsen_flag) 
+          return Cint(0)
+        end
+      end  
+      return coarsen
+    end 
+    coarsen_fn_callback_3d_c = @cfunction($coarsen_callback_3d, 
+                                        Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
+    coarsen_fn_callback_c = coarsen_fn_callback_3d_c
+
+    function refine_replace_callback_3d(::Ptr{p8est_t},
+                                      which_tree::p4est_topidx_t,
+                                      num_outgoing::Cint,
+                                      outgoing_ptr::Ptr{Ptr{p8est_quadrant_t}},
+                                      num_incoming::Cint,
+                                      incoming_ptr::Ptr{Ptr{p8est_quadrant_t}})
+      num_children=get_num_children(Val{3}) 
+      @assert num_outgoing==1 
+      @assert num_incoming==num_children
+      outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
+      quadrant = outgoing[1][]
+      incoming=unsafe_wrap(Array, incoming_ptr, num_children)
+      for quadrant_index=1:num_children
+        quadrant = incoming[quadrant_index][]
+        if (quadrant.p.user_data) != C_NULL
+            unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
+        end
+      end
+    end
+
+    refine_replace_callback_3d_c = 
+      @cfunction($refine_replace_callback_3d, Cvoid, (Ptr{p8est_t}, 
+                                                      p4est_topidx_t, 
+                                                      Cint, 
+                                                      Ptr{Ptr{p8est_quadrant_t}}, 
+                                                      Cint, 
+                                                      Ptr{Ptr{p8est_quadrant_t}}))
+
+    refine_replace_callback_c = refine_replace_callback_3d_c
+  end # callback if
+
+  map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
+    # The length of the local flags array has to match the number of 
+    # cells in the model. This includes both owned and ghost cells. 
+    # Only the flags for owned cells are actually taken into account. 
+    @assert num_cells(lmodel)==length(flags)
+    pXest_reset_data!(Val{Dc}, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
+  end
+  
+  function refine_callback_2d(::Ptr{p4est_t},
+    which_tree::p4est_topidx_t,
+    quadrant_ptr::Ptr{p4est_quadrant_t})
+    quadrant = quadrant_ptr[]
+    return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
+  end
+  refine_callback_2d_c = @cfunction($refine_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+
+  # Copy input p4est, refine and balance
+  ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
+  pXest_refine!(Val{Dc}, ptr_new_pXest,
+                refine_callback_2d_c,
+                refine_replace_callback_c)
+  pXest_coarsen!(Val{Dc}, ptr_new_pXest, coarsen_fn_callback_c)
+  pXest_balance!(Val{Dc}, ptr_new_pXest)
+  pXest_update_flags!(Val{Dc},model.ptr_pXest,ptr_new_pXest)
+
+  # Extract ghost and lnodes
+  ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
+  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
+
+  # Build fine-grid mesh
+  fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(Val{Dc},
+                                                                              model.parts,
+                                                                              model.coarse_model,
+                                                                              model.ptr_pXest_connectivity,
+                                                                              ptr_new_pXest,
+                                                                              ptr_pXest_ghost,
+                                                                              ptr_pXest_lnodes)
     
-    # Copy input p4est, refine and balance
-    ptr_new_pXest = pXest_copy(Val{Dc}, model.ptr_pXest)
-    pXest_refine!(Val{Dc}, ptr_new_pXest,
-                  refine_callback_2d_c,
-                  refine_replace_callback_c)
-    pXest_coarsen!(Val{Dc}, ptr_new_pXest, coarsen_fn_callback_c)
-    pXest_balance!(Val{Dc}, ptr_new_pXest)
-    pXest_update_flags!(Val{Dc},model.ptr_pXest,ptr_new_pXest)
-
-    # Extract ghost and lnodes
-    ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-    ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
-
-    # Build fine-grid mesh
-    fmodel,non_conforming_glue=setup_non_conforming_distributed_discrete_model(Val{Dc},
-                                                                               model.parts,
-                                                                               model.coarse_model,
-                                                                               model.ptr_pXest_connectivity,
-                                                                               ptr_new_pXest,
-                                                                               ptr_pXest_ghost,
-                                                                               ptr_pXest_lnodes)
-     
-     pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
-     pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
-
-     adaptivity_glue = _compute_fine_to_coarse_model_glue(model.parts,
-                                                          model.dmodel,
-                                                          fmodel,
-                                                          refinement_and_coarsening_flags)
-     adaptive_models=map(local_views(model),
-                         local_views(fmodel),
-                         adaptivity_glue) do model, fmodel, glue 
-        Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
-     end
-     fmodel=GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
-
-     ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
-                                    model.parts,
-                                    fmodel,
-                                    non_conforming_glue,
-                                    model.coarse_model,
-                                    model.ptr_pXest_connectivity,
-                                    ptr_new_pXest,
-                                    false,
-                                    model)
-     return ref_model, adaptivity_glue
-  # else
-  #  new_parts = isa(parts,Nothing) ? model.parts : parts
-  #  return VoidOctreeDistributedDiscreteModel(model,new_parts), nothing
-  # end
+  pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
+  pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
+  adaptivity_glue = _compute_fine_to_coarse_model_glue(model.parts,
+                                                        model.dmodel,
+                                                        fmodel,
+                                                        refinement_and_coarsening_flags)
+  adaptive_models = map(local_views(model),
+                        local_views(fmodel),
+                        adaptivity_glue) do model, fmodel, glue 
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+  end
+  fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
+  ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
+                                             model.parts,
+                                             fmodel,
+                                             non_conforming_glue,
+                                             model.coarse_model,
+                                             model.ptr_pXest_connectivity,
+                                             ptr_new_pXest,
+                                             false,
+                                             model)
+  return ref_model, adaptivity_glue
 end
 
 function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
