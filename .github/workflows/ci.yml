@@ -10,13 +10,12 @@ jobs:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     env:
-      JULIA_MPI_BINARY: "system"
       P4EST_ROOT_DIR: "/opt/p4est/2.2/"
     strategy:
       fail-fast: false
       matrix:
         version:
-          - '1.7'
+          - '1.9'
         os:
           - ubuntu-latest
         arch:
@@ -63,8 +62,21 @@ jobs:
           make --quiet
           make --quiet install
           rm -rf $ROOT_DIR/$TAR_FILE $SOURCES_DIR
-          cd $CURR_DIR         
+          cd $CURR_DIR    
       - uses: julia-actions/julia-buildpkg@latest
+
+      - name: add MPIPreferences
+        shell: julia --color=yes --project=. {0}
+        run: |
+          using Pkg
+          Pkg.add("MPIPreferences")
+
+      - name: use MPI system binary 
+        shell: julia --color=yes --project=. {0}
+        run: |
+          using MPIPreferences
+          MPIPreferences.use_system_binary()
+
       # - uses: julia-actions/julia-runtest@v1
       # - uses: julia-actions/julia-processcoverage@v1
       - run: echo $PWD  

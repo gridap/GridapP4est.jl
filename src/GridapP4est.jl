@@ -15,10 +15,15 @@ module GridapP4est
   include("Environment.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
+  include("GridapFixes.jl")
+  include("FESpaces.jl")
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
+  export adapt
   export refine
   export coarsen
   export redistribute
+  export nothing_flag, refine_flag, coarsen_flag
+  
 end
