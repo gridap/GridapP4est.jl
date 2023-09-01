@@ -354,7 +354,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     # global_logger(debug_logger); # Enable the debug logger globally
 
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    for Dc=3:3, perm=2:2, order=1:1
+    for Dc=2:3, perm=1:4, order=1:4
         test(ranks,Val{Dc},perm,order)
     end
     for order=1:2
