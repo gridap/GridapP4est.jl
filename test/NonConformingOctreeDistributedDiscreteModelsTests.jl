@@ -176,8 +176,9 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩH ))
 
     tol=1e-6
-    println("el2 < tol: $(el2) < $(tol)")
-    println("eh1 < tol: $(eh1) < $(tol)")
+    println("[SOLVE COARSE] el2 < tol: $(el2) < $(tol)")
+    println("[SOLVE COARSE] eh1 < tol: $(eh1) < $(tol)")
+    @assert el2 < tol
     @assert eh1 < tol
 
 
@@ -191,10 +192,16 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uh = solve(op)
     e = u - uh
 
+    writevtk(ΩH, "ctrian", cellfields=["uH"=>uH])
+    writevtk(Ωh, "ftrian", cellfields=["uh"=>uh])
+
     # # Compute errors
+
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
     eh1 = sqrt(sum( ∫( e*e + ∇(e)⋅∇(e) )*dΩh ))
-
+ 
+    println("[SOLVE FINE] el2 < tol: $(el2) < $(tol)")
+    println("[SOLVE FINE] eh1 < tol: $(eh1) < $(tol)")
     @assert el2 < tol
     @assert eh1 < tol
 
@@ -203,6 +210,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     e = uh - uHh
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
     tol=1e-6
+    println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
     # prolongation via L2-projection 
@@ -213,12 +221,14 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uHh      = solve(oph)
     e = uh - uHh
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
+    println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
     # restriction via interpolation
     uhH=interpolate(uh,UH) 
     e = uH - uhH
     el2 = sqrt(sum( ∫( e*e )*dΩh ))
+    println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
     # restriction via L2-projection
@@ -244,12 +254,14 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     uhred = solve(op)
     e = u - uhred
     el2 = sqrt(sum( ∫( e*e )*dΩhred ))
+    println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
 
     uhred2 = GridapDistributed.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
     e = u - uhred2
     el2 = sqrt(sum( ∫( e*e )*dΩhred ))
+    println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
     fmodel_red
@@ -354,7 +366,7 @@ module NonConformingOctreeDistributedDiscreteModelsTests
     # global_logger(debug_logger); # Enable the debug logger globally
 
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    for Dc=3:3, perm=2:2, order=1:1
+    for Dc=2:3, perm=1:4, order=1:4
         test(ranks,Val{Dc},perm,order)
     end
     for order=1:2

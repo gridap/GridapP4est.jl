@@ -2175,6 +2175,7 @@ function _set_hanging_labels!(face_labeling,non_conforming_glue)
       num_hanging_faces_i = ncglue.num_hanging_faces[i]
       for j=num_regular_faces_i+1:num_regular_faces_i+num_hanging_faces_i
         hanging_entity_id = max_entity_id + face_labeling.d_to_dface_to_entity[i][j]
+        @debug "hanging $(i-1)-face: $(j) hanging_entity_id=$(hanging_entity_id) face_labeling.d_to_dface_to_entity[$(i)][$(j)]=$(face_labeling.d_to_dface_to_entity[i][j])"
         face_labeling.d_to_dface_to_entity[i][j]=hanging_entity_id
         hanging_entitity_ids[hanging_entity_id]=true
       end      

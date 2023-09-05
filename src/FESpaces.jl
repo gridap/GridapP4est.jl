@@ -19,10 +19,14 @@ end
 function _generate_hanging_faces_to_cell_and_lface(num_regular_faces,
     num_hanging_faces,
     gridap_cell_faces)
-    # Locate for each hanging vertex a cell to which it belongs 
-    # and local position within that cell 
+    # Locate for each hanging face the owner cell among the set of cells 
+    # to which it belongs and local position within that cell 
+    # By convention, the owner cell is the cell with minimum identifer among 
+    # all in the set. This convention is used here, and in other parts of the code.
+    # Breaking this convention here may affect the consistency of other parts of the code. 
     hanging_faces_to_cell = Vector{Int}(undef, num_hanging_faces)
     hanging_faces_to_lface = Vector{Int}(undef, num_hanging_faces)
+    hanging_faces_to_cell .= -1 
     for cell = 1:length(gridap_cell_faces)
         s = gridap_cell_faces.ptrs[cell]
         e = gridap_cell_faces.ptrs[cell+1]
@@ -31,8 +35,10 @@ function _generate_hanging_faces_to_cell_and_lface(num_regular_faces,
             fid = gridap_cell_faces.data[s+j-1]
             if fid > num_regular_faces
                 fid_hanging = fid - num_regular_faces
-                hanging_faces_to_cell[fid_hanging] = cell
-                hanging_faces_to_lface[fid_hanging] = j
+                if (hanging_faces_to_cell[fid_hanging]==-1)
+                  hanging_faces_to_cell[fid_hanging] = cell
+                  hanging_faces_to_lface[fid_hanging] = j
+                end
             end
         end
     end
@@ -191,6 +197,7 @@ function _generate_constraints!(Df,
             oface = getindex!(cache_cell_faces[oface_dim+1], cell_faces[oface_dim+1], ocell)[ocell_lface_within_dim]
             oface_lid, _ = owner_faces_lids[oface_dim][oface]
             pindex = owner_faces_pindex[oface_dim][oface_lid]
+            @debug "Df=$(Df) Dc=$(Dc) fid_hanging=$(fid_hanging) cell=$(cell) oface=$(oface) oface_lid=$(oface_lid) pindex=$(pindex) ocell=$(ocell) ocell_lface=$(ocell_lface) subface=$(subface) oface_dim=$(oface_dim) cur_subface_own_dofs=$(cur_subface_own_dofs) face_own_dofs=$(face_own_dofs[offset+lface])"
             for ((ldof, dof), ldof_subface) in zip(enumerate(face_own_dofs[offset+lface]), cur_subface_own_dofs)
                 push!(sDOF_to_dof, current_cell_dof_ids[dof])
                 push!(sDOF_to_dofs, hanging_faces_owner_face_dofs[fid_hanging])
@@ -352,6 +359,7 @@ function _compute_owner_edges_pindex_and_lids(
           ledge = hanging_edges_to_ledge[fid_hanging]
           gvertex1 = cell_vertices[cell][ledge_to_cvertices[ledge][subedge]]
           gvertex2 = cell_vertices[ocell][ledge_to_cvertices[ocell_ledge_within_dim][subedge]]
+          @debug "fid_hanging=$(fid_hanging) cell=$(cell) ledge=$(ledge) ocell=$(ocell) ocell_ledge=$(ocell_ledge) subedge=$(subedge) gvertex1=$(gvertex1) gvertex2=$(gvertex2)"
           pindex = gvertex1==gvertex2 ? 1 : 2
           owner_edge=cell_edges[ocell][ocell_ledge_within_dim]
           owner_edge_lid, _ = owner_edges_lids[owner_edge]
@@ -637,6 +645,7 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
         sDOF_to_dof,
         sDOF_to_dofs,
         sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
+        @debug "fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
         Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
     end
 
