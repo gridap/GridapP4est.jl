@@ -10,7 +10,7 @@
 
 ## Purpose 
 
-The purpose of this package is to provide a `DistributedDiscreteModel` implementation (a parallel mesh data structure, see `GridapDistributed.jl` for more details) able to handle forests of quadtrees/octrees of the computational domain. To this end, it leverages the [`p4est` software library](https://p4est.github.io/) meshing engine under the hood (click [here](https://github.com/gridap/GridapP4est.jl/blob/main/test/UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl) for an example).
+The purpose of this package is to provide a `DistributedDiscreteModel` implementation (a parallel mesh data structure, see `GridapDistributed.jl` for more details) able to handle forests of quadtrees/octrees of the computational domain. To this end, it leverages the [`p4est` software library](https://p4est.github.io/) meshing engine under the hood (click [here](https://github.com/gridap/GridapP4est.jl/blob/main/test/PoissonUniformlyRefinedOctreeModelsTests.jl) for an example).
 
 ## Build 
 

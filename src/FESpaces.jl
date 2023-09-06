@@ -14,6 +14,42 @@ function _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe::Tuple{<:L
     ref_constraints = evaluate(dof_basis_h_refined, coarse_shape_funs)
 end
 
+function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:Lagrangian,Any,Any})
+    cell_polytope = (Dc == 2) ? QUAD : HEX
+    rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
+    order=reffe[2][2]
+    Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), Df)
+end 
+
+function _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe::Tuple{<:RaviartThomas,Any,Any})
+    cell_polytope = Dc == 2 ? QUAD : HEX
+    basis, reffe_args, reffe_kwargs = reffe
+    cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+    
+    # TO-DO: How can modelH be created such that it is tailored to cell_polytope?
+    modelH=CartesianDiscreteModel((0,1,0,1),(1,1))
+    modelh=refine(modelH,2)
+  
+    VH=TestFESpace(modelH,cell_reffe)
+    Vh=TestFESpace(modelh,cell_reffe)
+
+    uH=get_fe_basis(VH)
+    uHh=change_domain(uH,get_triangulation(modelh),ReferenceDomain())
+    σRTh=Gridap.FESpaces.get_fe_dof_basis(Vh)
+    ref_constraints_contribs=σRTh(uHh) 
+
+    ref_constraints = Matrix{Float64}(undef,num_free_dofs(Vh),num_free_dofs(VH))
+    cell_dof_ids = get_cell_dof_ids(Vh)
+    cache_cell_dof_ids = array_cache(cell_dof_ids)
+    cache_ref_constraints_contribs = array_cache(ref_constraints_contribs) 
+    for cell=1:length(cell_dof_ids)
+       current_cell_dof_ids=getindex!(cache_cell_dof_ids,cell_dof_ids,i)
+       current_ref_constraints_contribs=getindex!(cache_ref_constraints_contribs,ref_constraints_contribs,i)
+       ref_constraints[current_cell_dof_ids,:]=current_ref_constraints_contribs
+    end
+end
+
+
 # To-think: might this info go to the glue? 
 # If it is required in different scenarios, I would say it may make sense
 function _generate_hanging_faces_to_cell_and_lface(num_regular_faces,
@@ -624,20 +660,18 @@ end
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
                                  reffe::Tuple{Gridap.ReferenceFEs.ReferenceFEName,Any,Any}; 
                                  kwargs...) where {Dc}
-    order = reffe[2][2]
     spaces_wo_constraints = map(local_views(model)) do m
         FESpace(m, reffe; kwargs...)
     end
     ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe)
-    cell_polytope = (Dc == 2) ? QUAD : HEX
-    rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
+
     face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc-1)
-    face_subface_ldof_to_cell_ldof[Dc-1] =
-        Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), Dc-1)
+    face_subface_ldof_to_cell_ldof[Dc-1] = _generate_face_subface_ldof_to_cell_ldof(Dc-1, Dc, reffe)
     if (Dc == 3)
-        face_subface_ldof_to_cell_ldof[1] =
-            Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), 1)
+       face_subface_ldof_to_cell_ldof[1] =
+          _generate_face_subface_ldof_to_cell_ldof(1, Dc, reffe)
     end
+
     sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
         generate_constraints(model, spaces_wo_constraints, reffe, ref_constraints, face_subface_ldof_to_cell_ldof)
 
