@@ -243,8 +243,8 @@ module DarcyNonConformingOctreeModelsTests
   u_ex_2D(x) = VectorValue(2*x[1],x[1]+x[2])
   p_ex_2D(x) = x[1]-x[2]
   f_ex_2D(x) = u_ex_2D(x) + ∇(p_ex_2D)(x)
-  u_ex_3D(x) = VectorValue(2*x[1],x[1]+x[2],4*x[3])
-  p_ex_3D(x) = x[1]-x[2]+2x[3]
+  u_ex_3D(x) = VectorValue(x[1],x[1]+x[2],2*x[3])
+  p_ex_3D(x) = 3.14
   f_ex_3D(x) = u_ex_3D(x) + ∇(p_ex_3D)(x)
   
   function get_analytical_functions(Dc)
@@ -359,7 +359,7 @@ module DarcyNonConformingOctreeModelsTests
     # driver(ranks,coarse_model,order)
 
     domain = (0,1,0,1,0,1)
-    order = 1 
+    order = 1
     coarse_model=CartesianDiscreteModel(domain,(1,1,1))
     driver(ranks,coarse_model,order)
   end
