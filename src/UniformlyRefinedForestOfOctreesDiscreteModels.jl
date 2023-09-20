@@ -642,7 +642,6 @@ function generate_face_labeling(parts,
             return nothing
           end
         else
-          @assert iterator_mode[1]==ITERATOR_RESTRICT_TO_INTERIOR
           # If current face is in the boundary 
           if (info.tree_boundary!=0)
             return nothing

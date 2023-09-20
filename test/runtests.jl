@@ -40,7 +40,8 @@ function run_tests(testdir)
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl"]
           np = [4]
           extra_args = ""
-        elseif f in ["NonConformingOctreeDistributedDiscreteModelsTests.jl"]
+        elseif f in ["NonConformingOctreeDistributedDiscreteModelsTests.jl",
+                     "AdaptivityFlagsMarkingStrategiesTests.jl"]
           np = [1,2,4]
           extra_args = ""
         else
