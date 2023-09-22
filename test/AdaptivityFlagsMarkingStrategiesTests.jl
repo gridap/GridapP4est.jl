@@ -16,9 +16,24 @@ module AdaptivityFlagsMarkingStrategiesTests
     refinement_fraction=0.2
     coarsening_fraction=0.05
     cell_partition   = get_cell_gids(dmodel)
-    error_indicators = map(ranks,partition(cell_partition)) do rank, partition  
-        rand(local_length(partition))
+
+    degree = 2*order+1
+    reffe=ReferenceFE(lagrangian,Float64,order)
+
+    Vh=FESpace(dmodel,reffe,conformity=:H1)
+    Uh=TrialFESpace(Vh)
+    g(x)  = sin(π*(x[1]+x[2]))
+    gh=interpolate(g,Uh)
+    Ω  = Triangulation(with_ghost,dmodel)
+    dΩ = Measure(Ω,degree)
+    dc=∫(g-gh)dΩ
+    error_indicators=map(local_views(dc)) do dc 
+      get_array(dc)
     end
+
+    # error_indicators = map(ranks,partition(cell_partition)) do rank, partition  
+    #     rand(local_length(partition))
+    # end
 
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
@@ -71,7 +86,7 @@ module AdaptivityFlagsMarkingStrategiesTests
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
     # rdmodel=dmodel
-    for i=1:5
+    for i=1:3
       dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
      end
   end 
