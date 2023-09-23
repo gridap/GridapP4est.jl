@@ -63,7 +63,7 @@ jobs:
           make --quiet install
           rm -rf $ROOT_DIR/$TAR_FILE $SOURCES_DIR
           cd $CURR_DIR    
-      - uses: julia-actions/julia-buildpkg@latest
+      - uses: julia-actions/julia-buildpkg@v1
 
       - name: add MPIPreferences
         shell: julia --color=yes --project=. {0}
