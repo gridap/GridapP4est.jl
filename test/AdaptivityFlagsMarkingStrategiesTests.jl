@@ -13,7 +13,7 @@ module AdaptivityFlagsMarkingStrategiesTests
                                            dmodel::OctreeDistributedDiscreteModel{Dc},
                                            order) where Dc
 
-    refinement_fraction=0.2
+    refinement_fraction=0.1
     coarsening_fraction=0.05
     cell_partition   = get_cell_gids(dmodel)
 
@@ -22,13 +22,23 @@ module AdaptivityFlagsMarkingStrategiesTests
 
     Vh=FESpace(dmodel,reffe,conformity=:H1)
     Uh=TrialFESpace(Vh)
-    g(x)  = sin(π*(x[1]+x[2]))
+
+    
+    α  = 200
+    r  = 0.7
+    if (Dc==2)
+      xc = VectorValue(-0.05, -0.05)
+    else
+      xc = VectorValue(-0.05, -0.05, -0.05)
+    end 
+    g(x) = atan(α*(sqrt((x-xc)·(x-xc))-r))
+
     gh=interpolate(g,Uh)
     Ω  = Triangulation(with_ghost,dmodel)
     dΩ = Measure(Ω,degree)
-    dc=∫(g-gh)dΩ
+    dc=∫((g-gh)*(g-gh))dΩ
     error_indicators=map(local_views(dc)) do dc 
-      get_array(dc)
+      sqrt.(get_array(dc))
     end
 
     # error_indicators = map(ranks,partition(cell_partition)) do rank, partition  
@@ -86,9 +96,9 @@ module AdaptivityFlagsMarkingStrategiesTests
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
     # rdmodel=dmodel
-    for i=1:3
+    for i=1:5
       dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
-     end
+    end
   end 
 
   function test_3d(ranks,order)
@@ -105,7 +115,7 @@ module AdaptivityFlagsMarkingStrategiesTests
     # global_logger(debug_logger); # Enable the debug logger globally
 
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    for order=1:2
+    for order=1:1
       test_2d(ranks,order)
       test_3d(ranks,order)
     end
