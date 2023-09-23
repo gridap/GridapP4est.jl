@@ -13,7 +13,7 @@ module AdaptivityFlagsMarkingStrategiesTests
                                            dmodel::OctreeDistributedDiscreteModel{Dc},
                                            order) where Dc
 
-    refinement_fraction=0.1
+    refinement_fraction=0.2
     coarsening_fraction=0.05
     cell_partition   = get_cell_gids(dmodel)
 
@@ -40,10 +40,6 @@ module AdaptivityFlagsMarkingStrategiesTests
     error_indicators=map(local_views(dc)) do dc 
       sqrt.(get_array(dc))
     end
-
-    # error_indicators = map(ranks,partition(cell_partition)) do rank, partition  
-    #     rand(local_length(partition))
-    # end
 
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))

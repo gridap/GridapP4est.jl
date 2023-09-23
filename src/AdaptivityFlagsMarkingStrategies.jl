@@ -47,16 +47,16 @@ function _compute_thresholds(error_indicators,
     error_indicator.*error_indicator
   end 
 
-  ref_sq_min_estimate = map(sq_error_indicators, num_owned_cells) do sq_error_indicator, num_owned_cells
-    minimum(view(sq_error_indicator,1:num_owned_cells))
+  ref_min_estimate = map(sq_error_indicators, num_owned_cells) do sq_error_indicator, num_owned_cells
+    sqrt(minimum(view(sq_error_indicator,1:num_owned_cells)))
   end
 
-  ref_sq_max_estimate = map(sq_error_indicators, num_owned_cells) do sq_error_indicator, num_owned_cells
-    maximum(view(sq_error_indicator,1:num_owned_cells))
+  ref_max_estimate = map(sq_error_indicators, num_owned_cells) do sq_error_indicator, num_owned_cells
+    sqrt(maximum(view(sq_error_indicator,1:num_owned_cells)))
   end
 
-  ref_min_estimate=reduction(min,ref_sq_min_estimate,init=typemax(eltype(ref_sq_min_estimate)))
-  ref_max_estimate=reduction(max,ref_sq_max_estimate,init=typemin(eltype(ref_sq_max_estimate)))
+  ref_min_estimate=reduction(min,ref_min_estimate,init=typemax(eltype(ref_min_estimate)))
+  ref_max_estimate=reduction(max,ref_max_estimate,init=typemin(eltype(ref_max_estimate)))
 
   # We compute refinement thresholds by bisection of the interval spanned by
   # the smallest and largest error indicator. this leads to a small problem:
@@ -176,7 +176,7 @@ function _compute_thresholds(error_indicators,
       current_num_cells_to_be_refined = 0
       if (!refinement_converged)  
         for i=1:num_owned_cells
-          if (sq_error_indicators[i]>=ref_split_estimate*ref_split_estimate)
+          if (sq_error_indicators[i]>ref_split_estimate*ref_split_estimate)
             current_num_cells_to_be_refined += 1
           end
         end
