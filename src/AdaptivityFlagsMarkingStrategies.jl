@@ -36,27 +36,31 @@ function _compute_thresholds(error_indicators,
 
   target_num_cells_to_be_refined = 
        compute_target_num_cells(num_global_cells, 
-                                refinement_fraction)
+                                refinement_fraction)   
+                                
 
   target_num_cells_to_be_coarsened = 
        compute_target_num_cells(num_global_cells, 
                                 coarsening_fraction)
-
 
   sq_error_indicators = map(error_indicators) do error_indicator
     error_indicator.*error_indicator
   end 
 
   ref_min_estimate = map(sq_error_indicators, num_owned_cells) do sq_error_indicator, num_owned_cells
-    sqrt(minimum(view(sq_error_indicator,1:num_owned_cells)))
+    minimum(view(sq_error_indicator,1:num_owned_cells))
   end
 
   ref_max_estimate = map(sq_error_indicators, num_owned_cells) do sq_error_indicator, num_owned_cells
-    sqrt(maximum(view(sq_error_indicator,1:num_owned_cells)))
+    maximum(view(sq_error_indicator,1:num_owned_cells))
   end
 
-  ref_min_estimate=reduction(min,ref_min_estimate,init=typemax(eltype(ref_min_estimate)))
-  ref_max_estimate=reduction(max,ref_max_estimate,init=typemin(eltype(ref_max_estimate)))
+
+  ref_min_estimate=reduction(min,ref_min_estimate,init=typemax(eltype(ref_min_estimate)),destination=:all)
+  ref_max_estimate=reduction(max,ref_max_estimate,init=typemin(eltype(ref_max_estimate)),destination=:all)
+
+  ref_min_estimate=map(sqrt,ref_min_estimate)
+  ref_max_estimate=map(sqrt,ref_max_estimate)
 
   # We compute refinement thresholds by bisection of the interval spanned by
   # the smallest and largest error indicator. this leads to a small problem:
@@ -193,9 +197,11 @@ function _compute_thresholds(error_indicators,
       current_num_cells_to_be_refined, current_num_cells_to_be_coarsened
     end |> tuple_of_arrays
 
-    if (!refinement_converged)  
+    if (!refinement_converged)
        current_num_cells_to_be_refined=
-           reduction(+,current_num_cells_to_be_refined,init=zero(eltype(current_num_cells_to_be_refined)))
+           reduction(+,current_num_cells_to_be_refined,
+                     init=zero(eltype(current_num_cells_to_be_refined)),
+                     destination=:all)
        ref_min_estimate,ref_max_estimate=map(current_num_cells_to_be_refined, 
                                              target_num_cells_to_be_refined,
                                              ref_min_estimate,
@@ -219,7 +225,8 @@ function _compute_thresholds(error_indicators,
 
     if (!coarsening_converged)
         current_num_cells_to_be_coarsened=
-            reduction(+,current_num_cells_to_be_coarsened,init=zero(eltype(current_num_cells_to_be_coarsened)))
+            reduction(+,current_num_cells_to_be_coarsened,
+                      init=zero(eltype(current_num_cells_to_be_coarsened)),destination=:all)
         coarsening_min_estimate,coarsening_max_estimate = map(current_num_cells_to_be_coarsened,
                                                               target_num_cells_to_be_coarsened,         coarsening_min_estimate,
                                                               coarsening_max_estimate,

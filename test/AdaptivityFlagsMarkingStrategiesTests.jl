@@ -92,7 +92,7 @@ module AdaptivityFlagsMarkingStrategiesTests
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
     # rdmodel=dmodel
-    for i=1:5
+    for i=1:4
       dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
     end
   end 
@@ -101,7 +101,7 @@ module AdaptivityFlagsMarkingStrategiesTests
     coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
-    for i=1:2
+    for i=1:4
         dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order)
     end
   end
