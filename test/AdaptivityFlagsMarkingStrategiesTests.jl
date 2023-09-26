@@ -115,7 +115,7 @@ module AdaptivityFlagsMarkingStrategiesTests
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     for order=1:1
       test_2d(ranks,order)
-      #test_3d(ranks,order)
+      test_3d(ranks,order)
     end
   end
 
