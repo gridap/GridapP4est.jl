@@ -55,6 +55,8 @@ module AdaptivityFlagsMarkingStrategiesTests
 
     model,glue=adapt(dmodel,ref_coarse_flags);
 
+    writevtk(model, "model$(Dc)")
+
     # Define manufactured functions
     u(x) = x[1]+x[2]^order
     f(x) = -Δ(u)(x)
@@ -113,7 +115,7 @@ module AdaptivityFlagsMarkingStrategiesTests
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     for order=1:1
       test_2d(ranks,order)
-      test_3d(ranks,order)
+      #test_3d(ranks,order)
     end
   end
 

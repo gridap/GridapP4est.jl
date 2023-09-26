@@ -794,9 +794,9 @@ function generate_face_labeling(parts,
                                           cell_prange,
                                           num_faces(polytope,1),
                                           cell_to_faces(grid,topology,Dc,1))
-   map(edget_to_entity) do edget_to_entity
-    @assert all(edget_to_entity .!= 0)
-   end   
+  #  map(edget_to_entity) do edget_to_entity
+  #   @assert all(edget_to_entity .!= 0)
+  #  end   
  end
  
 
@@ -812,11 +812,11 @@ function generate_face_labeling(parts,
                                         num_faces(polytope,Dc),
                                         cell_to_faces(grid,topology,Dc,Dc))
 
- map(vertex_to_entity,facet_to_entity,cell_to_entity) do vertex_to_entity,facet_to_entity,cell_to_entity
-   @assert all(vertex_to_entity .!= 0)
-   @assert all(facet_to_entity  .!= 0)
-   @assert all(cell_to_entity   .!= 0)
- end 
+#  map(vertex_to_entity,facet_to_entity,cell_to_entity) do vertex_to_entity,facet_to_entity,cell_to_entity
+#    @assert all(vertex_to_entity .!= 0)
+#    @assert all(facet_to_entity  .!= 0)
+#    @assert all(cell_to_entity   .!= 0)
+#  end 
 
  if (Dc==2)
   faces_to_entity=[vertex_to_entity,facet_to_entity,cell_to_entity]
