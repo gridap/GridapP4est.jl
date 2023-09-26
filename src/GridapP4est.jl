@@ -17,6 +17,7 @@ module GridapP4est
   include("OctreeDistributedDiscreteModels.jl")
   include("GridapFixes.jl")
   include("FESpaces.jl")
+  include("AdaptivityFlagsMarkingStrategies.jl")
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
@@ -25,5 +26,7 @@ module GridapP4est
   export coarsen
   export redistribute
   export nothing_flag, refine_flag, coarsen_flag
+  export FixedFractionAdaptiveFlagsMarkingStrategy
+  export update_adaptivity_flags!
   
 end
