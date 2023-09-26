@@ -55,8 +55,6 @@ module AdaptivityFlagsMarkingStrategiesTests
 
     model,glue=adapt(dmodel,ref_coarse_flags);
 
-    writevtk(model, "model$(Dc)")
-
     # Define manufactured functions
     u(x) = x[1]+x[2]^order
     f(x) = -Δ(u)(x)
