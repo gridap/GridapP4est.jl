@@ -156,15 +156,15 @@ module DarcyNonConformingOctreeModelsTests
     end
   end 
 
-#   function test_3d(ranks,order)
-#     coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
-#     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
-#     test_refine_and_coarsen_at_once(ranks,dmodel,order)
-#     rdmodel=dmodel
-#     for i=1:5
-#       rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order)
-#     end
-#   end 
+  function test_3d(ranks,order)
+    coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+    test_refine_and_coarsen_at_once(ranks,dmodel,order)
+    rdmodel=dmodel
+    for i=1:5
+      rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order)
+    end
+  end 
 
 #   function test(ranks,TVDc::Type{Val{Dc}}, perm, order) where Dc
 #     coarse_model = setup_model(TVDc,perm)
@@ -226,7 +226,6 @@ module DarcyNonConformingOctreeModelsTests
     degree = 2*(order+1)
     dΩ = Measure(trian,degree)
     
-    
     btrian = Boundary(model,tags=neumanntags)
     degree = 2*(order+1)
     dΓ = Measure(btrian,degree)
@@ -238,7 +237,24 @@ module DarcyNonConformingOctreeModelsTests
     # xh=get_trial_fe_basis(X)
     # yh=get_fe_basis(Y)
     # vh, qh = yh
-    # uh, ph = xh 
+    # uh, ph = xh
+    # xh=interpolate_everywhere([u_ex,p_ex],X)
+    # uh, ph = xh
+    # eu = u_ex - uh
+    # ep = p_ex - ph
+    # writevtk(trian,"error",cellfields=["eu"=>eu,"ep"=>ep])
+
+    # l2(v) = sqrt(sum(∫(v⋅v)*dΩ))
+    # h1(v) = sqrt(sum(∫(v*v + ∇(v)⋅∇(v))*dΩ))
+    
+    # eu_l2 = l2(eu)
+    # ep_l2 = l2(ep)
+    # ep_h1 = h1(ep)
+
+    # tol = 1.0e-9
+    # @test eu_l2 < tol
+    # @test ep_l2 < tol
+    # @test ep_h1 < tol
 
     # res=assemble_vector(a((u_ex,p_ex),(vh,qh))-b((vh,qh)),Y)
     # println("res: $(norm(res))")
@@ -289,7 +305,7 @@ module DarcyNonConformingOctreeModelsTests
         flags
     end
     fmodel,glue=adapt(model,ref_coarse_flags)
-    xh = solve_darcy(fmodel,order)
+    xh,Xh = solve_darcy(fmodel,order)
     check_error_darcy(fmodel,order,xh)
   end 
 
@@ -301,15 +317,8 @@ module DarcyNonConformingOctreeModelsTests
 
     order=1
     test_2d(ranks,order)
-    
-    # domain = (0,1,0,1)
-    # order = 1
-    # coarse_model=CartesianDiscreteModel(domain,(1,1))
-    # driver(ranks,coarse_model,order)
 
-    # domain = (0,1,0,1,0,1)
-    # order = 2
-    # coarse_model=CartesianDiscreteModel(domain,(1,1,1))
-    # driver(ranks,coarse_model,order)
+    order=1
+    test_3d(ranks,order)
   end
 end
