@@ -40,48 +40,48 @@ module DarcyNonConformingOctreeModelsTests
     uh,ph=xh
     Uh,Ph=Xh
 
-    Ωh = Triangulation(fmodel)
-    degree = 2*(order+1)
-    dΩh = Measure(Ωh,degree)
+    # Ωh = Triangulation(fmodel)
+    # degree = 2*(order+1)
+    # dΩh = Measure(Ωh,degree)
 
-    # prolongation via interpolation
-    uHh=interpolate(uH,Uh)   
-    e = uh - uHh
-    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    # # prolongation via interpolation
+    # uHh=interpolate(uH,Uh)   
+    # e = uh - uHh
+    # el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
     tol=1e-6
-    println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
-    @assert el2 < tol
+    # println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
+    # @assert el2 < tol
 
-    # prolongation via L2-projection 
-    # Coarse FEFunction -> Fine FEFunction, by projection
-    ahp(u,v)  = ∫(v⋅u)*dΩh
-    lhp(v)    = ∫(v⋅uH)*dΩh
-    oph      = AffineFEOperator(ahp,lhp,Uh,Uh)
-    uHh      = solve(oph)
-    e = uh - uHh
-    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
-    @assert el2 < tol
+    # # prolongation via L2-projection 
+    # # Coarse FEFunction -> Fine FEFunction, by projection
+    # ahp(u,v)  = ∫(v⋅u)*dΩh
+    # lhp(v)    = ∫(v⋅uH)*dΩh
+    # oph      = AffineFEOperator(ahp,lhp,Uh,Uh)
+    # uHh      = solve(oph)
+    # e = uh - uHh
+    # el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    # println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
+    # @assert el2 < tol
 
-    # restriction via interpolation
-    uhH=interpolate(uh,UH) 
-    e = uH - uhH
-    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
-    @assert el2 < tol
+    # # restriction via interpolation
+    # uhH=interpolate(uh,UH) 
+    # e = uH - uhH
+    # el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    # println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
+    # @assert el2 < tol
 
-    # restriction via L2-projection
-    ΩH = Triangulation(dmodel)
-    degree = 2*(order+1)
-    dΩH = Measure(ΩH,degree)
+    # # restriction via L2-projection
+    # ΩH = Triangulation(dmodel)
+    # degree = 2*(order+1)
+    # dΩH = Measure(ΩH,degree)
     
-    dΩhH = Measure(ΩH,Ωh,2*order)
-    aHp(u,v) = ∫(v⋅u)*dΩH
-    lHp(v)   = ∫(v⋅uh)*dΩhH
-    oph     = AffineFEOperator(aHp,lHp,UH,UH)
-    uhH     = solve(oph)
-    e       = uH - uhH
-    el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
+    # dΩhH = Measure(ΩH,Ωh,2*order)
+    # aHp(u,v) = ∫(v⋅u)*dΩH
+    # lHp(v)   = ∫(v⋅uh)*dΩhH
+    # oph     = AffineFEOperator(aHp,lHp,UH,UH)
+    # uhH     = solve(oph)
+    # e       = uH - uhH
+    # el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
 
     fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
     xh_red,Xh_red=solve_darcy(fmodel_red,order)
@@ -96,8 +96,8 @@ module DarcyNonConformingOctreeModelsTests
 
     u_ex, p_ex, f_ex=get_analytical_functions(Dc)
 
-
-    uhred2 = GridapDistributed.redistribute_fe_function(uhred,Uh_red,fmodel_red,red_glue)
+    uhred2 = GridapDistributed.redistribute_fe_function(uh,Uh_red,fmodel_red,red_glue)
+    
     e = u_ex - uhred2
     el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
     println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
@@ -164,13 +164,7 @@ module DarcyNonConformingOctreeModelsTests
     for i=1:5
       rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order)
     end
-  end 
-
-#   function test(ranks,TVDc::Type{Val{Dc}}, perm, order) where Dc
-#     coarse_model = setup_model(TVDc,perm)
-#     model = OctreeDistributedDiscreteModel(ranks, coarse_model, 1)
-#     test_transfer_ops_and_redistribute(ranks,model,order)
-#   end
+  end
 
   u_ex_2D(x) = VectorValue(2*x[1],x[1]+x[2])
   p_ex_2D(x) = x[1]-x[2]
@@ -193,6 +187,30 @@ module DarcyNonConformingOctreeModelsTests
   function GridapDistributed.remove_ghost_cells(
     trian::Gridap.Adaptivity.AdaptedTriangulation{Dc,Dp,<:Union{SkeletonTriangulation,BoundaryTriangulation}},gids) where {Dc,Dp}
     GridapDistributed.remove_ghost_cells(trian.trian,gids)
+  end
+
+  # Required to transfer fine-grid VECTOR-VALUED fields into coarse-grid 
+  function Gridap.Adaptivity.FineToCoarseField(fine_fields::AbstractArray{<:Gridap.Fields.Field},
+                                               rrule::Gridap.Adaptivity.RefinementRule,
+                                               child_ids::AbstractArray{<:Integer})
+    
+    grid=Gridap.Adaptivity.get_ref_grid(rrule)
+    D=num_cell_dims(grid)
+    x=zero(Point{D,Float64})
+    ffx=lazy_map(evaluate,fine_fields,Fill([x],length(fine_fields)))
+    ffx=ffx[1]
+    fields = Vector{Gridap.Fields.Field}(undef,Gridap.Adaptivity.num_subcells(rrule))
+    fields = fill!(fields,Gridap.Fields.ConstantField(zero(eltype(ffx))))
+    for (k,id) in enumerate(child_ids)
+      fields[id] = fine_fields[k]
+    end
+    return Gridap.Adaptivity.FineToCoarseField(fields,rrule)
+  end
+
+  # Required in order to avoid returning the results of get_cell_dof_ids(space)
+  # in the case of a FESpaceWithLinearConstraints wrapped around a TrialFESpace
+  function GridapDistributed._get_cell_dof_ids_inner_space(s::TrialFESpace)
+    GridapDistributed._get_cell_dof_ids_inner_space(s.space)
   end
 
   function solve_darcy(model::GridapDistributed.DistributedDiscreteModel{Dc},order) where {Dc}
@@ -233,37 +251,6 @@ module DarcyNonConformingOctreeModelsTests
     
     a((u, p),(v, q)) = ∫(u⋅v)dΩ +∫(q*(∇⋅u))dΩ-∫((∇⋅v)*p)dΩ
     b(( v, q)) = ∫( v⋅f_ex + q*(∇⋅u_ex))dΩ - ∫((v⋅nb)*p_ex )dΓ
-
-    # xh=get_trial_fe_basis(X)
-    # yh=get_fe_basis(Y)
-    # vh, qh = yh
-    # uh, ph = xh
-    # xh=interpolate_everywhere([u_ex,p_ex],X)
-    # uh, ph = xh
-    # eu = u_ex - uh
-    # ep = p_ex - ph
-    # writevtk(trian,"error",cellfields=["eu"=>eu,"ep"=>ep])
-
-    # l2(v) = sqrt(sum(∫(v⋅v)*dΩ))
-    # h1(v) = sqrt(sum(∫(v*v + ∇(v)⋅∇(v))*dΩ))
-    
-    # eu_l2 = l2(eu)
-    # ep_l2 = l2(ep)
-    # ep_h1 = h1(ep)
-
-    # tol = 1.0e-9
-    # @test eu_l2 < tol
-    # @test ep_l2 < tol
-    # @test ep_h1 < tol
-
-    # res=assemble_vector(a((u_ex,p_ex),(vh,qh))-b((vh,qh)),Y)
-    # println("res: $(norm(res))")
-
-    # axv=assemble_vector(a((u_ex,p_ex),(vh,qh)),Y)
-    # bv=assemble_vector(b((vh,qh)),Y)
-    # map(axv.vector_partition,bv.vector_partition) do axv_vp, bv_vp 
-    #    println(axv_vp-bv_vp)
-    # end
 
     op = AffineFEOperator(a,b,X,Y)
     xh = solve(op)

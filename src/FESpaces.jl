@@ -34,24 +34,7 @@ function _generate_unit_hypercube_model(Dc)
     modelH
 end 
 
-function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:RaviartThomas,Any,Any})
-    cell_polytope = (Dc == 2) ? QUAD : HEX
-    coarse_faces_to_child_ids = (Dc == 2) ? _coarse_faces_to_child_ids_2D : 
-                                            _coarse_faces_to_child_ids_3D
-    basis, reffe_args, reffe_kwargs = reffe
-    cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
-
-    # TO-DO: How can modelH be created such that it is tailored to cell_polytope?
-    modelH= _generate_unit_hypercube_model(Dc)
-    modelh=refine(modelH,2)
-    RTh=TestFESpace(modelh,reffe)
-
-    num_faces = 2*Dc
-    num_subfaces = 2^(Dc-1)
-    first_face = get_offset(get_polytope(cell_reffe),Df)
-
-    face_own_dofs=get_face_own_dofs(cell_reffe)
-    num_dofs_x_face = length(face_own_dofs[first_face+1])
+function _allocate_face_subface_ldof_to_cell_ldof(num_faces, num_subfaces, num_dofs_x_face)
     face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Int}}}(undef,num_faces)
     for face=1:num_faces
         face_subface_ldof_to_cell_ldof[face]=Vector{Vector{Int}}(undef,num_subfaces)
@@ -59,18 +42,52 @@ function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:RaviartTh
             face_subface_ldof_to_cell_ldof[face][subface]=Vector{Int}(undef,num_dofs_x_face)
         end
     end 
+    face_subface_ldof_to_cell_ldof
+end 
 
-    RTh_cell_dof_ids=get_cell_dof_ids(RTh)
-    for coarse_face_id=1:num_faces 
-        for (subface,child_id) in enumerate(coarse_faces_to_child_ids[coarse_face_id,:])
-            @debug "coarse_face_id: $(coarse_face_id), subface: $(subface), child_id: $(child_id)"
-            cell_dof_ids=RTh_cell_dof_ids[child_id]
-            for (i,dof) in enumerate(cell_dof_ids[face_own_dofs[first_face+coarse_face_id]])
-                @debug "i: $(i), dof: $(dof)"
-                face_subface_ldof_to_cell_ldof[coarse_face_id][subface][i]=dof 
-            end
-        end 
-    end
+function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:RaviartThomas,Any,Any})
+    cell_polytope = (Dc == 2) ? QUAD : HEX
+    coarse_faces_to_child_ids = (Dc == 2) ? _coarse_faces_to_child_ids_2D : 
+                                            _coarse_faces_to_child_ids_3D
+    
+    if (Df==Dc-1) # Facets    
+        basis, reffe_args, reffe_kwargs = reffe
+        cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+
+        # TO-DO: How can modelH be created such that it is tailored to cell_polytope?
+        modelH= _generate_unit_hypercube_model(Dc)
+        modelh=refine(modelH,2)
+        RTh=TestFESpace(modelh,reffe)
+
+        num_faces = 2*Dc
+        num_subfaces = 2^(Dc-1)
+        first_face = get_offset(get_polytope(cell_reffe),Df)
+
+        face_own_dofs=get_face_own_dofs(cell_reffe)
+        num_dofs_x_face = length(face_own_dofs[first_face+1])
+        
+        face_subface_ldof_to_cell_ldof=_allocate_face_subface_ldof_to_cell_ldof(num_faces,num_subfaces,num_dofs_x_face)
+
+        RTh_cell_dof_ids=get_cell_dof_ids(RTh)
+        for coarse_face_id=1:num_faces 
+            for (subface,child_id) in enumerate(coarse_faces_to_child_ids[coarse_face_id,:])
+                @debug "coarse_face_id: $(coarse_face_id), subface: $(subface), child_id: $(child_id)"
+                cell_dof_ids=RTh_cell_dof_ids[child_id]
+                for (i,dof) in enumerate(cell_dof_ids[face_own_dofs[first_face+coarse_face_id]])
+                    @debug "i: $(i), dof: $(dof)"
+                    face_subface_ldof_to_cell_ldof[coarse_face_id][subface][i]=dof 
+                end
+            end 
+        end
+    else
+        @assert Df==1 && Dc==3 # Edges in 3D 
+        num_edges=12
+        num_subedges=2 
+        num_dofs_x_edge=0
+        face_subface_ldof_to_cell_ldof=_allocate_face_subface_ldof_to_cell_ldof(num_edges,
+                                                                                num_subedges,
+                                                                                num_dofs_x_edge)        
+    end 
     face_subface_ldof_to_cell_ldof
 end 
 
@@ -773,12 +790,12 @@ function _add_constraints(model::GridapDistributed.DistributedDiscreteModel{Dc},
          sDOF_to_dof,
          sDOF_to_dofs,
          sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
-         @debug "fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
+         @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
          Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
       end
       local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
         result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
-        @debug "fe_space_with_linear_constraints_cell_dof_ids=$(result)"
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_with_linear_constraints_cell_dof_ids=$(result)"
         result
       end
     else 
@@ -790,7 +807,7 @@ function _add_constraints(model::GridapDistributed.DistributedDiscreteModel{Dc},
     gids = GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
     map(partition(gids)) do indices 
         @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
-        @debug "[$(part_id(indices))]: l2o_cell_gids=$(local_to_owner(indices))"
+        @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
     end 
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)
