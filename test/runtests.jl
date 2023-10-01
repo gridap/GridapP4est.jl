@@ -33,15 +33,16 @@ function run_tests(testdir)
     testfiles = sort(filter(istest, readdir(testdir)))
     @time @testset "$f" for f in testfiles
       MPI.mpiexec() do cmd
-        if f in ["UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl"]
+        if f in ["PoissonUniformlyRefinedOctreeModelsTests.jl"]
           np = [4]
           extra_args = "-s 2 2 -r 2"
         elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl"]
           np = [4]
           extra_args = ""
-        elseif f in ["NonConformingOctreeDistributedDiscreteModelsTests.jl",
-                     "AdaptivityFlagsMarkingStrategiesTests.jl"]
+        elseif f in ["PoissonNonConformingOctreeModelsTests.jl",
+                     "AdaptivityFlagsMarkingStrategiesTests.jl",
+                     "DarcyNonConformingOctreeModelsTests.jl"]
           np = [1,2,4]
           extra_args = ""
         else

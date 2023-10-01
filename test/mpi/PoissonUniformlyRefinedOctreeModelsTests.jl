@@ -2,8 +2,8 @@
 using MPI
 using PartitionedArrays
 
-include("../UniformlyRefinedForestOfOctreesDiscreteModelsTests.jl")
-import .UniformlyRefinedForestOfOctreesDiscreteModelsTests as TestModule
+include("../PoissonUniformlyRefinedOctreeModelsTests.jl")
+import .PoissonUniformlyRefinedOctreeModelsTests as TestModule
 
 if !MPI.Initialized()
   MPI.Init()

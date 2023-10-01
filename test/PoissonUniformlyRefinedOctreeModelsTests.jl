@@ -1,4 +1,4 @@
-module UniformlyRefinedForestOfOctreesDiscreteModelsTests
+module PoissonUniformlyRefinedOctreeModelsTests
   using MPI
   using Gridap
   using Gridap.Algebra
