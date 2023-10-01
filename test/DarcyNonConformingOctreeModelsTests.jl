@@ -40,48 +40,48 @@ module DarcyNonConformingOctreeModelsTests
     uh,ph=xh
     Uh,Ph=Xh
 
-    # Ωh = Triangulation(fmodel)
-    # degree = 2*(order+1)
-    # dΩh = Measure(Ωh,degree)
+    Ωh = Triangulation(fmodel)
+    degree = 2*(order+1)
+    dΩh = Measure(Ωh,degree)
 
-    # # prolongation via interpolation
-    # uHh=interpolate(uH,Uh)   
-    # e = uh - uHh
-    # el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    # prolongation via interpolation
+    uHh=interpolate(uH,Uh)   
+    e = uh - uHh
+    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
     tol=1e-6
-    # println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
-    # @assert el2 < tol
+    println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
+    @assert el2 < tol
 
-    # # prolongation via L2-projection 
-    # # Coarse FEFunction -> Fine FEFunction, by projection
-    # ahp(u,v)  = ∫(v⋅u)*dΩh
-    # lhp(v)    = ∫(v⋅uH)*dΩh
-    # oph      = AffineFEOperator(ahp,lhp,Uh,Uh)
-    # uHh      = solve(oph)
-    # e = uh - uHh
-    # el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    # println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
-    # @assert el2 < tol
+    # prolongation via L2-projection 
+    # Coarse FEFunction -> Fine FEFunction, by projection
+    ahp(u,v)  = ∫(v⋅u)*dΩh
+    lhp(v)    = ∫(v⋅uH)*dΩh
+    oph      = AffineFEOperator(ahp,lhp,Uh,Uh)
+    uHh      = solve(oph)
+    e = uh - uHh
+    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
+    @assert el2 < tol
 
-    # # restriction via interpolation
-    # uhH=interpolate(uh,UH) 
-    # e = uH - uhH
-    # el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    # println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
-    # @assert el2 < tol
+    # restriction via interpolation
+    uhH=interpolate(uh,UH) 
+    e = uH - uhH
+    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    println("[INTERPOLATION] el2 < tol: $(el2) < $(tol)")
+    @assert el2 < tol
 
-    # # restriction via L2-projection
-    # ΩH = Triangulation(dmodel)
-    # degree = 2*(order+1)
-    # dΩH = Measure(ΩH,degree)
+    # restriction via L2-projection
+    ΩH = Triangulation(dmodel)
+    degree = 2*(order+1)
+    dΩH = Measure(ΩH,degree)
     
-    # dΩhH = Measure(ΩH,Ωh,2*order)
-    # aHp(u,v) = ∫(v⋅u)*dΩH
-    # lHp(v)   = ∫(v⋅uh)*dΩhH
-    # oph     = AffineFEOperator(aHp,lHp,UH,UH)
-    # uhH     = solve(oph)
-    # e       = uH - uhH
-    # el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
+    dΩhH = Measure(ΩH,Ωh,2*order)
+    aHp(u,v) = ∫(v⋅u)*dΩH
+    lHp(v)   = ∫(v⋅uh)*dΩhH
+    oph     = AffineFEOperator(aHp,lHp,UH,UH)
+    uhH     = solve(oph)
+    e       = uH - uhH
+    el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
 
     fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
     xh_red,Xh_red=solve_darcy(fmodel_red,order)
@@ -183,35 +183,6 @@ module DarcyNonConformingOctreeModelsTests
   end
 
   include("CoarseDiscreteModelsTools.jl")
-
-  function GridapDistributed.remove_ghost_cells(
-    trian::Gridap.Adaptivity.AdaptedTriangulation{Dc,Dp,<:Union{SkeletonTriangulation,BoundaryTriangulation}},gids) where {Dc,Dp}
-    GridapDistributed.remove_ghost_cells(trian.trian,gids)
-  end
-
-  # Required to transfer fine-grid VECTOR-VALUED fields into coarse-grid 
-  function Gridap.Adaptivity.FineToCoarseField(fine_fields::AbstractArray{<:Gridap.Fields.Field},
-                                               rrule::Gridap.Adaptivity.RefinementRule,
-                                               child_ids::AbstractArray{<:Integer})
-    
-    grid=Gridap.Adaptivity.get_ref_grid(rrule)
-    D=num_cell_dims(grid)
-    x=zero(Point{D,Float64})
-    ffx=lazy_map(evaluate,fine_fields,Fill([x],length(fine_fields)))
-    ffx=ffx[1]
-    fields = Vector{Gridap.Fields.Field}(undef,Gridap.Adaptivity.num_subcells(rrule))
-    fields = fill!(fields,Gridap.Fields.ConstantField(zero(eltype(ffx))))
-    for (k,id) in enumerate(child_ids)
-      fields[id] = fine_fields[k]
-    end
-    return Gridap.Adaptivity.FineToCoarseField(fields,rrule)
-  end
-
-  # Required in order to avoid returning the results of get_cell_dof_ids(space)
-  # in the case of a FESpaceWithLinearConstraints wrapped around a TrialFESpace
-  function GridapDistributed._get_cell_dof_ids_inner_space(s::TrialFESpace)
-    GridapDistributed._get_cell_dof_ids_inner_space(s.space)
-  end
 
   function solve_darcy(model::GridapDistributed.DistributedDiscreteModel{Dc},order) where {Dc}
     if (Dc==2)
