@@ -1521,8 +1521,8 @@ end
 # We have a p4est distributed among P processors. This function
 # instantiates the same among Q processors.
 function _p4est_to_new_comm(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
-  A=is_included(old_comm,new_comm) # old \subset new (smaller to larger nparts)
-  B=is_included(new_comm,old_comm) # old \supset new (larger to smaller nparts)
+  A = is_included(old_comm,new_comm) # old \subset new (smaller to larger nparts)
+  B = is_included(new_comm,old_comm) # old \supset new (larger to smaller nparts)
   @assert xor(A,B)
   if (A)
     _p4est_to_new_comm_old_subset_new(ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
