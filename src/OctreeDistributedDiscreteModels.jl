@@ -266,25 +266,26 @@ function pXest_partition_given!(::Type{Val{Dc}}, ptr_pXest, new_num_cells_per_pa
   if (Dc==2)
     p4est_partition_given(ptr_pXest, new_num_cells_per_part)
   else
-    @assert false
+    p8est_partition_given(ptr_pXest, new_num_cells_per_part)
   end
 end
 
 function pXest_uniformly_refine!(::Type{Val{Dc}}, ptr_pXest) where Dc
-  # Refine callback
-  function refine_fn(::Ptr{p4est_t},
-                     which_tree::p4est_topidx_t,
-                     quadrant::Ptr{p4est_quadrant_t})
+  # Refine callbacks
+  function refine_fn_2d(::Ptr{p4est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p4est_quadrant_t})
     return Cint(1)
   end
-  # C-callable refine callback
-  refine_fn_c=@cfunction($refine_fn,
-                         Cint,
-                         (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+  function refine_fn_3d(::Ptr{p8est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p8est_quadrant_t})
+    return Cint(1)
+  end
   if (Dc==2)
+    # C-callable refine callback 2D
+    refine_fn_c = @cfunction($refine_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
     p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
   else
-    @assert false
+    # C-callable refine callback 3D
+    refine_fn_c = @cfunction($refine_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+    p8est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
   end
 end
 
@@ -297,20 +298,20 @@ function pXest_refine!(::Type{Val{Dc}}, ptr_pXest, refine_fn_c, refine_replace_f
 end
 
 function pXest_uniformly_coarsen!(::Type{Val{Dc}}, ptr_pXest) where Dc
-  # Coarsen callback
-  function coarsen_fn(::Ptr{p4est_t},
-                      ::p4est_topidx_t,
-                      ::Ptr{Ptr{p4est_quadrant_t}})
+  # Coarsen callbacks
+  function coarsen_fn_2d(::Ptr{p4est_t},::p4est_topidx_t,::Ptr{Ptr{p4est_quadrant_t}})
     return Cint(1)
   end
-  # C-callable coasen callback
-  coarsen_fn_c=@cfunction($coarsen_fn,
-                         Cint,
-                         (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
+  function coarsen_fn_3d(::Ptr{p8est_t},::p4est_topidx_t,::Ptr{Ptr{p8est_quadrant_t}})
+    return Cint(1)
+  end
   if (Dc==2)
+    # C-callable coasen callback
+    coarsen_fn_c=@cfunction($coarsen_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
     p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
   else
-    @assert false
+    coarsen_fn_c=@cfunction($coarsen_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
+    p8est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
   end
 end
 
