@@ -775,7 +775,7 @@ function _add_constraints(model::GridapDistributed.DistributedDiscreteModel{Dc},
                           spaces_wo_constraints;
                           conformity=nothing,
                           kwargs...) where {Dc}
-    if (conformity!=nothing && conformity!=:L2)
+    if (conformity==nothing || conformity!=:L2)
       ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe)
 
       face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc-1)
