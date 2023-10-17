@@ -63,7 +63,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
 
     if (isa(dmodel,GridapDistributed.DistributedDiscreteModel))
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
-      Gridap.Helpers.@check Dc == Gridap.Geometry.num_point_dims(dmodel)
+      Gridap.Helpers.@check Dp == Gridap.Geometry.num_point_dims(dmodel)
     end
 
     A = typeof(parts)
