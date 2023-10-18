@@ -2148,7 +2148,6 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   face_labeling=generate_face_labeling(parts,
                                        cell_prange,
                                        coarse_discrete_model,
-                                       grid,
                                        topology,
                                        ptr_pXest,
                                        ptr_pXest_ghost)
