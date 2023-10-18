@@ -8,7 +8,7 @@ parts = with_mpi() do distribute
 end
 
 cmodel = CartesianDiscreteModel((0,1,0,1),(1,1))
-model  = OctreeDistributedDiscreteModel(parts,cmodel,4) 
+model  = OctreeDistributedDiscreteModel(parts,cmodel,2) 
 
 reffe = ReferenceFE(raviart_thomas,Float64,1)
 Vh = FESpace(model,reffe;dirichlet_tags="boundary") # Fails
