@@ -1,28 +1,124 @@
 
+# function _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe::Tuple{<:Lagrangian,Any,Any})
+#     function _h_refined_reffe(reffe::Tuple{<:Lagrangian,Any,Any})
+#         (reffe[1], (reffe[2][1], 2 * reffe[2][2]), reffe[3])
+#     end
+#     cell_polytope = Dc == 2 ? QUAD : HEX
+#     basis, reffe_args, reffe_kwargs = reffe
+#     cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+#     h_refined_reffe = _h_refined_reffe(reffe)
+#     basis, reffe_args, reffe_kwargs = h_refined_reffe
+#     cell_reffe_h_refined = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+#     dof_basis_h_refined = Gridap.CellData.get_dof_basis(cell_reffe_h_refined)
+#     coarse_shape_funs = Gridap.ReferenceFEs.get_shapefuns(cell_reffe)
+#     ref_constraints = evaluate(dof_basis_h_refined, coarse_shape_funs)
+# end
+
+# function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:Lagrangian,Any,Any})
+#     cell_polytope = (Dc == 2) ? QUAD : HEX
+#     rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
+#     order=reffe[2][2]
+#     Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), Df)
+# end 
+
 function _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe::Tuple{<:Lagrangian,Any,Any})
-    function _h_refined_reffe(reffe::Tuple{<:Lagrangian,Any,Any})
-        (reffe[1], (reffe[2][1], 2 * reffe[2][2]), reffe[3])
-    end
     cell_polytope = Dc == 2 ? QUAD : HEX
     basis, reffe_args, reffe_kwargs = reffe
     cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
-    h_refined_reffe = _h_refined_reffe(reffe)
-    basis, reffe_args, reffe_kwargs = h_refined_reffe
-    cell_reffe_h_refined = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
-    dof_basis_h_refined = Gridap.CellData.get_dof_basis(cell_reffe_h_refined)
-    coarse_shape_funs = Gridap.ReferenceFEs.get_shapefuns(cell_reffe)
-    ref_constraints = evaluate(dof_basis_h_refined, coarse_shape_funs)
+    
+    # TO-DO: How can modelH be created such that it is tailored to cell_polytope?
+    modelH= _generate_unit_hypercube_model(Dc)
+    modelh=refine(modelH,2)
+  
+    VH=TestFESpace(modelH,cell_reffe)
+    Vh=TestFESpace(modelh,cell_reffe)
+
+    uH=get_fe_basis(VH)
+    uHh=change_domain(uH,get_triangulation(modelh),ReferenceDomain())
+    σRTh=Gridap.FESpaces.get_fe_dof_basis(Vh)
+    ref_constraints_contribs=σRTh(uHh) 
+
+    ref_constraints = Matrix{Float64}(undef,num_free_dofs(Vh),num_free_dofs(VH))
+    cell_dof_ids = get_cell_dof_ids(Vh)
+    cache_cell_dof_ids = array_cache(cell_dof_ids)
+    cache_ref_constraints_contribs = array_cache(ref_constraints_contribs) 
+    for cell=1:length(cell_dof_ids)
+       current_cell_dof_ids=getindex!(cache_cell_dof_ids,cell_dof_ids,cell)
+       current_ref_constraints_contribs=getindex!(cache_ref_constraints_contribs,ref_constraints_contribs,cell)
+       ref_constraints[current_cell_dof_ids,:]=current_ref_constraints_contribs
+    end
+    ref_constraints
 end
+
+function _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
+                                               num_faces,
+                                               coarse_faces_to_child_ids,
+                                               face_dofs,
+                                               cells_dof_ids,
+                                               first_face)
+    for coarse_face_id=1:num_faces 
+        for (subface,child_id) in enumerate(coarse_faces_to_child_ids[coarse_face_id,:])
+            @debug "coarse_face_id: $(coarse_face_id), subface: $(subface), child_id: $(child_id)"
+            cell_dof_ids=cells_dof_ids[child_id]
+            for (i,dof) in enumerate(cell_dof_ids[face_dofs[first_face+coarse_face_id]])
+                @debug "i: $(i), dof: $(dof)"
+                face_subface_ldof_to_cell_ldof[coarse_face_id][subface][i]=dof 
+            end
+        end 
+    end
+end 
+
 
 function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:Lagrangian,Any,Any})
     cell_polytope = (Dc == 2) ? QUAD : HEX
-    rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
-    order=reffe[2][2]
-    Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), Df)
+    coarse_faces_to_child_ids = (Dc == 2) ? _coarse_faces_to_child_ids_2D : 
+                                            _coarse_faces_to_child_ids_3D
+
+    basis, reffe_args, reffe_kwargs = reffe
+    cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+
+    # TO-DO: How can modelH be created such that it is tailored to cell_polytope?
+    modelH= _generate_unit_hypercube_model(Dc)
+    modelh=refine(modelH,2)
+    Vh=TestFESpace(modelh,reffe)
+    cells_dof_ids=get_cell_dof_ids(Vh)
+
+    first_face = get_offset(get_polytope(cell_reffe),Df)
+    face_dofs=get_face_dofs(cell_reffe)
+    num_dofs_x_face = length(face_dofs[first_face+1])
+    
+    if (Df==Dc-1) # Facets    
+        num_faces = 2*Dc
+        num_subfaces = 2^(Dc-1)
+        face_subface_ldof_to_cell_ldof=_allocate_face_subface_ldof_to_cell_ldof(num_faces,num_subfaces,num_dofs_x_face)
+        _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
+                                               num_faces,
+                                               coarse_faces_to_child_ids,
+                                               face_dofs,
+                                               cells_dof_ids,
+                                               first_face)
+        face_subface_ldof_to_cell_ldof
+    else
+        @assert Df==1 && Dc==3 # Edges in 3D
+        num_edges=12
+        num_subedges=2
+        edge_subedge_ldof_to_cell_ldof=_allocate_face_subface_ldof_to_cell_ldof(num_edges,num_subedges,num_dofs_x_face)
+        _fill_face_subface_ldof_to_cell_ldof!(edge_subedge_ldof_to_cell_ldof,
+                                             num_edges,
+                                              _coarse_edges_to_child_ids_3D,
+                                              face_dofs,
+                                              cells_dof_ids,
+                                              first_face)
+        edge_subedge_ldof_to_cell_ldof
+    end 
 end 
+
+
 
 const _coarse_faces_to_child_ids_2D=[1 2; 3 4; 1 3; 2 4]
 const _coarse_faces_to_child_ids_3D=[1 2 3 4; 5 6 7 8; 1 2 5 6; 3 4 7 8; 1 3 5 7; 2 4 6 8; ]
+const _coarse_edges_to_child_ids_3D=[1 2; 3 4; 5 6; 7 8; 1 3; 2 4; 5 7; 6 8; 1 5; 2 6; 3 7; 4 8; ]
+
 
 function _generate_unit_hypercube_model(Dc)
     @assert Dc==2 || Dc==3
@@ -58,27 +154,19 @@ function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:RaviartTh
         modelH= _generate_unit_hypercube_model(Dc)
         modelh=refine(modelH,2)
         RTh=TestFESpace(modelh,reffe)
-
         num_faces = 2*Dc
         num_subfaces = 2^(Dc-1)
         first_face = get_offset(get_polytope(cell_reffe),Df)
-
         face_own_dofs=get_face_own_dofs(cell_reffe)
         num_dofs_x_face = length(face_own_dofs[first_face+1])
-        
         face_subface_ldof_to_cell_ldof=_allocate_face_subface_ldof_to_cell_ldof(num_faces,num_subfaces,num_dofs_x_face)
-
         RTh_cell_dof_ids=get_cell_dof_ids(RTh)
-        for coarse_face_id=1:num_faces 
-            for (subface,child_id) in enumerate(coarse_faces_to_child_ids[coarse_face_id,:])
-                @debug "coarse_face_id: $(coarse_face_id), subface: $(subface), child_id: $(child_id)"
-                cell_dof_ids=RTh_cell_dof_ids[child_id]
-                for (i,dof) in enumerate(cell_dof_ids[face_own_dofs[first_face+coarse_face_id]])
-                    @debug "i: $(i), dof: $(dof)"
-                    face_subface_ldof_to_cell_ldof[coarse_face_id][subface][i]=dof 
-                end
-            end 
-        end
+        _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
+                                        num_faces,
+                                        coarse_faces_to_child_ids,
+                                        face_own_dofs,
+                                        RTh_cell_dof_ids,
+                                        first_face)
     else
         @assert Df==1 && Dc==3 # Edges in 3D 
         num_edges=12
@@ -230,16 +318,18 @@ function _restrict_face_dofs_to_face_dim(cell_reffe,Df)
     first_face_faces = Gridap.ReferenceFEs.get_faces(polytope)[first_face]
     face_dofs_to_face_dim = face_own_dofs[first_face_faces]
     touched=Dict{Int,Int}()
+    dofs=Int64[]
     current=1
     for (i,face_dofs) in enumerate(face_dofs_to_face_dim)
         for (j,dof) in enumerate(face_dofs)
-            if haskey(touched,dof)
-                face_dofs[j]=touched[dof]
-            else
-                touched[dof]=current
-                face_dofs[j]=touched[dof]
-                current=current+1
-            end
+            push!(dofs,dof)
+        end
+    end
+    sort!(dofs)
+    touched = Dict( dofs[i]=>i for i=1:length(dofs))
+    for (i,face_dofs) in enumerate(face_dofs_to_face_dim)
+        for (j,dof) in enumerate(face_dofs)
+            face_dofs[j]=touched[dof]
         end
     end
     face_dofs_to_face_dim
@@ -508,8 +598,49 @@ function _compute_owner_edges_pindex_and_lids(
           owner_edge_lid, _ = owner_edges_lids[owner_edge]
           owner_edges_pindex[owner_edge_lid]=pindex
         end
-    end 
+    end
     owner_edges_pindex, owner_edges_lids
+end
+
+using Gridap.ReferenceFEs
+
+function get_nodes_permutations(reffe::GenericLagrangianRefFE{GradConformity})
+  p = get_polytope(reffe)
+  face_nodes = get_face_nodes(reffe)
+  dofs = get_dof_basis(reffe)
+  interior_nodes = dofs.nodes[face_nodes[end]]
+  Gridap.ReferenceFEs._compute_node_permutations(p,interior_nodes)
+end
+
+function get_nodes_permutations(reffe::ReferenceFE,d::Integer)
+  p = get_polytope(reffe)
+  range = get_dimrange(p,d)
+  get_face_nodes_permutations(reffe)[range]
+end
+
+function get_face_nodes_permutations(reffe::GenericLagrangianRefFE{GradConformity})
+    nodes_permutations = get_nodes_permutations(reffe)
+    reffaces = reffe.reffe.metadata
+    _reffaces = vcat(reffaces...)
+    face_nodes_permutations = map(get_nodes_permutations,_reffaces)
+    push!(face_nodes_permutations,nodes_permutations)
+    face_nodes_permutations
+end
+
+function get_face_dofs_permutations(reffe::LagrangianRefFE)
+    dofs = get_dof_basis(reffe)
+    face_nodes_permutations = get_face_nodes_permutations(reffe)
+    face_nodes = get_face_nodes(reffe)
+    face_dofs = get_face_dofs(reffe)
+    face_dofs_permutations = Gridap.ReferenceFEs._generate_face_own_dofs_permutations(
+      face_nodes_permutations, dofs.node_and_comp_to_dof, face_nodes, face_dofs)
+    face_dofs_permutations
+end
+
+function get_face_dofs_permutations(reffe::ReferenceFE,d::Integer)
+    p = get_polytope(reffe)
+    range = get_dimrange(p,d)
+    get_face_dofs_permutations(reffe)[range]
 end
 
 function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
@@ -575,11 +706,10 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
 
         basis, reffe_args, reffe_kwargs = reffe
         cell_reffe = ReferenceFE(Dc == 2 ? QUAD : HEX, basis, reffe_args...; reffe_kwargs...)
-        reffe_cell = cell_reffe
 
         cell_dof_ids = get_cell_dof_ids(V)
-        face_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(reffe_cell)
-        face_dofs = Gridap.ReferenceFEs.get_face_dofs(reffe_cell)
+        face_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(cell_reffe)
+        face_dofs = Gridap.ReferenceFEs.get_face_dofs(cell_reffe)
 
         hanging_faces_owner_face_dofs = Vector{Vector{Vector{Int}}}(undef, Dc)
 
@@ -610,7 +740,6 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         end
 
         basis, reffe_args, reffe_kwargs = reffe
-        face_reffe = ReferenceFE(facet_polytope, basis, reffe_args...; reffe_kwargs...)
         pindex_to_cfvertex_to_fvertex = Gridap.ReferenceFEs.get_vertex_permutations(facet_polytope)
 
         if (Dc == 3)
@@ -644,20 +773,26 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         end
 
 
-        node_permutations = Vector{Vector{Vector{Int}}}(undef, Dc - 1)
-        nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope, [reffe_args[2] for i = 1:Dc-1])
-        node_permutations[Dc-1] = Gridap.ReferenceFEs._compute_node_permutations(facet_polytope, nodes)
+        # node_permutations = Vector{Vector{Vector{Int}}}(undef, Dc - 1)
+        # nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope, [reffe_args[2] for i = 1:Dc-1])
+        # node_permutations[Dc-1] = Gridap.ReferenceFEs._compute_node_permutations(facet_polytope, nodes)
+        # if (Dc == 3)
+        #     nodes, _ = Gridap.ReferenceFEs.compute_nodes(edget_polytope, [reffe_args[2] for i = 1:Dc-2])
+        #     node_permutations[1] = Gridap.ReferenceFEs._compute_node_permutations(edget_polytope, nodes)
+        # end
+                        
+        node_permutations = Vector{Vector{Vector{Int}}}(undef, Dc-1)
+        node_permutations[Dc-1] = 
+            first(get_face_dofs_permutations(cell_reffe, Dc-1))
         if (Dc == 3)
-            nodes, _ = Gridap.ReferenceFEs.compute_nodes(edget_polytope, [reffe_args[2] for i = 1:Dc-2])
-            node_permutations[1] = Gridap.ReferenceFEs._compute_node_permutations(edget_polytope, nodes)
-        end
+           node_permutations[1] = 
+             first(get_face_dofs_permutations(cell_reffe, 1))
+        end                
 
         subface_own_dofs = Vector{Vector{Vector{Int}}}(undef, Dc - 1)
         subface_own_dofs[Dc-1] = _restrict_face_dofs_to_face_dim(cell_reffe,Dc-1)
-        #Gridap.ReferenceFEs.get_face_own_dofs(face_reffe)
         if (Dc == 3)
             subface_own_dofs[1] = _restrict_face_dofs_to_face_dim(cell_reffe,1)
-            #Gridap.ReferenceFEs.get_face_own_dofs(edge_reffe)
         end
         if (_num_face_own_dofs(cell_reffe,0)>0)
             _generate_constraints!(0,
