@@ -1,26 +1,4 @@
 
-# function _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe::Tuple{<:Lagrangian,Any,Any})
-#     function _h_refined_reffe(reffe::Tuple{<:Lagrangian,Any,Any})
-#         (reffe[1], (reffe[2][1], 2 * reffe[2][2]), reffe[3])
-#     end
-#     cell_polytope = Dc == 2 ? QUAD : HEX
-#     basis, reffe_args, reffe_kwargs = reffe
-#     cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
-#     h_refined_reffe = _h_refined_reffe(reffe)
-#     basis, reffe_args, reffe_kwargs = h_refined_reffe
-#     cell_reffe_h_refined = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
-#     dof_basis_h_refined = Gridap.CellData.get_dof_basis(cell_reffe_h_refined)
-#     coarse_shape_funs = Gridap.ReferenceFEs.get_shapefuns(cell_reffe)
-#     ref_constraints = evaluate(dof_basis_h_refined, coarse_shape_funs)
-# end
-
-# function _generate_face_subface_ldof_to_cell_ldof(Df,Dc,reffe::Tuple{<:Lagrangian,Any,Any})
-#     cell_polytope = (Dc == 2) ? QUAD : HEX
-#     rr = Gridap.Adaptivity.RedRefinementRule(cell_polytope)
-#     order=reffe[2][2]
-#     Gridap.Adaptivity.get_face_subface_ldof_to_cell_ldof(rr, Tuple(fill(order,Dc)), Df)
-# end 
-
 function _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe::Tuple{<:Lagrangian,Any,Any})
     cell_polytope = Dc == 2 ? QUAD : HEX
     basis, reffe_args, reffe_kwargs = reffe
@@ -643,6 +621,21 @@ function get_face_dofs_permutations(reffe::ReferenceFE,d::Integer)
     get_face_dofs_permutations(reffe)[range]
 end
 
+function get_face_dofs_permutations(
+         reffe::Gridap.ReferenceFEs.GenericRefFE{Gridap.ReferenceFEs.RaviartThomas, Dc},Df::Integer) where Dc
+    first_face = get_offset(get_polytope(reffe),Df)
+    order = length(get_face_dofs(reffe)[first_face])-1
+    nfaces=num_faces(reffe,Df)
+    if (Df==Dc-1)
+       facet_polytope = Dc == 2 ? SEGMENT : QUAD
+       nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope, [order for i = 1:Dc-1])
+       Fill(Gridap.ReferenceFEs._compute_node_permutations(facet_polytope, nodes),nfaces)
+    elseif (Dc == 3 && Df==1)
+       nodes, _ = Gridap.ReferenceFEs.compute_nodes(SEGMENT, [order for i = 1:Dc-2])
+       Fill(Gridap.ReferenceFEs._compute_node_permutations(SEGMENT, nodes),nfaces)
+    end
+end 
+
 function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
     spaces_wo_constraints,
     reffe,
@@ -771,21 +764,12 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 gridap_cell_faces[1],
                 gridap_cell_faces[2])
         end
-
-
-        # node_permutations = Vector{Vector{Vector{Int}}}(undef, Dc - 1)
-        # nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope, [reffe_args[2] for i = 1:Dc-1])
-        # node_permutations[Dc-1] = Gridap.ReferenceFEs._compute_node_permutations(facet_polytope, nodes)
-        # if (Dc == 3)
-        #     nodes, _ = Gridap.ReferenceFEs.compute_nodes(edget_polytope, [reffe_args[2] for i = 1:Dc-2])
-        #     node_permutations[1] = Gridap.ReferenceFEs._compute_node_permutations(edget_polytope, nodes)
-        # end
-                        
-        node_permutations = Vector{Vector{Vector{Int}}}(undef, Dc-1)
-        node_permutations[Dc-1] = 
+     
+        face_dofs_permutations = Vector{Vector{Vector{Int}}}(undef, Dc-1)
+        face_dofs_permutations[Dc-1] = 
             first(get_face_dofs_permutations(cell_reffe, Dc-1))
         if (Dc == 3)
-           node_permutations[1] = 
+           face_dofs_permutations[1] = 
              first(get_face_dofs_permutations(cell_reffe, 1))
         end                
 
@@ -808,7 +792,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 face_own_dofs,
                 subface_own_dofs,
                 cell_dof_ids,
-                node_permutations,
+                face_dofs_permutations,
                 owner_faces_pindex,
                 owner_faces_lids,
                 ref_constraints,
@@ -832,7 +816,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                     face_own_dofs,
                     subface_own_dofs,
                     cell_dof_ids,
-                    node_permutations,
+                    face_dofs_permutations,
                     owner_faces_pindex,
                     owner_faces_lids,
                     ref_constraints,
@@ -855,7 +839,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 face_own_dofs,
                 subface_own_dofs,
                 cell_dof_ids,
-                node_permutations,
+                face_dofs_permutations,
                 owner_faces_pindex,
                 owner_faces_lids,
                 ref_constraints,
