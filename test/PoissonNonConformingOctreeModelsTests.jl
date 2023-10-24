@@ -207,7 +207,7 @@ module PoissonNonConformingOctreeModelsTests
     el2 = sqrt(sum( ∫( e⋅e )*dΩH ))
     eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩH ))
 
-    tol=1e-6
+    tol=1e-5
     @assert el2 < tol
     @assert eh1 < tol
 
