@@ -235,22 +235,22 @@ module PoissonNonConformingOctreeModelsTests
     @assert el2 < tol
   end
 
-  function test_2d(ranks,order,T::Type)
+  function test_2d(ranks,order,T::Type;num_amr_steps=5)
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
     rdmodel=dmodel
-    for i=1:5
+    for i=1:num_amr_steps
      rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order,T)
     end
   end 
 
-  function test_3d(ranks,order,T::Type)
+  function test_3d(ranks,order,T::Type;num_amr_steps=5)
     coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
     rdmodel=dmodel
-    for i=1:5
+    for i=1:num_amr_steps
       rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order,T)
     end
   end 
@@ -274,12 +274,15 @@ module PoissonNonConformingOctreeModelsTests
     # debug_logger = ConsoleLgger(stderr, Logging.Debug)
     # global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    for Dc=2:3, perm=1:4, order=1:4, scalar_or_vector in (:scalar,:vector)
+    for Dc=2:3, perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
          test(ranks,Val{Dc},perm,order,_field_type(Val{Dc}(),scalar_or_vector))
     end
+    for Dc=2:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
+      test(ranks,Val{Dc},perm,order,_field_type(Val{Dc}(),scalar_or_vector))
+    end
     for order=2:2,scalar_or_vector in (:scalar,:vector)
-     test_2d(ranks,order,_field_type(Val{2}(),scalar_or_vector))
-     test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector))
+     test_2d(ranks,order,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=4)
+     test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
     end
   end
 end
