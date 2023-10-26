@@ -277,7 +277,7 @@ module PoissonNonConformingOctreeModelsTests
     # for Dc=2:3, perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
     #      test(ranks,Val{Dc},perm,order,_field_type(Val{Dc}(),scalar_or_vector))
     # end
-    for Dc=3:3, perm in (1,), order in (1,4), scalar_or_vector in (:vector,)
+    for Dc=3:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
       test(ranks,Val{Dc},perm,order,_field_type(Val{Dc}(),scalar_or_vector))
     end
     println("XXXXX")
