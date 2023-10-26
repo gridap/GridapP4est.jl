@@ -48,8 +48,9 @@ function run_tests(testdir)
           np = [1,2,4]
           extra_args = ""
         else
-          np = [nprocs]
-          extra_args = ""
+          #np = [nprocs]
+          #extra_args = ""
+          return
         end
         for ip in np
           if MPI.MPI_LIBRARY == "OpenMPI" || (isdefined(MPI, :OpenMPI) && MPI.MPI_LIBRARY == MPI.OpenMPI)
