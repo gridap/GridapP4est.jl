@@ -143,13 +143,13 @@ module PoissonNonConformingOctreeModelsTests
     Vhred=FESpace(fmodel_red,reffe,conformity=:H1;dirichlet_tags="boundary")
     Uhred=TrialFESpace(Vhred,u)
 
-    # Ωhred  = Triangulation(fmodel_red)
-    # dΩhred = Measure(Ωhred,degree)
+    Ωhred  = Triangulation(fmodel_red)
+    dΩhred = Measure(Ωhred,degree)
 
-    # ahred(u,v) = ∫( ∇(v)⊙∇(u) )*dΩhred
-    # bhred(v)   = ∫(v⋅f)*dΩhred
+    ahred(u,v) = ∫( ∇(v)⊙∇(u) )*dΩhred
+    bhred(v)   = ∫(v⋅f)*dΩhred
 
-    # op    = AffineFEOperator(ahred,bhred,Uhred,Vhred)
+    op    = AffineFEOperator(ahred,bhred,Uhred,Vhred)
     # uhred = solve(op)
     # e = u - uhred
     # el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
