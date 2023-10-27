@@ -36,21 +36,20 @@ function run_tests(testdir)
         if f in ["PoissonUniformlyRefinedOctreeModelsTests.jl"]
           np = [4]
           extra_args = "-s 2 2 -r 2"
-        # elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
-        #              "OctreeDistributedDiscreteModelsNoEnvTests.jl",
-        #              "AdaptivityFlagsMarkingStrategiesTests.jl"]
-        #   np = [4]
-        #   extra_args = ""
-        # elseif f in ["DarcyNonConformingOctreeModelsTests.jl"]
-        #   np = [1,4]
-        #   extra_args = ""
-        elseif f in ["PoissonNonConformingOctreeModelsTests.jl"]
+        elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
+                     "OctreeDistributedDiscreteModelsNoEnvTests.jl",
+                     "AdaptivityFlagsMarkingStrategiesTests.jl"]
           np = [4]
           extra_args = ""
+        elseif f in ["DarcyNonConformingOctreeModelsTests.jl"]
+          np = [1,4]
+          extra_args = ""
+        elseif f in ["PoissonNonConformingOctreeModelsTests.jl"]
+          np = [1,2,4]
+          extra_args = ""
         else
-          #np = [nprocs]
-          #extra_args = ""
-          return
+          np = [nprocs]
+          extra_args = ""
         end
         for ip in np
           if MPI.MPI_LIBRARY == "OpenMPI" || (isdefined(MPI, :OpenMPI) && MPI.MPI_LIBRARY == MPI.OpenMPI)
