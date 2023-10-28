@@ -63,7 +63,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
 
     if (isa(dmodel,GridapDistributed.DistributedDiscreteModel))
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
-      Gridap.Helpers.@check Dc == Gridap.Geometry.num_point_dims(dmodel)
+      Gridap.Helpers.@check Dp == Gridap.Geometry.num_point_dims(dmodel)
     end
 
     A = typeof(parts)
@@ -1230,11 +1230,9 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
    end
 end
 
-function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-                                  refinement_and_coarsening_flags::MPIArray{<:Vector};
-                                  parts=nothing) where {Dc,Dp}
 
-  Gridap.Helpers.@notimplementedif parts!=nothing
+function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+                                  refinement_and_coarsening_flags::MPIArray{<:Vector}) where {Dc,Dp}
 
   # Variables which are updated accross calls to init_fn_callback_2d
   current_quadrant_index_within_tree = Cint(0)
@@ -1430,6 +1428,16 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   pXest_coarsen!(Val{Dc}, ptr_new_pXest, coarsen_fn_callback_c)
   pXest_balance!(Val{Dc}, ptr_new_pXest)
   pXest_update_flags!(Val{Dc},model.ptr_pXest,ptr_new_pXest)
+  ptr_new_pXest
+end 
+
+function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+                                 refinement_and_coarsening_flags::MPIArray{<:Vector};
+                                 parts=nothing) where {Dc,Dp}
+
+  Gridap.Helpers.@notimplementedif parts!=nothing
+  
+  ptr_new_pXest = _refine_coarsen_balance!(model, refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
   ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
@@ -2140,7 +2148,6 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   face_labeling=generate_face_labeling(parts,
                                        cell_prange,
                                        coarse_discrete_model,
-                                       grid,
                                        topology,
                                        ptr_pXest,
                                        ptr_pXest_ghost)

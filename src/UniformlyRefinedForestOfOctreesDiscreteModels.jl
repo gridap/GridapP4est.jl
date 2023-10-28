@@ -473,7 +473,6 @@ const ITERATOR_RESTRICT_TO_INTERIOR=Cint(101)
 function generate_face_labeling(parts,
                                 cell_prange,
                                 coarse_discrete_model::DiscreteModel{Dc,Dp},
-                                grid,
                                 topology,
                                 ptr_pXest,
                                 ptr_pXest_ghost) where {Dc,Dp}
@@ -501,7 +500,7 @@ function generate_face_labeling(parts,
     owned_trees_offset[itree+1]=owned_trees_offset[itree]+tree.quadrants.elem_count
   end
 
- faces_to_entity=map(grid,topology) do grid, topology
+ faces_to_entity=map(topology) do topology
      # Iterate over corners
      num_vertices=Gridap.Geometry.num_faces(topology,0)
      vertex_to_entity=zeros(Int,num_vertices)
@@ -776,8 +775,8 @@ function generate_face_labeling(parts,
  facet_to_entity   = map(x->x[Dc]  , faces_to_entity)
  cell_to_entity    = map(x->x[Dc+1], faces_to_entity)
 
- function cell_to_faces(grid,topology,cell_dim,face_dim)
-   map(grid,topology) do grid,topology
+ function cell_to_faces(topology,cell_dim,face_dim)
+   map(topology) do topology
     Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
    end
  end
@@ -787,13 +786,13 @@ function generate_face_labeling(parts,
  update_face_to_entity_with_ghost_data!(vertex_to_entity,
                                         cell_prange,
                                         num_faces(polytope,0),
-                                        cell_to_faces(grid,topology,Dc,0))
+                                        cell_to_faces(topology,Dc,0))
 
  if Dc==3
    update_face_to_entity_with_ghost_data!(edget_to_entity,
                                           cell_prange,
                                           num_faces(polytope,1),
-                                          cell_to_faces(grid,topology,Dc,1))
+                                          cell_to_faces(topology,Dc,1))
   #  map(edget_to_entity) do edget_to_entity
   #   @assert all(edget_to_entity .!= 0)
   #  end   
@@ -805,12 +804,12 @@ function generate_face_labeling(parts,
  update_face_to_entity_with_ghost_data!(facet_to_entity,
                                         cell_prange,
                                         num_faces(polytope,Dc-1),
-                                        cell_to_faces(grid,topology,Dc,Dc-1))
+                                        cell_to_faces(topology,Dc,Dc-1))
  
  update_face_to_entity_with_ghost_data!(cell_to_entity,
                                         cell_prange,
                                         num_faces(polytope,Dc),
-                                        cell_to_faces(grid,topology,Dc,Dc))
+                                        cell_to_faces(topology,Dc,Dc))
 
 #  map(vertex_to_entity,facet_to_entity,cell_to_entity) do vertex_to_entity,facet_to_entity,cell_to_entity
 #    @assert all(vertex_to_entity .!= 0)
@@ -940,7 +939,6 @@ function setup_distributed_discrete_model(::Type{Val{Dc}},
    face_labeling=generate_face_labeling(parts,
                                         cell_prange,
                                         coarse_discrete_model,
-                                        grid,
                                         topology,
                                         ptr_pXest,
                                         ptr_pXest_ghost)
