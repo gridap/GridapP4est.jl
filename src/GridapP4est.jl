@@ -17,6 +17,7 @@ module GridapP4est
   include("OctreeDistributedDiscreteModels.jl")
   include("GridapFixes.jl")
   include("FESpaces.jl")
+  include("LinearizedFESpaces.jl")
   include("AdaptivityFlagsMarkingStrategies.jl")
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
