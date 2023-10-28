@@ -150,20 +150,20 @@ module PoissonNonConformingOctreeModelsTests
     bhred(v)   = ∫(v⋅f)*dΩhred
 
     op    = AffineFEOperator(ahred,bhred,Uhred,Vhred)
-    # uhred = solve(op)
-    # e = u - uhred
-    # el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
-    # println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
-    # @assert el2 < tol
+     uhred = solve(op)
+     e = u - uhred
+    el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
+    println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
+    @assert el2 < tol
 
 
-    # uhred2 = GridapDistributed.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
-    # e = u - uhred2
-    # el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
-    # println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
-    # @assert el2 < tol
+     uhred2 = GridapDistributed.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
+     e = u - uhred2
+     el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
+     println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
+     @assert el2 < tol
 
-    # fmodel_red
+     fmodel_red
   end
 
   function test_refine_and_coarsen_at_once(ranks,
