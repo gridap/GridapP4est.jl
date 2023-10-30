@@ -1247,9 +1247,7 @@ function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp},
     function init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
       which_tree::p4est_topidx_t,
       quadrant_ptr::Ptr{p4est_quadrant_t})
-
-      println("$(current_quadrant_index_among_trees) $(current_quadrant_index_within_tree)")
-
+      
       # Extract a reference to the tree which_tree
       forest = forest_ptr[]
       tree = p4est_tree_array_index(forest.trees, which_tree)[]
@@ -1260,7 +1258,6 @@ function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp},
                               Ptr{Cint}(forest.user_pointer), 
                               current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
 
-      println("user_data: $(user_data)")
       unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
       
       current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
