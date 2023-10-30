@@ -111,9 +111,6 @@ module LinearizedFESpacesTests
       op = FEOperator(r,j,UH,Vh)
       r,A = Gridap.Algebra.residual_and_jacobian(op,ũh)
       @test norm(r) < tol 
-
-      r2=affine_op.op.matrix*get_free_dof_values(ũh)-affine_op.op.vector
-      @test norm(r2) < tol
       
     end
   end

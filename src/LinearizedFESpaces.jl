@@ -27,7 +27,8 @@ function _create_adaptivity_glue(model::OctreeDistributedDiscreteModel{Dc},
     num_children=Gridap.Adaptivity.num_subcells(ref_rule)
     cell_gids_model     = get_cell_gids(model.dmodel)
     cell_gids_ref_model = get_cell_gids(ref_model.dmodel)
-    map(partition(cell_gids_model),partition(cell_gids_ref_model)) do model_partition, ref_model_partition
+
+    n2o_cell_map,n2o_cell_to_child_id=map(partition(cell_gids_model),partition(cell_gids_ref_model)) do model_partition, ref_model_partition
         num_local_cells_model=local_length(model_partition)
         num_owned_cells_model=own_length(model_partition)
         num_local_cells_ref_model=local_length(ref_model_partition)
@@ -41,8 +42,16 @@ function _create_adaptivity_glue(model::OctreeDistributedDiscreteModel{Dc},
                current+=1
             end
         end
-        n2o_faces_map = [(d==Dc) ? n2o_cell_map : Int[] for d in 0:Dc] 
-        AdaptivityGlue(n2o_faces_map,n2o_cell_to_child_id,ref_rule)  
+        n2o_cell_map,n2o_cell_to_child_id
+    end |> tuple_of_arrays
+
+    cache = fetch_vector_ghost_values_cache(n2o_cell_map,partition(cell_gids_ref_model))
+    fetch_vector_ghost_values!(n2o_cell_map,cache) |> wait
+    fetch_vector_ghost_values!(n2o_cell_to_child_id,cache) |> wait
+
+    adaptivity_glue=map(n2o_cell_map,n2o_cell_to_child_id) do n2o_cell_map, n2o_cell_to_child_id
+        n2o_faces_map = [(d==Dc) ? n2o_cell_map : Int[] for d in 0:Dc]
+        AdaptivityGlue(n2o_faces_map,n2o_cell_to_child_id,ref_rule)
     end
 end 
 
@@ -82,7 +91,6 @@ function Gridap.LinearizedFESpace(model::OctreeDistributedDiscreteModel{Dc},
             flags.=refine_flag
         end
         ref_model,glue=Gridap.adapt(ref_model,ref_coarse_flags)
-        #writevtk(ref_model,"ref_model")
     end
     adaptivity_glue=_create_adaptivity_glue(model,ref_model,num_refinements)
     one_level_ref_model=_setup_one_level_refined_octree_model(model,ref_model,adaptivity_glue)
