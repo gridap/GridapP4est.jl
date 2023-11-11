@@ -392,8 +392,7 @@ function _compute_fine_to_coarse_model_glue(
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
-  f1,f2,f3, cgids_snd, cgids_rcv = map(fmodel.models,
-                                       partition(fgids)) do fmodel, fpartition
+  f1,f2,f3, cgids_snd, cgids_rcv = map(local_views(fmodel),partition(fgids)) do fmodel, fpartition
     if (!(GridapDistributed.i_am_in(cparts)))
       # cmodel might be distributed among less processes than fmodel
       nothing, nothing, nothing, Int[], Int[]
@@ -406,7 +405,6 @@ function _compute_fine_to_coarse_model_glue(
           fcell_to_child_id =
           _process_owned_cells_fine_to_coarse_model_glue(cmodel_local,fmodel,cpartition,fpartition)
       
-
       # Note: Reversing snd and rcv    
       lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(partition(fgids)))
       cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
@@ -551,16 +549,16 @@ function _compute_fine_to_coarse_model_glue(
                                               fcell_to_child_id::Union{Nothing,MPIArray})
     fgids=get_cell_gids(fmodel)
     map(fmodel.models,fine_to_coarse_faces_map,fcell_to_child_id) do fmodel, fine_to_coarse_faces_map, fcell_to_child_id
-      if (!(GridapDistributed.i_am_in(cparts)))
-        # cmodel might be distributed among less processes than fmodel
-        Int[], Int[], Int[], Int[]
-      else
+      if GridapDistributed.i_am_in(cparts)
         cgids        = get_cell_gids(cmodel)
         cpartition   = PArrays.getany(partition(cgids))
         _setup_communication_buffers_fine_partition(fine_to_coarse_faces_map,
                                                     fcell_to_child_id,
                                                     partition(fgids),
                                                     cpartition)
+      else
+        # cmodel might be distributed among less processes than fmodel
+        Int[], Int[], Int[], Int[]
       end 
     end |> tuple_of_arrays
   end 
@@ -1626,7 +1624,6 @@ function _pXest_to_new_comm_old_supset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_
   if (GridapDistributed.i_am_in(new_comm))
     new_comm_num_parts = GridapDistributed.num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
-    pXest=ptr_pXest[]
     old_comm_num_parts = GridapDistributed.num_parts(old_comm)
     old_global_first_quadrant = unsafe_wrap(Array,
                                             pXest.global_first_quadrant,
