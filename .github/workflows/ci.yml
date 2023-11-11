@@ -15,9 +15,9 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.9'
+          - '1.8'
         os:
-          - ubuntu-latest
+          - ubuntu-20.04
         arch:
           - x64
     steps:
