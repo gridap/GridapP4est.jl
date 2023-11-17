@@ -1432,7 +1432,7 @@ function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp},
 end 
 
 function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-                                 refinement_and_coarsening_flags::MPIArray{<:Vector};
+		                 refinement_and_coarsening_flags::MPIArray{<:Vector{Cint}};
                                  parts=nothing) where {Dc,Dp}
 
   Gridap.Helpers.@notimplementedif parts!=nothing
