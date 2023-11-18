@@ -39,7 +39,7 @@ module PoissonNonConformingOctreeModelsTests
     reffe=ReferenceFE(lagrangian,T,order)
     VH=FESpace(dmodel,reffe;dirichlet_tags="boundary")
     UH=TrialFESpace(VH,u)
-     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
+    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag
         
@@ -176,7 +176,7 @@ module PoissonNonConformingOctreeModelsTests
 
     degree = 2*order+1
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
-        flags=zeros(Cint,length(indices))
+        flags=zeros(Int,length(indices))
         flags.=nothing_flag        
         if (rank==1)
            flags[1:2^Dc].=coarsen_flag
