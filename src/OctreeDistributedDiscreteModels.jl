@@ -3,19 +3,184 @@ const nothing_flag  = Cint(0)
 const refine_flag   = Cint(1)
 const coarsen_flag  = Cint(2)
 
-struct NonConformingGlue{Dc,A,B,C}
-  num_regular_faces  :: A # <:AbstractVector{<:AbstractVector{<:Integer}}
-  num_hanging_faces  :: B # <:AbstractVector{<:AbstractVector{<:Integer}}
-  hanging_faces_glue :: C # <:AbstractVector{<:AbstractVector{<:Tuple{<:Integer,:Integer,Integer}}}}
-  function NonConformingGlue(num_regular_faces,num_hanging_faces,hanging_faces_glue)
+struct NonConformingGlue{Dc,A,B,C,D,E,F,G}
+  num_regular_faces      :: A # <:AbstractVector{<:AbstractVector{<:Integer}}
+  num_hanging_faces      :: B # <:AbstractVector{<:AbstractVector{<:Integer}}
+  hanging_faces_glue     :: C # <:AbstractVector{<:AbstractVector{<:Tuple{<:Integer,:Integer,Integer}}}}
+  hanging_faces_to_cell  :: D # <:AbstractVector{<:AbstractVector{<:Integer}}
+  hanging_faces_to_lface :: E # <:AbstractVector{<:AbstractVector{<:Integer}}
+  owner_faces_pindex     :: F # <:AbstractVector{<:AbstractVector{<:Integer}}
+  owner_faces_lids       :: G # <:AbstractVector{<:Dict{Int,Tuple{Int,Int,Int}}}
+  function NonConformingGlue(num_regular_faces,
+                             num_hanging_faces,
+                             hanging_faces_glue,
+                             hanging_faces_to_cell,
+                             hanging_faces_to_lface,
+                             owner_faces_pindex,
+                             owner_faces_lids)
     Dc = length(num_regular_faces)
     @assert length(num_hanging_faces)==Dc
     @assert length(hanging_faces_glue)==Dc
     A = typeof(num_regular_faces)
     B = typeof(num_hanging_faces)
     C = typeof(hanging_faces_glue)
-    new{Dc,A,B,C}(num_regular_faces,num_hanging_faces,hanging_faces_glue)
+    D = typeof(hanging_faces_to_cell)
+    E = typeof(hanging_faces_to_lface)
+    F = typeof(owner_faces_pindex)
+    G = typeof(owner_faces_lids)
+    new{Dc,A,B,C,D,E,F,G}(num_regular_faces,
+                          num_hanging_faces,
+                          hanging_faces_glue,
+                          hanging_faces_to_cell,
+                          hanging_faces_to_lface,
+                          owner_faces_pindex,
+                          owner_faces_lids)
   end
+end
+
+function _compute_owner_faces_lids(Df,Dc,num_hanging_faces,hanging_faces_glue,cell_faces)
+  num_owner_faces = 0
+  owner_faces_lids = Dict{Int,Tuple{Int,Int,Int}}()
+  for fid_hanging = 1:num_hanging_faces
+      ocell, ocell_lface, _ = hanging_faces_glue[fid_hanging]
+      if (ocell!=-1)
+          ocell_dim = face_dim(Val{Dc}, ocell_lface)
+          if (ocell_dim == Df)
+              ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+              owner_face = cell_faces[ocell][ocell_lface_within_dim]
+              if !(haskey(owner_faces_lids, owner_face))
+                  num_owner_faces += 1
+                  owner_faces_lids[owner_face] = (num_owner_faces, ocell, ocell_lface)
+              end
+          end
+      end
+  end
+  owner_faces_lids
+end 
+
+
+# count how many different owner faces
+# for each owner face 
+#    track the global IDs of its face vertices from the perspective of the subfaces
+# for each owner face 
+#    compute permutation id
+function _compute_owner_faces_pindex_and_lids(Dc,
+                                            num_hanging_faces,
+                                            hanging_faces_glue,
+                                            hanging_faces_to_cell,
+                                            hanging_faces_to_lface,
+                                            cell_vertices,
+                                            cell_faces,
+                                            lface_to_cvertices,
+                                            pindex_to_cfvertex_to_fvertex)
+
+  owner_faces_lids =_compute_owner_faces_lids(Dc-1,Dc,
+                    num_hanging_faces,hanging_faces_glue,cell_faces)                                       
+  
+  @debug "owner_faces_lids [Df=$(Dc-1) Dc=$(Dc)]: $(owner_faces_lids)"
+
+  num_owner_faces   = length(keys(owner_faces_lids))
+  num_face_vertices = length(first(lface_to_cvertices))
+  owner_face_vertex_ids = Vector{Int}(undef, num_face_vertices * num_owner_faces)
+  owner_face_vertex_ids .= -1
+
+  for fid_hanging = 1:num_hanging_faces
+      ocell, ocell_lface, subface = hanging_faces_glue[fid_hanging]
+      @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fid_hanging=$(fid_hanging) ocell=$(ocell) ocell_lface=$(ocell_lface) subface=$(subface)"
+
+      if (ocell!=-1)
+          oface_dim = face_dim(Val{Dc}, ocell_lface)
+          if (oface_dim == Dc-1)
+              cell = hanging_faces_to_cell[fid_hanging]
+              lface = hanging_faces_to_lface[fid_hanging]
+              cvertex = lface_to_cvertices[lface][subface]
+              vertex = cell_vertices[cell][cvertex]
+              ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+              owner_face = cell_faces[ocell][ocell_lface_within_dim]
+              owner_face_lid, _ = owner_faces_lids[owner_face]
+              @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: cell=$(cell) lface=$(lface) cvertex=$(cvertex) vertex=$(vertex) owner_face=$(owner_face) owner_face_lid=$(owner_face_lid)"
+              @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_face_vertex_ids[$((owner_face_lid-1)*num_face_vertices+subface)] = $(vertex)"
+              owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+subface] = vertex
+          end
+      end
+  end
+  @debug "owner_face_vertex_ids [Dc=$(Dc)]: $(owner_face_vertex_ids)"
+
+  owner_faces_pindex = Vector{Int}(undef, num_owner_faces)
+  for owner_face in keys(owner_faces_lids)
+      (owner_face_lid, ocell, ocell_lface) = owner_faces_lids[owner_face]
+      ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+      # Compute permutation id by comparing 
+      #  1. cell_vertices[ocell][ocell_lface]
+      #  2. owner_face_vertex_ids 
+      pindexfound = false
+      cfvertex_to_cvertex = lface_to_cvertices[ocell_lface_within_dim]
+      for (pindex, cfvertex_to_fvertex) in enumerate(pindex_to_cfvertex_to_fvertex)
+          found = true
+          for (cfvertex, fvertex) in enumerate(cfvertex_to_fvertex)
+              vertex1 = owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+fvertex]
+              cvertex = cfvertex_to_cvertex[cfvertex]
+              vertex2 = cell_vertices[ocell][cvertex]
+              @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: cell_vertices[$(ocell)][$(cvertex)]=$(cell_vertices[ocell][cvertex]) owner_face_vertex_ids[$((owner_face_lid-1)*num_face_vertices+fvertex)]=$(owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+fvertex])"
+              # -1 can only happen in the interface of two 
+              # ghost cells at different refinement levels
+              if (vertex1 != vertex2) && (vertex1 != -1) 
+                  found = false
+                  break
+              end
+          end
+          if found
+              owner_faces_pindex[owner_face_lid] = pindex
+              pindexfound = true
+              break
+          end
+      end
+      @assert pindexfound "Valid pindex not found"
+  end
+  @debug "owner_faces_pindex: $(owner_faces_pindex)"
+
+  owner_faces_pindex, owner_faces_lids
+end
+
+
+function _compute_owner_edges_pindex_and_lids(
+  num_hanging_edges,
+  hanging_edges_glue,
+  hanging_edges_to_cell,
+  hanging_edges_to_ledge,
+  cell_vertices,
+  cell_edges)
+  Dc=3
+  owner_edges_lids =_compute_owner_faces_lids(1,
+                                              Dc,
+                                              num_hanging_edges,
+                                              hanging_edges_glue,
+                                              cell_edges)
+
+  num_owner_edges = length(keys(owner_edges_lids))
+  owner_edges_pindex = Vector{Int}(undef, num_owner_edges)
+
+  ledge_to_cvertices = Gridap.ReferenceFEs.get_faces(HEX, 1, 0)
+
+  # Go over hanging edges 
+  # Find the owner hanging edge
+  for fid_hanging = 1:num_hanging_edges
+      ocell, ocell_ledge, subedge = hanging_edges_glue[fid_hanging]
+      ocell_dim = face_dim(Val{Dc}, ocell_ledge)
+      if (ocell!=-1 && ocell_dim==1)
+        ocell_ledge_within_dim = face_lid_within_dim(Val{Dc}, ocell_ledge)
+        cell = hanging_edges_to_cell[fid_hanging]
+        ledge = hanging_edges_to_ledge[fid_hanging]
+        gvertex1 = cell_vertices[cell][ledge_to_cvertices[ledge][subedge]]
+        gvertex2 = cell_vertices[ocell][ledge_to_cvertices[ocell_ledge_within_dim][subedge]]
+        @debug "fid_hanging=$(fid_hanging) cell=$(cell) ledge=$(ledge) ocell=$(ocell) ocell_ledge=$(ocell_ledge) subedge=$(subedge) gvertex1=$(gvertex1) gvertex2=$(gvertex2)"
+        pindex = gvertex1==gvertex2 ? 1 : 2
+        owner_edge=cell_edges[ocell][ocell_ledge_within_dim]
+        owner_edge_lid, _ = owner_edges_lids[owner_edge]
+        owner_edges_pindex[owner_edge_lid]=pindex
+      end
+  end
+  owner_edges_pindex, owner_edges_lids
 end
 
 
@@ -24,13 +189,52 @@ function _create_conforming_model_non_conforming_glue(model::GridapDistributed.D
     num_regular_faces=Vector{Int}(undef,Dc)
     num_hanging_faces=Vector{Int}(undef,Dc)
     hanging_faces_glue=Vector{Tuple{Int,Int,Int}}(undef,Dc)
+    hanging_faces_to_cell=Vector{Int}(undef,Dc)
+    hanging_faces_to_lface=Vector{Int}(undef,Dc)
+    owner_faces_pindex=Vector{Int}(undef,Dc)
+    owner_faces_lids=Vector{Int}(undef,Dc)
     for d=1:Dc 
       num_regular_faces[d]=num_faces(model,d-1)
       num_hanging_faces[d]=0
     end
-    NonConformingGlue(num_regular_faces,num_hanging_faces,hanging_faces_glue)
+    NonConformingGlue(num_regular_faces,
+                      num_hanging_faces,
+                      hanging_faces_glue,
+                      hanging_faces_to_cell,
+                      hanging_faces_to_lface,
+                      owner_faces_pindex,
+                      owner_faces_lids)
   end
   return non_conforming_glue
+end
+
+function _generate_hanging_faces_to_cell_and_lface(num_regular_faces,
+                                                   num_hanging_faces,
+                                                   gridap_cell_faces)
+  # Locate for each hanging face the owner cell among the set of cells 
+  # to which it belongs and local position within that cell 
+  # By convention, the owner cell is the cell with minimum identifer among 
+  # all in the set. This convention is used here, and in other parts of the code.
+  # Breaking this convention here may affect the consistency of other parts of the code. 
+  hanging_faces_to_cell = Vector{Int}(undef, num_hanging_faces)
+  hanging_faces_to_lface = Vector{Int}(undef, num_hanging_faces)
+  hanging_faces_to_cell .= -1 
+  for cell = 1:length(gridap_cell_faces)
+      s = gridap_cell_faces.ptrs[cell]
+      e = gridap_cell_faces.ptrs[cell+1]
+      l = e - s
+      for j = 1:l
+          fid = gridap_cell_faces.data[s+j-1]
+          if fid > num_regular_faces
+              fid_hanging = fid - num_regular_faces
+              if (hanging_faces_to_cell[fid_hanging]==-1)
+                hanging_faces_to_cell[fid_hanging] = cell
+                hanging_faces_to_lface[fid_hanging] = j
+              end
+          end
+      end
+  end
+  hanging_faces_to_cell, hanging_faces_to_lface
 end
 
 mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
@@ -2383,7 +2587,11 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
   num_regular_faces,
   num_hanging_faces,
   gridap_cell_faces,
-  hanging_faces_glue = 
+  hanging_faces_glue,
+  hanging_faces_to_cell,
+  hanging_faces_to_lface,
+  owner_faces_pindex,
+  owner_faces_lids = 
       map(partition(cell_prange),
           element_nodes_with_ghosts,
           face_code_with_ghosts) do indices, 
@@ -2884,11 +3092,53 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     end 
     hanging_faces_glue[Dc]  = hanging_faces_owner_cell_and_lface
 
+    hanging_faces_to_cell = Vector{Vector{Int}}(undef, Dc)
+    hanging_faces_to_lface = Vector{Vector{Int}}(undef, Dc)
+    for i=1:Dc 
+      # Locate for each hanging facet a cell to which it belongs 
+      # and local position within that cell 
+      hanging_faces_to_cell[Dc],
+      hanging_faces_to_lface[Dc] =
+          _generate_hanging_faces_to_cell_and_lface(num_regular_faces[Dc],
+              num_hanging_faces[Dc],
+              gridap_cell_faces[Dc])
+    end
+
+    owner_faces_pindex = Vector{Vector{Int}}(undef, Dc - 1)
+    owner_faces_lids = Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef, Dc - 1)
+
+    lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc == 2 ? QUAD : HEX, Dc - 1, 0)
+    pindex_to_cfvertex_to_fvertex = Gridap.ReferenceFEs.get_vertex_permutations(Dc == 2 ? SEGMENT : QUAD)
+
+    owner_faces_pindex[Dc-1], owner_faces_lids[Dc-1] = _compute_owner_faces_pindex_and_lids(Dc,
+        num_hanging_faces[Dc],
+        hanging_faces_glue[Dc],
+        hanging_faces_to_cell[Dc],
+        hanging_faces_to_lface[Dc],
+        gridap_cell_faces[1],
+        gridap_cell_faces[Dc],
+        lface_to_cvertices,
+        pindex_to_cfvertex_to_fvertex)
+
+    if (Dc == 3)
+      owner_faces_pindex[1], owner_faces_lids[1]=
+        _compute_owner_edges_pindex_and_lids(
+            num_hanging_faces[2],
+            hanging_faces_glue[2],
+            hanging_faces_to_cell[2],
+            hanging_faces_to_lface[2],
+            gridap_cell_faces[1],
+            gridap_cell_faces[2])
+    end
 
     return num_regular_faces, 
            num_hanging_faces,
            gridap_cell_faces,
-           hanging_faces_glue
+           hanging_faces_glue,
+           hanging_faces_to_cell,
+           hanging_faces_to_lface,
+           owner_faces_pindex,
+           owner_faces_lids
 
   end |> tuple_of_arrays
 
@@ -2899,8 +3149,14 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
       gridap_cell_faces[i]
     end
   end
-  non_conforming_glue=map(num_regular_faces,num_hanging_faces,hanging_faces_glue) do nrf, nhf, hfg
-    NonConformingGlue(nrf, nhf, hfg)
+  non_conforming_glue=map(num_regular_faces,
+                          num_hanging_faces,
+                          hanging_faces_glue,
+                          hanging_faces_to_cell,
+                          hanging_faces_to_lface,
+                          owner_faces_pindex,
+                          owner_faces_lids) do nrf, nhf, hfg, hfc, hfl, ofp,ofl
+    NonConformingGlue(nrf, nhf, hfg, hfc, hfl, ofp, ofl)
   end 
   gridap_cell_faces_out,non_conforming_glue
  end
