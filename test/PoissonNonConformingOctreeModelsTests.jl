@@ -286,4 +286,3 @@ module PoissonNonConformingOctreeModelsTests
     end
   end
 end
-

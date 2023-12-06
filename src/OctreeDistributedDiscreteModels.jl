@@ -189,13 +189,17 @@ function _create_conforming_model_non_conforming_glue(model::GridapDistributed.D
     num_regular_faces=Vector{Int}(undef,Dc)
     num_hanging_faces=Vector{Int}(undef,Dc)
     hanging_faces_glue=Vector{Tuple{Int,Int,Int}}(undef,Dc)
-    hanging_faces_to_cell=Vector{Int}(undef,Dc)
-    hanging_faces_to_lface=Vector{Int}(undef,Dc)
-    owner_faces_pindex=Vector{Int}(undef,Dc)
-    owner_faces_lids=Vector{Int}(undef,Dc)
+    hanging_faces_to_cell=Vector{Vector{Int}}(undef,Dc)
+    hanging_faces_to_lface=Vector{Vector{Int}}(undef,Dc)
+    owner_faces_pindex=Vector{Vector{Int}}(undef,Dc)
+    owner_faces_lids=Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef,Dc)
     for d=1:Dc 
       num_regular_faces[d]=num_faces(model,d-1)
       num_hanging_faces[d]=0
+      hanging_faces_to_cell[d]=Int[] 
+      hanging_faces_to_lface[d]=Int[] 
+      owner_faces_pindex[d]=Int[]
+      owner_faces_lids[d]=Dict{Int,Tuple{Int,Int,Int}}()
     end
     NonConformingGlue(num_regular_faces,
                       num_hanging_faces,
@@ -3097,11 +3101,11 @@ function generate_cell_faces_and_non_conforming_glue(::Type{Val{Dc}},
     for i=1:Dc 
       # Locate for each hanging facet a cell to which it belongs 
       # and local position within that cell 
-      hanging_faces_to_cell[Dc],
-      hanging_faces_to_lface[Dc] =
-          _generate_hanging_faces_to_cell_and_lface(num_regular_faces[Dc],
-              num_hanging_faces[Dc],
-              gridap_cell_faces[Dc])
+      hanging_faces_to_cell[i],
+      hanging_faces_to_lface[i] =
+          _generate_hanging_faces_to_cell_and_lface(num_regular_faces[i],
+              num_hanging_faces[i],
+              gridap_cell_faces[i])
     end
 
     owner_faces_pindex = Vector{Vector{Int}}(undef, Dc - 1)

@@ -491,10 +491,10 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         Tuple(ncglue.hanging_faces_to_lface[d] for d = 1:Dc)
     end
     owner_faces_pindex=map(non_conforming_glue) do ncglue
-        Tuple(ncglue.owner_faces_pindex[d] for d = 1:Dc)
+        Tuple(ncglue.owner_faces_pindex[d] for d = 1:Dc-1)
     end
     owner_faces_lids=map(non_conforming_glue) do ncglue
-        Tuple(ncglue.owner_faces_lids[d] for d = 1:Dc)
+        Tuple(ncglue.owner_faces_lids[d] for d = 1:Dc-1)
     end
     sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs = map(gridap_cell_faces,
         num_regular_faces,
@@ -672,37 +672,45 @@ function fe_space_with_linear_constraints_cell_dof_ids(Uc::FESpaceWithLinearCons
     Gridap.Arrays.Table(Uc_cell_dof_ids_data, U_cell_dof_ids.ptrs)
 end
 
+function _is_conforming(model::OctreeDistributedDiscreteModel)
+    is_local_conforming=map(model.non_conforming_glue) do ncglue 
+         all(x->x==0, ncglue.num_hanging_faces)
+    end 
+    reduction(&,is_local_conforming,init=true,destination=:all).item_ref[]
+end 
+
 function _add_constraints(model::GridapDistributed.DistributedDiscreteModel{Dc},
                           reffe,
                           spaces_wo_constraints;
                           conformity=nothing,
                           kwargs...) where {Dc}
-    if (conformity==nothing || conformity!=:L2)
-      ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe)
 
-      face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc-1)
-      face_subface_ldof_to_cell_ldof[Dc-1] = _generate_face_subface_ldof_to_cell_ldof(Dc-1, Dc, reffe)
-      if (Dc == 3)
-       face_subface_ldof_to_cell_ldof[1] =
-         _generate_face_subface_ldof_to_cell_ldof(1, Dc, reffe)
-      end
-      sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
-          generate_constraints(model, spaces_wo_constraints, reffe, ref_constraints, face_subface_ldof_to_cell_ldof)
-      spaces_w_constraints = map(spaces_wo_constraints,
-         sDOF_to_dof,
-         sDOF_to_dofs,
-         sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
-         @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
-         Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
-      end
-      local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
-        result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
-        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_with_linear_constraints_cell_dof_ids=$(result)"
-        result
-      end
+    if (_is_conforming(model) || conformity==:L2 )
+        spaces_w_constraints=spaces_wo_constraints
+        local_cell_dof_ids=map(get_cell_dof_ids,spaces_w_constraints)
     else 
-      spaces_w_constraints=spaces_wo_constraints
-      local_cell_dof_ids=map(get_cell_dof_ids,spaces_w_constraints)
+        @assert conformity==nothing || conformity!=:L2
+        ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(Dc, reffe)
+        face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc-1)
+        face_subface_ldof_to_cell_ldof[Dc-1] = _generate_face_subface_ldof_to_cell_ldof(Dc-1, Dc, reffe)
+        if (Dc == 3)
+            face_subface_ldof_to_cell_ldof[1] =
+                _generate_face_subface_ldof_to_cell_ldof(1, Dc, reffe)
+        end
+        sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
+            generate_constraints(model, spaces_wo_constraints, reffe, ref_constraints, face_subface_ldof_to_cell_ldof)
+        spaces_w_constraints = map(spaces_wo_constraints,
+            sDOF_to_dof,
+            sDOF_to_dofs,
+            sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
+            Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
+        end
+        local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
+            result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_with_linear_constraints_cell_dof_ids=$(result)"
+            result
+        end
     end
     nldofs = map(num_free_dofs,spaces_w_constraints)
     cell_gids = get_cell_gids(model)
@@ -714,7 +722,6 @@ function _add_constraints(model::GridapDistributed.DistributedDiscreteModel{Dc},
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)
 end
-
 
 # Generates a new DistributedSingleFieldFESpace composed 
 # by local FE spaces with linear multipoint constraints added
