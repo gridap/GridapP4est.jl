@@ -1432,12 +1432,16 @@ function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp},
 end 
 
 function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-                                 refinement_and_coarsening_flags::MPIArray{<:Vector};
+		                             refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                                  parts=nothing) where {Dc,Dp}
 
   Gridap.Helpers.@notimplementedif parts!=nothing
+
+  _refinement_and_coarsening_flags = map(refinement_and_coarsening_flags) do flags
+    convert(Vector{Cint},flags)
+   end 
   
-  ptr_new_pXest = _refine_coarsen_balance!(model, refinement_and_coarsening_flags)
+  ptr_new_pXest = _refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
   ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
@@ -1457,7 +1461,7 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   adaptivity_glue = _compute_fine_to_coarse_model_glue(model.parts,
                                                         model.dmodel,
                                                         fmodel,
-                                                        refinement_and_coarsening_flags)
+                                                        _refinement_and_coarsening_flags)
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
