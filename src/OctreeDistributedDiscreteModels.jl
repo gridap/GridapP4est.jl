@@ -218,7 +218,7 @@ function Init(a::OctreeDistributedDiscreteModel)
 end
 
 function Finalize(a::OctreeDistributedDiscreteModel)
-  octree_distributed_discrete_model_free!(a)
+  #octree_distributed_discrete_model_free!(a)
   return nothing
 end
 
