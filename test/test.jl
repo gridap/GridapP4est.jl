@@ -27,29 +27,23 @@ struct FaceToCellGlueNonConforming{A,B,C,D} <: GridapType
   face_to_cell_glue:: Gridap.Geometry.FaceToCellGlue{A,B,C,D}
 end
 
-# function Base.getproperty(a::FaceToCellGlueNonConforming, sym::Symbol)
-#   if sym == :face_to_bgface
-#     a.face_to_cell_glue.face_to_bgface    
-#   elseif sym == :bgface_to_lcell
-#     a.face_to_cell_glue.bgface_to_lcell 
-#   elseif sym == :face_to_cell
-#     a.face_to_cell_glue.face_to_cell 
-#   elseif sym == :face_to_lface
-#     a.face_to_cell_glue.face_to_lface 
-#   elseif sym == :face_to_lcell
-#     a.face_to_cell_glue.face_to_lcell 
-#   elseif sym == :face_to_ftype
-#     a.face_to_cell_glue.face_to_ftype 
-#   elseif sym == :cell_to_ctype
-#     a.face_to_cell_glue.cell_to_ctype 
-#   elseif sym == :cell_to_lface_to_pindex
-#     a.face_to_cell_glue.cell_to_lface_to_pindex 
-#   elseif sym == :ctype_to_lface_to_ftype
-#     a.face_to_cell_glue.ctype_to_lface_to_ftype
-#   else
-#     getfield(a, sym)
-#   end
-# end
+function _adjust_cell_to_lface_to_pindex!(f2cg_nc,Df,ncglue,cell_faces)
+  f2cg=f2cg_nc.face_to_cell_glue 
+  face_to_cell=f2cg.face_to_cell
+  face_to_lface=f2cg.face_to_lface
+  cell_to_lface_to_pindex=f2cg.cell_to_lface_to_pindex
+  for i=1:length(f2cg_nc.face_is_owner)
+    if (f2cg_nc.face_is_owner[i])
+      cell=face_to_cell[i]
+      lface=face_to_lface[i]
+      gface=cell_faces[cell][lface]
+      (oface,_,_)=ncglue.owner_faces_lids[Df][gface]
+      pindex=ncglue.owner_faces_pindex[Df][oface]
+      s=f2cg.cell_to_lface_to_pindex.ptrs[cell]
+      f2cg.cell_to_lface_to_pindex.data[s+lface-1]=pindex
+    end 
+  end
+end 
 
 function FaceToCellGlueNonConforming(topo,
                                      cell_grid,
@@ -66,13 +60,17 @@ function FaceToCellGlueNonConforming(topo,
                                      face_to_bgface,
                                      bgface_to_lcell)
 
-    # Adjust face_to_cell_glue.cell_to_lface_to_pindex
-    # TO-DO ...
+    f2cg_nc=FaceToCellGlueNonConforming(face_is_owner,
+                                        face_to_subface,
+                                        face_to_cell_glue)
 
-    FaceToCellGlueNonConforming(face_is_owner,
-                                face_to_subface,
-                                face_to_cell_glue)
+    Dc=num_cell_dims(cell_grid)
+    Df=num_cell_dims(face_grid)
+    cell_faces=Gridap.Geometry.get_faces(topo,Dc,Df)
+    _adjust_cell_to_lface_to_pindex!(f2cg_nc,Df,ncglue,cell_faces)
+    f2cg_nc     
 end 
+
 
 function _generate_owner_face_to_subfaces(model,ncglue::GridapP4est.NonConformingGlue{D}) where D
   num_children=GridapP4est.get_num_children(Val{D-1})
@@ -367,7 +365,7 @@ ranks  = with_mpi() do distribute
   distribute(LinearIndices((prod(nprocs),)))
 end
 
-coarse_model=setup_model(Val{2},1)
+coarse_model=setup_model(Val{2},2)
 dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,0)
 
 ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
