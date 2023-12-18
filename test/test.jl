@@ -89,6 +89,7 @@ function _generate_owner_face_to_subfaces(model,ncglue::GridapP4est.NonConformin
 
   # Generate owner_face_to_subfaces_data
   owner_face_to_subfaces_data=Vector{Int}(undef,owner_face_to_subfaces_ptrs[end]-1)
+  owner_face_to_subfaces_data.=-1
   for i=1:num_hanging_faces
     (ocell,ocell_lface,subface)=ncglue.hanging_faces_glue[D][i]
     ocell_lface_within_dim =GridapP4est. face_lid_within_dim(Val{D}, ocell_lface)
@@ -99,7 +100,6 @@ function _generate_owner_face_to_subfaces(model,ncglue::GridapP4est.NonConformin
   end 
   Gridap.Arrays.Table(owner_face_to_subfaces_data,owner_face_to_subfaces_ptrs)
 end 
-
 
 function Gridap.Geometry.SkeletonTriangulation(model::DiscreteModel{D},
                                                ncglue::GridapP4est.NonConformingGlue{D}) where {D}
@@ -126,7 +126,7 @@ function Gridap.Geometry.SkeletonTriangulation(model::DiscreteModel{D},
       end
 
       # IMPORTANT NOTE: Plus side contains the hanging side of all cell interfaces, while 
-      #                 Minus side the "owner" side of all cell interfaces. This is a must.
+      #                 Minus side the "owner" side of all cell interfaces. This is a MUST.
       #                 For facet integration purposes, the Jacobian of the geometrical mapping
       #                 is extracted from the plus side. 
 
@@ -179,26 +179,33 @@ function Gridap.Geometry.BoundaryTriangulation(
   num_children=GridapP4est.get_num_children(Val{D-1})
   owner_face_to_subfaces=_generate_owner_face_to_subfaces(model,ncglue)
 
+  println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_face_to_subfaces=$(owner_face_to_subfaces)")
+
   # Generate face_to_bgface AND bgface_to_lcell 
   for (i,gface) in enumerate(face_to_regular_bgface)
     if (haskey(ncglue.owner_faces_lids[D-1],gface))
+      # Find all subfaces of current owner face!
+      (lowner,_,_)=ncglue.owner_faces_lids[D-1][gface]
+      subfaces=owner_face_to_subfaces[lowner]
+
       # Regular face is owner of several other hanging faces
       if (regular_bgface_to_lcell[gface]==1)
         bgface_to_lcell[gface]=1
         for i=1:num_children
-          push!(face_to_bgface, gface)    
-          push!(face_is_owner,true)
-          push!(face_to_subface,i)
+          if (subfaces[i]!=-1)
+            push!(face_to_bgface, gface)    
+            push!(face_is_owner,true)
+            push!(face_to_subface,i)
+          end 
         end
       else
-        # Find all subfaces of current owner face!
-        (lowner,_,_)=ncglue.owner_faces_lids[D-1][gface]
-        subfaces=owner_face_to_subfaces[lowner]
         for i=1:num_children
-          push!(face_to_bgface, subfaces[i])    
-          bgface_to_lcell[subfaces[i]]=1
-          push!(face_is_owner,false)
-          push!(face_to_subface,-1)
+          if (subfaces[i]!=-1)
+            push!(face_to_bgface, subfaces[i])
+            bgface_to_lcell[subfaces[i]]=1
+            push!(face_is_owner,false)
+            push!(face_to_subface,-1)
+          end
         end
       end 
     else
@@ -365,8 +372,8 @@ ranks  = with_mpi() do distribute
   distribute(LinearIndices((prod(nprocs),)))
 end
 
-coarse_model=setup_model(Val{2},2)
-dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,0)
+coarse_model=setup_model(Val{2},1)
+dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,1)
 
 ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
     flags=zeros(Int,length(indices))
@@ -377,19 +384,11 @@ end
 
 fmodel,glue=adapt(dmodel,ref_coarse_flags);
 
-function Gridap.Geometry.SkeletonTriangulation(
-  model::OctreeDistributedDiscreteModel;kwargs...)
-  SkeletonTriangulation(no_ghost,model;kwargs...)
-end
-
-function _create_local_skeleton_triangulation(model,ncglue)
-  SkeletonTriangulation(model,ncglue)
-end 
-
-function _create_local_skeleton_triangulation(model::Gridap.Adaptivity.AdaptedDiscreteModel,ncglue)
-  trian=SkeletonTriangulation(Gridap.Adaptivity.get_model(model),ncglue)
+function Gridap.Geometry.SkeletonTriangulation(model::Gridap.Adaptivity.AdaptedDiscreteModel{D},
+                                               ncglue::GridapP4est.NonConformingGlue{D}) where {D}
+  trian = SkeletonTriangulation(Gridap.Adaptivity.get_model(model),ncglue)
   return Gridap.Adaptivity.AdaptedTriangulation(trian,model)
-end 
+end
 
 function Gridap.Geometry.SkeletonTriangulation(
   portion,model::OctreeDistributedDiscreteModel{Dc};kwargs...) where Dc
@@ -397,8 +396,8 @@ function Gridap.Geometry.SkeletonTriangulation(
   trians = map(local_views(model.dmodel),
                partition(gids),
                model.non_conforming_glue) do model, gids, ncglue
-    _create_local_skeleton_triangulation(model,ncglue)
-    # SkeletonTriangulation(portion,gids,model;kwargs...)
+    trian=SkeletonTriangulation(model,ncglue)
+    GridapDistributed.filter_cells_when_needed(portion,gids,trian)
   end
   GridapDistributed.DistributedTriangulation(trians,model)
 end
