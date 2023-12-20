@@ -44,25 +44,25 @@ module OctreeDistributedDiscreteModelsTests
     return level_parts
   end
 
-  function run_with_env(distribute,subdomains,num_parts_x_level)
-    ranks=distribute(LinearIndices((prod(subdomains),)))
+  function run_with_env(distribute,np,nc,num_parts_x_level)
+    ranks = distribute(LinearIndices((prod(np),)))
     GridapP4est.with(ranks) do
-      run(distribute,subdomains,num_parts_x_level)
+      run(distribute,np,nc,num_parts_x_level)
     end
   end
 
-  function run(distribute,subdomains,num_parts_x_level)
-    ranks=distribute(LinearIndices((prod(subdomains),)))
-    if length(subdomains) == 2
+  function run(distribute,np,nc,num_parts_x_level)
+    ranks = distribute(LinearIndices((prod(np),)))
+    if length(nc) == 2
       domain=(0,1,0,1)
     else
-      @assert length(subdomains) == 3
+      @assert length(nc) == 3
       domain=(0,1,0,1,0,1)
     end
 
     # Generate model
     level_parts  = generate_level_parts(ranks,num_parts_x_level)
-    coarse_model = CartesianDiscreteModel(domain,subdomains)
+    coarse_model = CartesianDiscreteModel(domain,nc)
     model        = OctreeDistributedDiscreteModel(level_parts[2],coarse_model,1) 
     vmodel1      = GridapP4est.VoidOctreeDistributedDiscreteModel(model,ranks) 
     vmodel2      = GridapP4est.VoidOctreeDistributedDiscreteModel(coarse_model,ranks)
@@ -87,7 +87,7 @@ module OctreeDistributedDiscreteModelsTests
     f_model_tasks_L2_back, dglueL1toL2 = redistribute(fmodel_tasks_L1,level_parts[2])
 
     # Coarsening
-    model_back,glue = coarsen(f_model_tasks_L2_back)
+    model_back, glue = coarsen(f_model_tasks_L2_back)
 
     if GridapDistributed.i_am_in(level_parts[2])
       @test num_cells(model_back)==num_cells(model)
@@ -103,10 +103,10 @@ module OctreeDistributedDiscreteModelsTests
     model  = OctreeDistributedDiscreteModel(level_parts[1],coarse_model,3)
     imodel = model
     for i=1:3
-      omodel,glue=coarsen(imodel)
-      imodel=omodel
+      omodel, glue = coarsen(imodel)
+      imodel = omodel
     end
-    @test num_cells(imodel)==prod(subdomains)
+    @test num_cells(imodel) == prod(nc)
     nothing
   end
 end # module
