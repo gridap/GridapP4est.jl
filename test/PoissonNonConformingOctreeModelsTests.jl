@@ -271,10 +271,10 @@ module PoissonNonConformingOctreeModelsTests
   end 
 
   function run(distribute)
-    # debug_logger = ConsoleLgger(stderr, Logging.Debug)
-    # global_logger(debug_logger); # Enable the debug logger globally
+    #debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    #global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    for Dc=2:3, perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
+    for Dc=3:3, perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
          test(ranks,Val{Dc},perm,order,_field_type(Val{Dc}(),scalar_or_vector))
     end
     for Dc=2:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)

@@ -13,14 +13,17 @@ module GridapP4est
   const PArrays = PartitionedArrays
 
   include("Environment.jl")
+  include("PXestTypeMethods.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
+  include("AnisotropicallyAdapted3DDistributedDiscreteModels.jl")
   include("GridapFixes.jl")
   include("FESpaces.jl")
   include("AdaptivityFlagsMarkingStrategies.jl")
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
+  export AnisotropicallyAdapted3DDistributedDiscreteModel
   export adapt
   export refine
   export coarsen
