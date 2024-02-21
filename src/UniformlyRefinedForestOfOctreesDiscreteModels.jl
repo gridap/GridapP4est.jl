@@ -112,19 +112,19 @@ end
 function setup_pXest_connectivity(
   coarse_discrete_model::DiscreteModel{Dc,Dp}) where {Dc,Dp}
 
-  trian=Triangulation(coarse_discrete_model)
-  node_coordinates=Gridap.Geometry.get_node_coordinates(trian)
-  cell_nodes_ids=Gridap.Geometry.get_cell_node_ids(trian)
+  topo = Gridap.Geometry.get_grid_topology(coarse_discrete_model)
+  node_coordinates = Gridap.Geometry.get_vertex_coordinates(topo)
+  cell_nodes_ids = Gridap.Geometry.get_faces(topo,Dc,0)
 
   if (Dc==2)
-    pconn=p4est_connectivity_new(
+    pconn = p4est_connectivity_new(
         p4est_topidx_t(length(node_coordinates)),         # num_vertices
         p4est_topidx_t(num_cells(coarse_discrete_model)), # num_trees
         p4est_topidx_t(0),
         p4est_topidx_t(0))
   else
     @assert Dc==3
-    pconn=p8est_connectivity_new(
+    pconn = p8est_connectivity_new(
         p4est_topidx_t(length(node_coordinates)),         # num_vertices
         p4est_topidx_t(num_cells(coarse_discrete_model)), # num_trees
         p4est_topidx_t(0),
@@ -133,42 +133,37 @@ function setup_pXest_connectivity(
         p4est_topidx_t(0))
   end
 
-  conn=pconn[]
-  vertices=unsafe_wrap(Array, conn.vertices, length(node_coordinates)*3)
-  current=1
-  for i=1:length(node_coordinates)
-    p=node_coordinates[i]
-    for j=1:Dp
-      vertices[current]=Cdouble(p[j])
-      current=current+1
+  conn = pconn[]
+  vertices = unsafe_wrap(Array, conn.vertices, length(node_coordinates)*3)
+  current = 1
+  for (i,p) in enumerate(node_coordinates)
+    for j = 1:Dp
+      vertices[current] = Cdouble(p[j])
+      current = current+1
     end
     if (Dp==2)
-      vertices[current]=Cdouble(0.0) # Z coordinate always to 0.0 in 2D
-      current=current+1
+      vertices[current] = Cdouble(0.0) # Z coordinate always to 0.0 in 2D
+      current = current+1
     end
   end
 
-  tree_to_vertex=unsafe_wrap(Array, conn.tree_to_vertex, length(cell_nodes_ids)*(2^Dc))
-  c=Gridap.Arrays.array_cache(cell_nodes_ids)
-  current=1
-  for j=1:length(cell_nodes_ids)
-     ids=Gridap.Arrays.getindex!(c,cell_nodes_ids,j)
+  tree_to_vertex = unsafe_wrap(Array, conn.tree_to_vertex, length(cell_nodes_ids)*(2^Dc))
+  cache = Gridap.Arrays.array_cache(cell_nodes_ids)
+  current = 1
+  for j = 1:length(cell_nodes_ids)
+     ids = Gridap.Arrays.getindex!(cache,cell_nodes_ids,j)
      for id in ids
-      tree_to_vertex[current]=p4est_topidx_t(id-1)
-      current=current+1
+      tree_to_vertex[current] = p4est_topidx_t(id-1)
+      current = current+1
      end
   end
 
-
-  # /*
-  #  * Fill tree_to_tree and tree_to_face to make sure we have a valid
-  #  * connectivity.
-  #  */
-  PXEST_FACES=2*Dc
-  tree_to_tree=unsafe_wrap(Array, conn.tree_to_tree, conn.num_trees*PXEST_FACES )
-  tree_to_face=unsafe_wrap(Array, conn.tree_to_face, conn.num_trees*PXEST_FACES )
-  for tree=1:conn.num_trees
-    for face=1:PXEST_FACES
+  # Fill tree_to_tree and tree_to_face to make sure we have a valid connectivity.
+  PXEST_FACES = 2*Dc
+  tree_to_tree = unsafe_wrap(Array, conn.tree_to_tree, conn.num_trees*PXEST_FACES )
+  tree_to_face = unsafe_wrap(Array, conn.tree_to_face, conn.num_trees*PXEST_FACES )
+  for tree = 1:conn.num_trees
+    for face = 1:PXEST_FACES
       tree_to_tree[PXEST_FACES * (tree-1) + face] = tree-1
       tree_to_face[PXEST_FACES * (tree-1) + face] = face-1
     end
@@ -181,7 +176,8 @@ function setup_pXest_connectivity(
     p8est_connectivity_complete(pconn)
     @assert Bool(p8est_connectivity_is_valid(pconn))
   end
-  pconn
+
+  return pconn
 end
 
 function setup_pXest(::Type{Val{Dc}}, comm, connectivity, num_uniform_refinements) where Dc
