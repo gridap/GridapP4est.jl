@@ -1,20 +1,3 @@
-
-function pXest_destroy(::Type{Val{Dc}}, ptr_pXest) where Dc
-  if (Dc==2)
-    p4est_destroy(ptr_pXest)
-  else
-    p8est_destroy(ptr_pXest)
-  end
-end
-
-function pXest_connectivity_destroy(::Type{Val{Dc}}, ptr_pXest_connectivity) where Dc
-  if (Dc==2)
-    p4est_connectivity_destroy(ptr_pXest_connectivity)
-  else
-    p8est_connectivity_destroy(ptr_pXest_connectivity)
-  end
-end
-
 const P4EST_2_GRIDAP_FACET_2D  = [ 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_2D  = [ 3, 4, 1, 2 ]
 
@@ -213,96 +196,6 @@ function setup_pXest_connectivity(
   end
   pconn
 end
-
-function setup_pXest(::Type{Val{Dc}}, comm, connectivity, num_uniform_refinements) where Dc
-   if (Dc==2)
-       p4est_new_ext(comm,
-                     connectivity,
-                     Cint(0), Cint(num_uniform_refinements), Cint(1), Cint(0),
-                     C_NULL, C_NULL)
-   else
-      p8est_new_ext(comm,
-                    connectivity,
-                    Cint(0), Cint(num_uniform_refinements), Cint(1), Cint(0),
-                    C_NULL, C_NULL)
-   end
-end
-
-function setup_pXest_ghost(::Type{Val{Dc}}, ptr_pXest) where Dc
-  if (Dc==2)
-    p4est_ghost_new(ptr_pXest,P4est_wrapper.P4EST_CONNECT_FULL)
-  else
-    p8est_ghost_new(ptr_pXest,P4est_wrapper.P8EST_CONNECT_FULL)
-  end
-end
-
-function setup_cell_prange(::Type{Val{Dc}},
-                           parts::AbstractVector{<:Integer},
-                           ptr_pXest,
-                           ptr_pXest_ghost) where Dc
-  comm = parts.comm
-
-  pXest_ghost = ptr_pXest_ghost[]
-  pXest       = ptr_pXest[]
-
-  # Obtain ghost quadrants
-  if (Dc==2)
-    ptr_ghost_quadrants = Ptr{p4est_quadrant_t}(pXest_ghost.ghosts.array)
-  else
-    ptr_ghost_quadrants = Ptr{p8est_quadrant_t}(pXest_ghost.ghosts.array)
-  end
-  proc_offsets = unsafe_wrap(Array, pXest_ghost.proc_offsets, pXest_ghost.mpisize+1)
-
-  global_first_quadrant = unsafe_wrap(Array,
-                                      pXest.global_first_quadrant,
-                                      pXest.mpisize+1)
-
-  noids,firstgid,gho_to_glo,gho_to_own=map(parts) do part
-    gho_to_glo = Vector{Int}(undef, pXest_ghost.ghosts.elem_count)
-    gho_to_own = Vector{Int32}(undef, pXest_ghost.ghosts.elem_count)
-    k=1
-    for i=1:pXest_ghost.mpisize
-      for j=proc_offsets[i]:proc_offsets[i+1]-1
-        quadrant       = ptr_ghost_quadrants[j+1]
-        piggy3         = quadrant.p.piggy3
-        gho_to_glo[k]  = global_first_quadrant[i]+piggy3.local_num+1
-        gho_to_own[k] = Int32(i)
-        k=k+1
-      end
-    end
-    pXest.local_num_quadrants,global_first_quadrant[part]+1,gho_to_glo,gho_to_own
-  end |> tuple_of_arrays
-  ngids = pXest.global_num_quadrants
-
-  partition=map(parts,noids,firstgid,gho_to_glo,gho_to_own) do part, noids, firstgid, gho_to_glo, gho_to_own
-    owner = part
-    own_indices=OwnIndices(ngids,owner,(collect(firstgid:firstgid+noids-1)))
-    ghost_indices=GhostIndices(ngids,gho_to_glo,gho_to_own)
-    OwnAndGhostIndices(own_indices,ghost_indices)
-  end
-  # This is required to provide the hint that the communication 
-  # pattern underlying partition is symmetric, so that we do not have 
-  # to execute the algorithm the reconstructs the reciprocal in the 
-  # communication graph
-  assembly_neighbors(partition;symmetric=true)
-  PRange(partition)
-end
-
-function setup_pXest_lnodes(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where Dc
-  if (Dc==2)
-    p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))
-  else
-    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))
-  end
-end
-
-function setup_pXest_lnodes_nonconforming(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where Dc
-  if (Dc==2)
-    p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-2))
-  else
-    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-3))
-  end
-end 
 
 function fetch_vector_ghost_values_cache(vector_partition,partition)
   cache = PArrays.p_vector_cache(vector_partition,partition)
@@ -706,9 +599,6 @@ function generate_face_labeling(pXest_type::P4P8estType,
   #  end   
  end
  
-
-
-
  update_face_to_entity_with_ghost_data!(facet_to_entity,
                                         cell_prange,
                                         num_faces(polytope,Dc-1),
@@ -792,7 +682,6 @@ end
 function update_face_to_entity_with_ghost_data!(
    face_to_entity,cell_prange,num_faces_x_cell,cell_to_faces)
 
-
    part_to_cell_to_entity = map(init_cell_to_face_entity,
                                       map(x->num_faces_x_cell,partition(cell_prange)),
                                       cell_to_faces,
@@ -806,34 +695,33 @@ function update_face_to_entity_with_ghost_data!(
              part_to_cell_to_entity)
 end
 
-function setup_ptr_pXest_objects(::Type{Val{Dc}},
+function setup_ptr_pXest_objects(pXest_type::PXestType,
                                  comm,
                                  coarse_discrete_model,
-                                 num_uniform_refinements) where Dc
+                                 num_uniform_refinements)
   ptr_pXest_connectivity=setup_pXest_connectivity(coarse_discrete_model)
   # Create a new forest
-  ptr_pXest = setup_pXest(Val{Dc},comm,ptr_pXest_connectivity,num_uniform_refinements)
+  ptr_pXest = setup_pXest(pXest_type,comm,ptr_pXest_connectivity,num_uniform_refinements)
   # Build the ghost layer
-  ptr_pXest_ghost=setup_pXest_ghost(Val{Dc},ptr_pXest)
-  ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
+  ptr_pXest_ghost=setup_pXest_ghost(pXest_type,ptr_pXest)
+  ptr_pXest_lnodes=setup_pXest_lnodes(pXest_type, ptr_pXest, ptr_pXest_ghost)
   ptr_pXest_connectivity, ptr_pXest, ptr_pXest_ghost, ptr_pXest_lnodes
 end
 
-function setup_distributed_discrete_model(::Type{Val{Dc}},
+function setup_distributed_discrete_model(pXest_type::PXestType,
                                           parts,
                                           coarse_discrete_model,
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
                                           ptr_pXest_ghost,
-                                          ptr_pXest_lnodes) where Dc
+                                          ptr_pXest_lnodes)
   
-   cell_prange = setup_cell_prange(Val{Dc},parts,ptr_pXest,ptr_pXest_ghost)
+   cell_prange = setup_cell_prange(pXest_type,parts,ptr_pXest,ptr_pXest_ghost)
 
    cell_vertex_gids=generate_cell_vertex_gids(ptr_pXest_lnodes,cell_prange)
 
    cell_vertex_lids,nlvertices=generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
 
-   pXest_type = _dim_to_pXest_type(Dc)
 
    node_coordinates=generate_node_coordinates(pXest_type,
                                               cell_vertex_lids,
@@ -873,14 +761,14 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
   ptr_pXest_connectivity,
      ptr_pXest,
        ptr_pXest_ghost,
-         ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
+         ptr_pXest_lnodes = setup_ptr_pXest_objects(pXest_type,
                                                     comm,
                                                     coarse_discrete_model,
                                                     num_uniform_refinements)
 
   # Write forest to VTK file
   # p4est_vtk_write_file(unitsquare_forest, C_NULL, "my_step")
-  dmodel=setup_distributed_discrete_model(Val{Dc},
+  dmodel=setup_distributed_discrete_model(pXest_type,
                                           parts,
                                           coarse_discrete_model,
                                           ptr_pXest_connectivity,
@@ -888,9 +776,9 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
                                           ptr_pXest_ghost,
                                           ptr_pXest_lnodes)
 
-  pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
-  pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
-  pXest_destroy(Val{Dc},ptr_pXest)
-  pXest_connectivity_destroy(Val{Dc},ptr_pXest_connectivity)
+  pXest_lnodes_destroy(pXest_type,ptr_pXest_lnodes)
+  pXest_ghost_destroy(pXest_type,ptr_pXest_ghost)
+  pXest_destroy(pXest_type,ptr_pXest)
+  pXest_connectivity_destroy(pXest_type,ptr_pXest_connectivity)
   dmodel
 end

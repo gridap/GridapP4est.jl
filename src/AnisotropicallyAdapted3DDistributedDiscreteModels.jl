@@ -37,6 +37,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
                                           pXest_type,
+                                          nothing,
                                           true,
                                           nothing)
 end
@@ -46,7 +47,7 @@ function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteMod
 
   pXest_type = model.pXest_type
   init_fn_callback_c = p6est_vertically_adapt_reset_callbacks()
-  #coarsen_fn_callback_c = p6est_vertically_coarsen_callbacks()
+  coarsen_fn_callback_c = p6est_vertically_coarsen_callbacks()
   refine_callback_c,refine_replace_callback_c = p6est_vertically_refine_callbacks()
 
   map(model.dmodel.models,refinement_and_coarsening_flags) do lmodel, flags
@@ -62,7 +63,7 @@ function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteMod
   p6est_vertically_refine!(ptr_new_pXest,
                            refine_callback_c,
                            refine_replace_callback_c)
-  #pXest_vertically_coarsen!(ptr_new_pXest, coarsen_fn_callback_c)
+  p6est_vertically_coarsen!(ptr_new_pXest, coarsen_fn_callback_c)
   pXest_balance!(pXest_type, ptr_new_pXest)
   p6est_vertically_adapt_update_flags!(model.ptr_pXest,ptr_new_pXest)
   ptr_new_pXest
@@ -95,8 +96,9 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
     
   pXest_ghost_destroy(model.pXest_type,ptr_pXest_ghost)
   pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
+  pXest_refinement_rule_type = PXestVerticalRefinementRuleType()
   adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
-                                                       PXestVerticalRefinementRuleType(),
+                                                       pXest_refinement_rule_type,
                                                        model.parts,
                                                        model.dmodel,
                                                        fmodel,
@@ -115,6 +117,7 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              model.ptr_pXest_connectivity,
                                              ptr_new_pXest,
                                              model.pXest_type,
+                                             pXest_refinement_rule_type,
                                              false,
                                              model)
   return ref_model, adaptivity_glue
@@ -448,6 +451,12 @@ face_labeling =
     face_labeling=Gridap.Geometry.FaceLabeling(d_to_dface_to_entity,
                                                tag_to_entities,
                                                tag_to_name)
+
+    add_tag_from_tags!(face_labeling, 
+        "boundary", 
+        ["bottom_boundary", "intermediate_boundary", "top_boundary"])
+    
+    face_labeling
   end
   face_labeling
 end

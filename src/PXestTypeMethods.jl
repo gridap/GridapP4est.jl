@@ -10,8 +10,6 @@ struct PXestUniformRefinementRuleType <: PXestRefinementRuleType end;
 struct PXestVerticalRefinementRuleType <: PXestRefinementRuleType end;
 struct PXestHorizontalRefinementRuleType <: PXestRefinementRuleType end;  
 
-
-
 function pXest_destroy(pXest_type::P4estType, ptr_pXest)
   p4est_destroy(ptr_pXest)
 end
@@ -250,6 +248,10 @@ function p6est_vertically_refine!(ptr_pXest, refine_fn_c, refine_replace_fn_c; i
   p6est_refine_layers_ext(ptr_pXest, Cint(0), Cint(-1), refine_fn_c, init_fn_c, refine_replace_fn_c)
 end
 
+function p6est_vertically_coarsen!(ptr_pXest, coarsen_fn_c)
+  p6est_coarsen_layers(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
+end
+
 function pXest_coarsen!(::P4estType, ptr_pXest, coarsen_fn_c) 
   p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
 end
@@ -304,7 +306,7 @@ function pXest_partition!(::P4estType, ptr_pXest)
 end 
 
 function pXest_partition!(::P6estType, ptr_pXest)
-  p6est_partition(ptr_pXest, 0, C_NULL)
+  p6est_partition(ptr_pXest, C_NULL)
 end 
 
 function pXest_partition!(::P8estType, ptr_pXest)
@@ -379,7 +381,7 @@ function P4EST_QUADRANT_LEN(l)
 end 
 
 function p2est_quadrant_is_ancestor(a,b)
-  if (a[].level==b[].level)
+  if (a[].level>=b[].level)
     return false
   end 
   return (b[].z >= a[].z && 
@@ -492,6 +494,40 @@ function p6est_vertically_refine_callbacks()
   refine_layer_fn_callback_c, refine_layer_replace_callback_c
 end 
 
+function p6est_vertically_coarsen_callbacks()
+  function coarsen_layer_callback(p6est::Ptr{p6est_t},
+    which_tree::p4est_topidx_t,
+    column::Ptr{p4est_quadrant_t},
+    layer::Ptr{Ptr{p2est_quadrant_t}})
+
+    num_children=2
+    layers=unsafe_wrap(Array, layer, num_children)
+
+    coarsen=Cint(1)
+    for quadrant_index=1:num_children
+       quadrant = layers[quadrant_index][]
+       # I have noticed that new quadrants created as by-product
+       # of the refininement process have quadrant.p.user_data == C_NULL
+       # Not sure why ... The following if-end takes care of this.
+       if (quadrant.p.user_data) == C_NULL
+         println("XXX: first if")
+         return Cint(0)
+       end
+       is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+       if (!is_coarsen_flag) 
+         println("XXX: second if")
+         return Cint(0)
+       end
+    end
+    println("XXX: function end")  
+    return coarsen
+  end
+  coarsen_fn_callback_c = @cfunction($coarsen_layer_callback, 
+                                     Cint, 
+                                     (Ptr{p6est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}, Ptr{Ptr{p2est_quadrant_t}}))
+
+  return coarsen_fn_callback_c
+end 
 
 function pXest_coarsen_callbacks(::P4estType)
   function coarsen_callback(forest_ptr::Ptr{p4est_t},
@@ -1033,7 +1069,9 @@ end
 
 function subface_to_hanging_edges_within_face(::P8estType)
   p8est_subface_to_hanging_edges_within_face
-end 
+end
+
+const p6est_half_to_regular_vertices = [ 0 1; 2 3; 0 2; 1 3]
 
 function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType, 
                                                      ptr_pXest_lnodes, 
@@ -1047,7 +1085,6 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
   lnodes = ptr_pXest_lnodes[]
   element_nodes = unsafe_wrap(Array, lnodes.element_nodes, lnodes.vnodes * lnodes.num_local_elements)
   face_code = unsafe_wrap(Array, lnodes.face_code, lnodes.num_local_elements)
-  println(face_code)
   hanging_face = Vector{Cint}(undef, n_cell_faces)
   face_code_with_ghosts = map(partition(cell_prange)) do indices
       @assert length(face_code)==own_length(indices)
@@ -1315,10 +1352,12 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
               # Process hanging vertex
               p4est_hanging_lvertex = pXest_face_corners[p4est_lface, hanging_vertex_lvertex_within_face+1]
               hanging_vertices_pairs_to_owner_face[(cell, PXEST_2_GRIDAP_VERTEX[p4est_hanging_lvertex+1])] = owner_face
+
+              # Process hanging face
+              hanging_faces_pairs_to_owner_face[(cell, PXEST_2_GRIDAP_FACE[p4est_lface])] = (owner_face,half+1)
             else
               # Anisotropic refinement
               @assert half in 4:7 
-              p6est_half_to_regular_vertices = [ 0 1; 2 3; 0 2; 1 3]
               for regular_vertex_lvertex_within_face in p6est_half_to_regular_vertices[mod(half,4)+1,:]
                 # Process regular vertex
                 p4est_regular_lvertex = pXest_face_corners[p4est_lface, regular_vertex_lvertex_within_face+1]
@@ -1331,11 +1370,14 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
                     p4est_regular_lvertex + 1,
                     p4est_gvertex,
                     PXEST_2_GRIDAP_VERTEX)
-              end 
+              end
+              subface = mod(half,2)+1
+
+              # Process hanging face
+              hanging_faces_pairs_to_owner_face[(cell, PXEST_2_GRIDAP_FACE[p4est_lface])] = (owner_face,subface)
             end  
            
-            # Process hanging face
-            hanging_faces_pairs_to_owner_face[(cell, PXEST_2_GRIDAP_FACE[p4est_lface])] = (owner_face,half+1)
+
 
             if (Dc==3)
               _subface_to_hanging_edges_within_subface = subface_to_hanging_edges_within_subface(pXest_type)
@@ -1922,6 +1964,174 @@ function generate_grid_and_topology(pXest_type::PXestType,
   grid,topology
 end
 
+function pXest_comm_find_owner(::P4estType,ptr_pXest,itree,quad,guess)
+  return p4est_comm_find_owner(ptr_pXest,itree,quad,guess)
+end
 
+function pXest_comm_find_owner(::P8estType,ptr_pXest,itree,quad,guess)
+  return p8est_comm_find_owner(ptr_pXest,itree,quad,guess)
+end
 
+function pXest_compute_migration_control_data(pXest_type::P4P8estType,ptr_pXest_old,ptr_pXest_new)
+  pXest_old   = ptr_pXest_old[]
+  pXest_new   = ptr_pXest_new[]
+  num_trees   = Cint(pXest_old.connectivity[].num_trees)
+  my_rank     = pXest_old.mpirank
+  ranks_count = Dict{Int,Int}()
+  lst_ranks   = Int[]
+  old2new     = Vector{Int}(undef,pXest_old.local_num_quadrants)
+  current_old_quad_index = 1
 
+  for itree = 0:num_trees-1
+    tree = pXest_tree_array_index(pXest_type,pXest_old,itree)[]
+    num_quads = Cint(tree.quadrants.elem_count)
+
+    for iquad = 0:num_quads-1
+      q = pXest_quadrant_array_index(pXest_type, tree, iquad)
+      new_rank = pXest_comm_find_owner(pXest_type,ptr_pXest_new,itree,q,0)
+      if (new_rank != my_rank)
+        if (!(new_rank+1 in keys(ranks_count)))
+          push!(lst_ranks,new_rank+1)
+          ranks_count[new_rank+1] = 0
+        end
+        ranks_count[new_rank+1] += 1
+        old2new[current_old_quad_index] = 0
+      else
+        current_new_quad_index = 1
+        new_tree = pXest_tree_array_index(pXest_type,pXest_new,pXest_new.first_local_tree)[]
+        for t = pXest_new.first_local_tree:pXest_new.last_local_tree
+          new_tree = pXest_tree_array_index(pXest_type,pXest_new,t)[]
+          if t == itree
+            break
+          end
+          current_new_quad_index += Cint(new_tree.quadrants.elem_count)
+        end
+        found = false
+        num_quads_new = Cint(new_tree.quadrants.elem_count)
+        for iquad_new = 0:num_quads_new-1
+          q_new = pXest_quadrant_array_index(pXest_type, new_tree, iquad_new)
+          found = pXest_quadrant_is_equal(pXest_type,q,q_new)
+          if found
+            break
+          end
+          current_new_quad_index += 1
+        end
+        Gridap.Helpers.@check found
+        old2new[current_old_quad_index] = current_new_quad_index
+      end
+      current_old_quad_index += 1
+    end
+  end
+
+  local_ids    = [i for i=1:length(old2new) if old2new[i]==0]
+  ptr_ranks    = Vector{Int32}(undef,length(ranks_count)+1)
+  ptr_ranks[1] = 1
+  for (i,rank) in enumerate(lst_ranks)
+     ptr_ranks[i+1]=ptr_ranks[i]+ranks_count[rank]
+  end
+
+  lst_ranks,PartitionedArrays.JaggedArray(local_ids,ptr_ranks),old2new
+end
+
+function pXest_compute_migration_control_data(pXest_type::P6estType,ptr_pXest_old,ptr_pXest_new)
+  
+  pXest_old = ptr_pXest_old[]
+  pXest_new = ptr_pXest_new[]
+  
+  lst_ranks, columns_snd_lids, columns_old2new=
+       pXest_compute_migration_control_data(P4estType(),
+                                            pXest_old.columns,
+                                            pXest_new.columns)
+
+  ptrs=Vector{Int32}(undef,length(columns_snd_lids.ptrs))
+  lids=Int32[]
+  old2new=Int32[]
+
+  current_col  = 1
+  current_old_cell = 1
+  current_new_cell = 1
+  current_rank = 1 
+
+  num_trees = Cint(pXest_old.columns[].connectivity[].num_trees)
+
+  # Go over trees 
+  for itree = 0:num_trees-1
+    tree = pXest_tree_array_index(pXest_type,pXest_old,itree)[]
+    num_quads = Cint(tree.quadrants.elem_count)
+    
+    # Go over columns of current tree 
+    for iquad=0:num_quads-1
+      q = pXest_quadrant_array_index(pXest_type,tree,iquad)
+      f,l=P6EST_COLUMN_GET_RANGE(q[])
+      num_quads_in_column=l-f
+      if (columns_old2new[current_col]==0)
+          if (current_col==columns_snd_lids.data[columns_snd_lids.ptrs[current_rank+1]])
+            current_rank=current_rank+1
+          end 
+          ptrs[current_rank+1]+=num_quads_in_column
+          for i=0:num_quads_in_column-1
+            push!(lids,current_old_cell+i)
+          end
+      else
+        for i=1:num_quads_in_column
+          push!(old2new,current_new_cell)
+          current_new_cell+=1
+        end
+      end
+      current_old_cell+=num_quads_in_column
+      current_col+=1
+    end
+  end 
+  Gridap.Arrays.length_to_ptrs!(ptrs)
+  lst_ranks,PartitionedArrays.JaggedArray(lids,ptrs),old2new
+end
+
+function pXest_deflate_quadrants(::P4estType,ptr_pXest,data)
+  P4est_wrapper.p4est_deflate_quadrants(ptr_pXest,data)
+end
+
+function pXest_deflate_quadrants(::P8estType,ptr_pXest,data)
+  P4est_wrapper.p8est_deflate_quadrants(ptr_pXest,data)
+end
+
+function pXest_comm_count_pertree(::P4estType,ptr_pXest,pertree)
+  p4est_comm_count_pertree(ptr_pXest,pertree)
+end
+
+function pXest_comm_count_pertree(::P8estType,ptr_pXest,pertree)
+  p8est_comm_count_pertree(ptr_pXest,pertree)
+end
+
+function pXest_inflate(::P4estType,
+                       comm,
+                       ptr_pXest_conn,
+                       global_first_quadrant, 
+                       pertree,
+                       quadrants, 
+                       data, 
+                       user_pointer)
+    P4est_wrapper.p4est_inflate(comm,
+                                ptr_pXest_conn,
+                                global_first_quadrant, 
+                                pertree,
+                                quadrants, 
+                                data, 
+                                user_pointer)
+end
+
+function pXest_inflate(::P8estType,
+                       comm,
+                       ptr_pXest_conn,
+                       global_first_quadrant, 
+                       pertree,
+                       quadrants, 
+                       data, 
+                       user_pointer)
+    P4est_wrapper.p8est_inflate(comm,
+                                ptr_pXest_conn,
+                                global_first_quadrant, 
+                                pertree,
+                                quadrants, 
+                                data, 
+                                user_pointer)
+end

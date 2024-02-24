@@ -41,6 +41,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
   ptr_pXest_connectivity      :: E
   ptr_pXest                   :: F
   pXest_type                  :: PXestType
+  pXest_refinement_rule_type  :: Union{Nothing,PXestRefinementRuleType}
 
   # The model for which this variable is true, is the one
   # ultimately responsible for deallocating the pXest_connectivity
@@ -60,6 +61,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
     ptr_pXest_connectivity,
     ptr_pXest,
     pXest_type::PXestType,
+    pXest_refinement_rule_type::Union{Nothing,PXestRefinementRuleType},
     owns_ptr_pXest_connectivity::Bool,
     gc_ref)
 
@@ -81,6 +83,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
                                    ptr_pXest_connectivity,
                                    ptr_pXest,
                                    pXest_type,
+                                   pXest_refinement_rule_type,
                                    owns_ptr_pXest_connectivity,
                                    gc_ref)
     Init(model)
@@ -96,6 +99,7 @@ function OctreeDistributedDiscreteModel(
   ptr_pXest_connectivity,
   ptr_pXest,
   pXest_type,
+  pXest_refinement_rule_type,
   owns_ptr_pXest_connectivity,
   gc_ref) where {Dc,Dp}
 
@@ -108,6 +112,7 @@ function OctreeDistributedDiscreteModel(
                                         ptr_pXest_connectivity,
                                         ptr_pXest,
                                         pXest_type,
+                                        pXest_refinement_rule_type,
                                         owns_ptr_pXest_connectivity,
                                         gc_ref)
 end
@@ -128,11 +133,11 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
     ptr_pXest_connectivity,
       ptr_pXest,
         ptr_pXest_ghost,
-          ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
-                                                      comm,
-                                                      coarse_model,
-                                                      num_uniform_refinements)
-    dmodel = setup_distributed_discrete_model(Val{Dc},
+          ptr_pXest_lnodes = setup_ptr_pXest_objects(pXest_type,
+                                                     comm,
+                                                     coarse_model,
+                                                     num_uniform_refinements)
+    dmodel = setup_distributed_discrete_model(pXest_type,
                                             parts,
                                             coarse_model,
                                             ptr_pXest_connectivity,
@@ -153,6 +158,7 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
                                           pXest_type,
+                                          nothing,
                                           true,
                                           nothing)
   else
@@ -184,6 +190,7 @@ function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},p
                                  ptr_pXest_connectivity,
                                  nothing,
                                  _dim_to_pXest_type(Dc),
+                                 nothing,
                                  true,
                                  nothing)
 end
@@ -198,6 +205,7 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
                                  model.ptr_pXest_connectivity,
                                  nothing,
                                  _dim_to_pXest_type(Dc),
+                                 nothing,
                                  false,
                                  model)
 end
@@ -233,57 +241,12 @@ function Init(a::OctreeDistributedDiscreteModel)
 end
 
 function Finalize(a::OctreeDistributedDiscreteModel)
-  octree_distributed_discrete_model_free!(a)
+  # octree_distributed_discrete_model_free!(a)
   return nothing
 end
 
 ###################################################################
 # Private methods
-
-function pXest_partition_given!(::Type{Val{Dc}}, ptr_pXest, new_num_cells_per_part) where Dc
-  if (Dc==2)
-    p4est_partition_given(ptr_pXest, new_num_cells_per_part)
-  else
-    p8est_partition_given(ptr_pXest, new_num_cells_per_part)
-  end
-end
-
-function pXest_uniformly_refine!(::Type{Val{Dc}}, ptr_pXest) where Dc
-  # Refine callbacks
-  function refine_fn_2d(::Ptr{p4est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p4est_quadrant_t})
-    return Cint(1)
-  end
-  function refine_fn_3d(::Ptr{p8est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p8est_quadrant_t})
-    return Cint(1)
-  end
-  if (Dc==2)
-    # C-callable refine callback 2D
-    refine_fn_c = @cfunction($refine_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
-    p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
-  else
-    # C-callable refine callback 3D
-    refine_fn_c = @cfunction($refine_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
-    p8est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
-  end
-end
-
-function pXest_uniformly_coarsen!(::Type{Val{Dc}}, ptr_pXest) where Dc
-  # Coarsen callbacks
-  function coarsen_fn_2d(::Ptr{p4est_t},::p4est_topidx_t,::Ptr{Ptr{p4est_quadrant_t}})
-    return Cint(1)
-  end
-  function coarsen_fn_3d(::Ptr{p8est_t},::p4est_topidx_t,::Ptr{Ptr{p8est_quadrant_t}})
-    return Cint(1)
-  end
-  if (Dc==2)
-    # C-callable coasen callback
-    coarsen_fn_c=@cfunction($coarsen_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
-    p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
-  else
-    coarsen_fn_c=@cfunction($coarsen_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
-    p8est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
-  end
-end
 
 function get_num_children(::P4estType,::PXestUniformRefinementRuleType)
   4
@@ -1225,7 +1188,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
    if (GridapDistributed.i_am_in(old_comm))
      # Copy and refine input p4est
      ptr_new_pXest = pXest_copy(model.pXest_type, model.ptr_pXest)
-     pXest_uniformly_refine!(Val{Dc}, ptr_new_pXest)
+     pXest_uniformly_refine!(model.pXest_type, ptr_new_pXest)
    else
      ptr_new_pXest = nothing
    end
@@ -1236,7 +1199,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
 
       if !isa(parts,Nothing)
         aux = ptr_new_pXest
-        ptr_new_pXest = _pXest_to_new_comm(Val{Dc},
+        ptr_new_pXest = _pXest_to_new_comm(pXest_type,
                                            ptr_new_pXest,
                                            model.ptr_pXest_connectivity,
                                            model.parts.comm,
@@ -1247,12 +1210,12 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
       end
 
       # Extract ghost and lnodes
-      ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-      ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
+      ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_new_pXest)
+      ptr_pXest_lnodes = setup_pXest_lnodes(pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
       # Build fine-grid mesh
       new_parts = isa(parts,Nothing) ? model.parts : parts
-      fmodel = setup_distributed_discrete_model(Val{Dc},
+      fmodel = setup_distributed_discrete_model(pXest_type,
                                               new_parts,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
@@ -1278,6 +1241,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
                                      model.ptr_pXest_connectivity,
                                      ptr_new_pXest,
                                      pXest_type,
+                                     PXestUniformRefinementRuleType(),
                                      false,
                                      model)
 
@@ -1331,8 +1295,8 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   ptr_new_pXest = _refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
   # Build fine-grid mesh
   fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
@@ -1345,8 +1309,9 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
     
   pXest_ghost_destroy(model.pXest_type,ptr_pXest_ghost)
   pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
+  pXest_refinement_rule_type = PXestUniformRefinementRuleType()
   adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
-                                                       PXestUniformRefinementRuleType(),
+                                                       pXest_refinement_rule_type,
                                                        model.parts,
                                                        model.dmodel,
                                                        fmodel,
@@ -1365,6 +1330,7 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              model.ptr_pXest_connectivity,
                                              ptr_new_pXest,
                                              model.pXest_type,
+                                             pXest_refinement_rule_type,
                                              false,
                                              model)
   return ref_model, adaptivity_glue
@@ -1375,18 +1341,18 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
   if (GridapDistributed.i_am_in(comm))
     # Copy and coarsen input p4est
     ptr_new_pXest = pXest_copy(model.pXest_type, model.ptr_pXest)
-    pXest_uniformly_coarsen!(Val{Dc}, ptr_new_pXest)
+    pXest_uniformly_coarsen!(model.pXest_type, ptr_new_pXest)
   else
     ptr_new_pXest=nothing
   end
 
   if (GridapDistributed.i_am_in(comm))
      # Extract ghost and lnodes
-     ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_new_pXest)
-     ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_new_pXest, ptr_pXest_ghost)
+     ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+     ptr_pXest_lnodes = setup_pXest_lnodes(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
      # Build coarse-grid mesh
-     cmodel = setup_distributed_discrete_model(Val{Dc},
+     cmodel = setup_distributed_discrete_model(model.pXest_type,
                                              model.parts,
                                              model.coarse_model,
                                              model.ptr_pXest_connectivity,
@@ -1410,6 +1376,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
                                     ptr_new_pXest,
+                                    PXestUniformRefinementRuleType(),
                                     false,
                                     model)
      return c_octree_model, dglue
@@ -1418,63 +1385,22 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
   end
 end
 
-function pXest_deflate_quadrants(::Type{Val{Dc}},ptr_pXest,data) where Dc
-  if Dc ==2
-    P4est_wrapper.p4est_deflate_quadrants(ptr_pXest,data)
-  else
-    P4est_wrapper.p8est_deflate_quadrants(ptr_pXest,data)
-  end
-end
 
-function pXest_comm_count_pertree(::Type{Val{Dc}},ptr_pXest,pertree) where Dc
-  if Dc == 2
-    p4est_comm_count_pertree(ptr_pXest,pertree)
-  else
-    p8est_comm_count_pertree(ptr_pXest,pertree)
-  end
-end
-
-function pXest_inflate(::Type{Val{Dc}},
-                       comm,
-                       ptr_pXest_conn,
-                       global_first_quadrant, 
-                       pertree,
-                       quadrants, 
-                       data, 
-                       user_pointer) where Dc
-  if Dc == 2
-    P4est_wrapper.p4est_inflate(comm,
-                                ptr_pXest_conn,
-                                global_first_quadrant, 
-                                pertree,
-                                quadrants, 
-                                data, 
-                                user_pointer)
-  else
-    P4est_wrapper.p8est_inflate(comm,
-                                ptr_pXest_conn,
-                                global_first_quadrant, 
-                                pertree,
-                                quadrants, 
-                                data, 
-                                user_pointer)
-  end
-end
 
 # We have a p4est distributed among P processors. This function
 # instantiates the same among Q processors.
-function _pXest_to_new_comm(::Type{Val{Dc}},ptr_pXest, ptr_pXest_conn, old_comm, new_comm) where Dc
+function _pXest_to_new_comm(pXest_type,ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   A = is_included(old_comm,new_comm) # old \subset new (smaller to larger nparts)
   B = is_included(new_comm,old_comm) # old \supset new (larger to smaller nparts)
   @assert xor(A,B)
   if (A)
-    _pXest_to_new_comm_old_subset_new(Val{Dc},ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
+    _pXest_to_new_comm_old_subset_new(pXest_type,ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   else
-    _pXest_to_new_comm_old_supset_new(Val{Dc},ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
+    _pXest_to_new_comm_old_supset_new(pXest_type,ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   end
 end
 
-function _pXest_to_new_comm_old_subset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_conn, old_comm, new_comm) where Dc
+function _pXest_to_new_comm_old_subset_new(pXest_type,ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   if (GridapDistributed.i_am_in(new_comm))
     new_comm_num_parts    = GridapDistributed.num_parts(new_comm)
     global_first_quadrant = Vector{P4est_wrapper.p4est_gloidx_t}(undef,new_comm_num_parts+1)
@@ -1495,15 +1421,15 @@ function _pXest_to_new_comm_old_subset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_
         global_first_quadrant[i] = old_global_first_quadrant[end]
       end
       MPI.Bcast!(global_first_quadrant,0,new_comm)
-      quadrants = pXest_deflate_quadrants(Val{Dc},ptr_pXest,C_NULL)
-      pXest_comm_count_pertree(Val{Dc},ptr_pXest,pertree)
+      quadrants = pXest_deflate_quadrants(pXest_type,ptr_pXest,C_NULL)
+      pXest_comm_count_pertree(pXest_type,ptr_pXest,pertree)
       MPI.Bcast!(pertree,0,new_comm)
     else
       MPI.Bcast!(global_first_quadrant,0,new_comm)
       quadrants = sc_array_new_count(sizeof(p4est_quadrant_t), 0)
       MPI.Bcast!(pertree,0,new_comm)
     end
-    return pXest_inflate(Val{Dc},
+    return pXest_inflate(pXest_type,
                          new_comm,
                          ptr_pXest_conn,
                          global_first_quadrant,
@@ -1516,13 +1442,13 @@ function _pXest_to_new_comm_old_subset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_
   end
 end
 
-function _pXest_to_new_comm_old_supset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_conn, old_comm, new_comm) where Dc
+function _pXest_to_new_comm_old_supset_new(pXest_type,ptr_pXest, ptr_pXest_conn, old_comm, new_comm)
   @assert GridapDistributed.i_am_in(old_comm)
   pXest = ptr_pXest[]
   pXest_conn = ptr_pXest_conn[]
 
   pertree = Vector{P4est_wrapper.p4est_gloidx_t}(undef,pXest_conn.num_trees+1)
-  pXest_comm_count_pertree(Val{Dc},ptr_pXest,pertree)
+  pXest_comm_count_pertree(pXest_type,ptr_pXest,pertree)
 
   if (GridapDistributed.i_am_in(new_comm))
     new_comm_num_parts = GridapDistributed.num_parts(new_comm)
@@ -1539,9 +1465,9 @@ function _pXest_to_new_comm_old_supset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_
     for i = 1:length(new_global_first_quadrant)
       global_first_quadrant[i] = old_global_first_quadrant[i]
     end
-    quadrants = pXest_deflate_quadrants(Val{Dc},ptr_pXest,C_NULL)
+    quadrants = pXest_deflate_quadrants(pXest_type,ptr_pXest,C_NULL)
 
-    return pXest_inflate(Val{Dc},
+    return pXest_inflate(pXest_type,
                          new_comm,
                          ptr_pXest_conn,
                          global_first_quadrant,
@@ -1554,76 +1480,6 @@ function _pXest_to_new_comm_old_supset_new(::Type{Val{Dc}},ptr_pXest, ptr_pXest_
   end
 end
 
-function _pXest_comm_find_owner(::Type{Val{Dc}},ptr_pXest,itree,quad,guess) where Dc
-  if (Dc==2)
-    return p4est_comm_find_owner(ptr_pXest,itree,quad,guess)
-  elseif (Dc==3)
-    return p8est_comm_find_owner(ptr_pXest,itree,quad,guess)
-  end
-end
-
-function _p4est_compute_migration_control_data(::Type{Val{Dc}},ptr_pXest_old,ptr_pXest_new) where Dc
-  pXest_old   = ptr_pXest_old[]
-  pXest_new   = ptr_pXest_new[]
-  num_trees   = Cint(pXest_old.connectivity[].num_trees)
-  my_rank     = pXest_old.mpirank
-  ranks_count = Dict{Int,Int}()
-  lst_ranks   = Int[]
-  old2new     = Vector{Int}(undef,pXest_old.local_num_quadrants)
-  current_old_quad_index = 1
-
-  pXest_type = _dim_to_pXest_type(Dc)
-
-  for itree = 0:num_trees-1
-    tree = pXest_tree_array_index(pXest_type,pXest_old,itree)[]
-    num_quads = Cint(tree.quadrants.elem_count)
-
-    for iquad = 0:num_quads-1
-      q = pXest_quadrant_array_index(pXest_type, tree, iquad)
-      new_rank = _pXest_comm_find_owner(Val{Dc},ptr_pXest_new,itree,q,0)
-      if (new_rank != my_rank)
-        if (!(new_rank+1 in keys(ranks_count)))
-          push!(lst_ranks,new_rank+1)
-          ranks_count[new_rank+1] = 0
-        end
-        ranks_count[new_rank+1] += 1
-        old2new[current_old_quad_index] = 0
-      else
-        current_new_quad_index = 1
-        new_tree = pXest_tree_array_index(pXest_type,pXest_new,pXest_new.first_local_tree)[]
-        for t = pXest_new.first_local_tree:pXest_new.last_local_tree
-          new_tree = pXest_tree_array_index(pXest_type,pXest_new,t)[]
-          if t == itree
-            break
-          end
-          current_new_quad_index += Cint(new_tree.quadrants.elem_count)
-        end
-        found = false
-        num_quads_new = Cint(new_tree.quadrants.elem_count)
-        for iquad_new = 0:num_quads_new-1
-          q_new = pXest_quadrant_array_index(pXest_type, new_tree, iquad_new)
-          found = pXest_quadrant_is_equal(pXest_type,q,q_new)
-          if found
-            break
-          end
-          current_new_quad_index += 1
-        end
-        Gridap.Helpers.@check found
-        old2new[current_old_quad_index] = current_new_quad_index
-      end
-      current_old_quad_index += 1
-    end
-  end
-
-  local_ids    = [i for i=1:length(old2new) if old2new[i]==0]
-  ptr_ranks    = Vector{Int32}(undef,length(ranks_count)+1)
-  ptr_ranks[1] = 1
-  for (i,rank) in enumerate(lst_ranks)
-     ptr_ranks[i+1]=ptr_ranks[i]+ranks_count[rank]
-  end
-
-  lst_ranks,PartitionedArrays.JaggedArray(local_ids,ptr_ranks),old2new
-end
 
 function is_included(partsA,partsB)
   @assert GridapDistributed.i_am_in(partsA.comm) || GridapDistributed.i_am_in(partsB.comm)
@@ -1683,7 +1539,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   if (parts_redistributed_model === model.parts)
     ptr_pXest_old = model.ptr_pXest
   else
-    ptr_pXest_old = _pXest_to_new_comm(Val{Dc},
+    ptr_pXest_old = _pXest_to_new_comm(model.pXest_type,
                                        model.ptr_pXest,
                                        model.ptr_pXest_connectivity,
                                        model.parts.comm,
@@ -1693,8 +1549,8 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   pXest_partition!(model.pXest_type, ptr_pXest_new)
 
   # Compute RedistributeGlue
-  parts_snd, lids_snd, old2new = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,ptr_pXest_new)
-  parts_rcv, lids_rcv, new2old = _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_new,ptr_pXest_old)
+  parts_snd, lids_snd, old2new = pXest_compute_migration_control_data(model.pXest_type,ptr_pXest_old,ptr_pXest_new)
+  parts_rcv, lids_rcv, new2old = pXest_compute_migration_control_data(model.pXest_type,ptr_pXest_new,ptr_pXest_old)
 
   lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old =
        _to_pdata(parts, lids_rcv, parts_rcv, lids_snd, parts_snd, old2new, new2old)
@@ -1702,8 +1558,8 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   glue = GridapDistributed.RedistributeGlue(parts,model.parts,parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest_new)
-  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(Val{Dc}, ptr_pXest_new, ptr_pXest_ghost)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_pXest_new)
+  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_pXest_new, ptr_pXest_ghost)
 
   # Build fine-grid mesh
   fmodel, non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
@@ -1725,6 +1581,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
                                              model.ptr_pXest_connectivity,
                                              ptr_pXest_new,
                                              model.pXest_type,
+                                             model.pXest_refinement_rule_type,
                                              false,
                                              model)
   return red_model, glue
@@ -1761,13 +1618,13 @@ function _redistribute_parts_supset_parts_redistributed(
   # p4est_vtk_write_file(model.ptr_pXest, C_NULL, "model.ptr_pXest")
 
   ptr_pXest_old=pXest_copy(model.pXest_type,model.ptr_pXest)
-  pXest_partition_given!(Val{Dc}, ptr_pXest_old, num_cells_per_part)
+  pXest_partition_given!(model.pXest_type, ptr_pXest_old, num_cells_per_part)
 
   # p4est_vtk_write_file(ptr_pXest_old, C_NULL, "ptr_pXest_old")
 
   # ptr_pXest_old is distributed over supset_comm
   # once created, ptr_pXest_new is distributed over subset_comm
-  ptr_pXest_new = _pXest_to_new_comm(Val{Dc},
+  ptr_pXest_new = _pXest_to_new_comm(model.pXest_type,
                                      ptr_pXest_old,
                                      model.ptr_pXest_connectivity,
                                      supset_comm,
@@ -1775,9 +1632,9 @@ function _redistribute_parts_supset_parts_redistributed(
 
   # Compute RedistributeGlue
   parts_snd, lids_snd, old2new =
-      _p4est_compute_migration_control_data(Val{Dc},model.ptr_pXest,ptr_pXest_old)
+      pXest_compute_migration_control_data(model.pXest_type,model.ptr_pXest,ptr_pXest_old)
   parts_rcv, lids_rcv, new2old =
-      _p4est_compute_migration_control_data(Val{Dc},ptr_pXest_old,model.ptr_pXest)
+      pXest_compute_migration_control_data(model.pXest_type,ptr_pXest_old,model.ptr_pXest)
 
   pXest_destroy(model.pXest_type,ptr_pXest_old)
 
@@ -1791,12 +1648,14 @@ function _redistribute_parts_supset_parts_redistributed(
   if (GridapDistributed.i_am_in(subset_comm))
     # p4est_vtk_write_file(ptr_pXest_new, C_NULL, "ptr_pXest_new")
 
+    pXest_type = _dim_to_pXest_type(Dc)
+
     # Extract ghost and lnodes
-    ptr_pXest_ghost  = setup_pXest_ghost(Val{Dc}, ptr_pXest_new)
-    ptr_pXest_lnodes = setup_pXest_lnodes(Val{Dc}, ptr_pXest_new, ptr_pXest_ghost)
+    ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_pXest_new)
+    ptr_pXest_lnodes = setup_pXest_lnodes(pXest_type, ptr_pXest_new, ptr_pXest_ghost)
 
     # # Build fine-grid mesh
-    fmodel = setup_distributed_discrete_model(Val{Dc},
+    fmodel = setup_distributed_discrete_model(pXest_type,
                                               parts_redistributed_model,
                                               model.coarse_model,
                                               model.ptr_pXest_connectivity,
@@ -1804,7 +1663,6 @@ function _redistribute_parts_supset_parts_redistributed(
                                               ptr_pXest_ghost,
                                               ptr_pXest_lnodes)
 
-    pXest_type = _dim_to_pXest_type(Dc)
 
     pXest_lnodes_destroy(pXest_type,ptr_pXest_lnodes)
     pXest_ghost_destroy(pXest_type,ptr_pXest_ghost)
@@ -1819,6 +1677,7 @@ function _redistribute_parts_supset_parts_redistributed(
                                                model.ptr_pXest_connectivity,
                                                ptr_pXest_new,
                                                pXest_type,
+                                               model.pXest_refinement_rule_type,
                                                false,
                                                model)
     return red_model, glue
