@@ -727,8 +727,8 @@ function generate_cell_vertex_coordinates(::Type{Val{Dc}},
 end
 
 function generate_coords(
-  topo_cell_ids :: Table{<:Ti},
-  model_cell_coords :: Table{<:VectorValue{Dp,T}}
+  topo_cell_ids :: Gridap.Arrays.Table{<:Ti},
+  model_cell_coords :: Gridap.Arrays.Table{<:VectorValue{Dp,T}}
 ) where {Ti,Dp,T}
   display(topo_cell_ids)
   display(model_cell_coords)
