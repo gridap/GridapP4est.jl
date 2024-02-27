@@ -304,7 +304,6 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
   tree_to_tree = unsafe_wrap(Array, conn.tree_to_tree, conn.num_trees*PXEST_FACES)
   tree_to_face = unsafe_wrap(Array, conn.tree_to_face, conn.num_trees*PXEST_FACES)
 
-  P4EST_TO_GRIDAP_FACE = (Dc==2) ? P4EST_2_GRIDAP_FACET_2D : P4EST_2_GRIDAP_FACET_3D
   GRIDAP_TO_P4EST_FACE = (Dc==2) ? GRIDAP_2_P4EST_FACET_2D : GRIDAP_2_P4EST_FACET_3D
   pXest_face_corners = (Dc==2) ? p4est_face_corners : p8est_face_corners
 
@@ -604,6 +603,9 @@ function generate_node_coordinates(::Type{Val{Dc}},
   end
 end
 
+"""
+  Generate the topological cellwise corner lids from their gids.
+"""
 function generate_cell_corner_lids(cell_corner_gids)
   map(cell_corner_gids) do cell_corner_gids
     g2l = Dict{Int,Int}()
@@ -622,6 +624,9 @@ function generate_cell_corner_lids(cell_corner_gids)
   end
 end
 
+"""
+  Generate the geometrical cellwise vertex coordinates.
+"""
 function generate_cell_vertex_coordinates(::Type{Val{Dc}},
                                           cell_vertex_lids,
                                           ptr_pXest_connectivity,
@@ -716,19 +721,34 @@ function generate_cell_vertex_coordinates(::Type{Val{Dc}},
   return cell_vertex_coordinates
 end
 
+"""
+  From the topological cellwise corner ids and the geometrical cellwise vertex coordinates,
+  generate the remaining topological and geometrical information. 
+  I.e 
+   - the geometrical vertex coordinates and the cell-wise vertex ids
+   - the topological corner coordinates
+"""
 function generate_coords(
   topo_cell_ids :: Gridap.Arrays.Table{<:Ti},
   model_cell_coords :: Gridap.Arrays.Table{<:VectorValue{Dp,T}}
 ) where {Ti,Dp,T}
-  n_vertices = length(unique(topo_cell_ids.data))
-  n_nodes = length(unique(model_cell_coords.data))
+  n_corners = maximum(topo_cell_ids.data)
+  n_vertices = length(unique(model_cell_coords.data))
 
-  model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_nodes)
+  model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_vertices)
   for (vertex,coord) in zip(topo_cell_ids.data,model_cell_coords.data)
     model_coords[vertex] = min(model_coords[vertex],coord)
   end
-  topo_coords = model_coords[1:n_vertices]
+
+  # A) Non-periodic case: geometry == topology
+  if n_corners == n_vertices
+    return topo_cell_ids, model_coords, model_coords
+  end
+
+  # B) Periodic case: geometry != topology
+  topo_coords = model_coords[1:n_corners]
   
+  current = n_corners
   model_cell_ids = copy(topo_cell_ids)
   new_nodes = Dict{VectorValue{Dp,T},Ti}()
   for (k,(vertex,coord)) in enumerate(zip(topo_cell_ids.data,model_cell_coords.data))
@@ -736,13 +756,14 @@ function generate_coords(
       if haskey(new_nodes,coord)
         model_cell_ids.data[k] = new_nodes[coord]
       else
-        n_vertices += 1
-        model_coords[n_vertices] = coord
-        new_nodes[coord] = n_vertices
-        model_cell_ids.data[k] = n_vertices
+        current += 1
+        model_coords[current] = coord
+        new_nodes[coord] = current
+        model_cell_ids.data[k] = current
       end
     end
   end
+  @assert current == n_vertices
 
   return model_cell_ids, model_coords, topo_coords
 end

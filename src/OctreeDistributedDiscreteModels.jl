@@ -2162,7 +2162,6 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
-
   nlvertices = map(non_conforming_glue) do ncglue
     ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
   end
