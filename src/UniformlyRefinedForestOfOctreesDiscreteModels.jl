@@ -306,7 +306,6 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
 
   P4EST_TO_GRIDAP_FACE = (Dc==2) ? P4EST_2_GRIDAP_FACET_2D : P4EST_2_GRIDAP_FACET_3D
   GRIDAP_TO_P4EST_FACE = (Dc==2) ? GRIDAP_2_P4EST_FACET_2D : GRIDAP_2_P4EST_FACET_3D
-
   pXest_face_corners = (Dc==2) ? p4est_face_corners : p8est_face_corners
 
   f2t_cache = Gridap.Arrays.array_cache(face_to_cell)
@@ -336,13 +335,13 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
       else
         face_orientation = findfirst(x->x==nbor_face_corners[1],face_corners) - 1
       end
-      tree_to_face[PXEST_FACES * (tree-1) + face_lid] = Int8(PXEST_FACES*face_orientation + face_lid-1)
+      tree_to_face[PXEST_FACES * (tree-1) + face_lid] = Int8(PXEST_FACES*face_orientation + nbor_face_lid-1)
     end
   end
 
   # Make sure we have a valid connectivity
   if (Dc==2)
-    #@assert Bool(p4est_connectivity_is_valid(pconn))
+    @assert Bool(p4est_connectivity_is_valid(pconn))
   else
     @assert Bool(p8est_connectivity_is_valid(pconn))
   end
