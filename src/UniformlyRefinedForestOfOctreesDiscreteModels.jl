@@ -34,7 +34,6 @@ end
 const P4EST_2_GRIDAP_FACET_2D  = [ 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_2D  = [ 3, 4, 1, 2 ]
 
-
 const P4EST_2_GRIDAP_FACET_3D  = [ 5, 6, 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_3D  = [ 5, 6, 3, 4, 1, 2 ]
 
@@ -48,26 +47,25 @@ function p4est_get_quadrant_vertex_coordinates(connectivity::Ptr{p4est_connectiv
                                                corner::Cint,
                                                vxy::Ptr{Cdouble})
 
-    myself=Ref{p4est_quadrant_t}(
-      p4est_quadrant_t(x,y,level,Int8(0),Int16(0),
-                       P4est_wrapper.quadrant_data(Clong(0))))
-    neighbour=Ref{p4est_quadrant_t}(myself[])
-    if corner == 1
-       p4est_quadrant_face_neighbor(myself,corner,neighbour)
-    elseif corner == 2
-       p4est_quadrant_face_neighbor(myself,corner+1,neighbour)
-    elseif corner == 3
-       p4est_quadrant_corner_neighbor(myself,corner,neighbour)
-    end
-    # Extract numerical coordinates of lower_left
-    # corner of my corner neighbour
-    p4est_qcoord_to_vertex(connectivity,
-                           treeid,
-                           neighbour[].x,
-                           neighbour[].y,
-                           vxy)
+  myself = Ref{p4est_quadrant_t}(
+    p4est_quadrant_t(x,y,level,Int8(0),Int16(0),P4est_wrapper.quadrant_data(Clong(0)))
+  )
+  neighbour = Ref{p4est_quadrant_t}(myself[])
+  if corner == 1
+      p4est_quadrant_face_neighbor(myself,corner,neighbour)
+  elseif corner == 2
+      p4est_quadrant_face_neighbor(myself,corner+1,neighbour)
+  elseif corner == 3
+      p4est_quadrant_corner_neighbor(myself,corner,neighbour)
+  end
+  # Extract numerical coordinates of lower_left
+  # corner of my corner neighbour
+  p4est_qcoord_to_vertex(connectivity,
+                          treeid,
+                          neighbour[].x,
+                          neighbour[].y,
+                          vxy)
 end
-
 
 function  p8est_get_quadrant_vertex_coordinates(connectivity::Ptr{p8est_connectivity_t},
                                                 treeid::p4est_topidx_t,
@@ -78,10 +76,10 @@ function  p8est_get_quadrant_vertex_coordinates(connectivity::Ptr{p8est_connecti
                                                 corner::Cint,
                                                 vxyz::Ptr{Cdouble})
 
-  myself=Ref{p8est_quadrant_t}(
-       p8est_quadrant_t(x,y,z,level,Int8(0),Int16(0),
-                        P4est_wrapper.quadrant_data(Clong(0))))
-  neighbour=Ref{p8est_quadrant_t}(myself[])
+  myself = Ref{p8est_quadrant_t}(
+    p8est_quadrant_t(x,y,z,level,Int8(0),Int16(0),P4est_wrapper.quadrant_data(Clong(0)))
+  )
+  neighbour = Ref{p8est_quadrant_t}(myself[])
 
   if ( corner == 1 )
     p8est_quadrant_face_neighbor(myself,Cint(1),neighbour)
@@ -108,6 +106,17 @@ function  p8est_get_quadrant_vertex_coordinates(connectivity::Ptr{p8est_connecti
                          vxyz)
 end
 
+"""
+    setup_pXest_connectivity(cmodel::DiscreteModel)
+  
+  Returns the pXest connectivity object from a serial DiscreteModel.
+
+  Two cases:
+
+    - n_vertices == n_corners: Geometrical and topological information are the same.
+    - n_vertices != n_corners: Geometrical and topological information are different. This 
+                               is the case for periodic models.
+"""
 function setup_pXest_connectivity(cmodel::DiscreteModel)
   n_vertices = num_nodes(cmodel)
   n_corners = num_vertices(cmodel)
@@ -119,6 +128,12 @@ function setup_pXest_connectivity(cmodel::DiscreteModel)
   end
 end
 
+"""
+    setup_pXest_connectivity_from_geometry(cmodel::DiscreteModel{Dc,Dp})
+  
+  Returns the pXest connectivity object from a serial DiscreteModel, assuming that geometrical
+  and topological information are the same.
+"""
 function setup_pXest_connectivity_from_geometry(cmodel::DiscreteModel{Dc,Dp}) where {Dc,Dp}
   n_trees = num_cells(cmodel)
   n_vertices = num_nodes(cmodel)
@@ -173,6 +188,7 @@ function setup_pXest_connectivity_from_geometry(cmodel::DiscreteModel{Dc,Dp}) wh
     end
   end
 
+  # Let p4est/p8est fill the topological information automatically.
   if (Dc==2)
     p4est_connectivity_complete(pconn)
     @assert Bool(p4est_connectivity_is_valid(pconn))
@@ -184,6 +200,13 @@ function setup_pXest_connectivity_from_geometry(cmodel::DiscreteModel{Dc,Dp}) wh
   return pconn
 end
 
+"""
+    setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp})
+  
+  Returns the pXest connectivity object from a serial DiscreteModel, manually completing 
+  both geometrical and topological information. This is needed if geometry != topology, which 
+  is the case for periodic models.
+"""
 function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) where {Dc,Dp}
   
   # In periodic models, n_vertices != n_corners
@@ -191,8 +214,7 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
   n_trees = num_cells(cmodel)
   n_vertices = num_nodes(cmodel)
   n_corners = Gridap.Geometry.num_faces(topo,0)
-  n_faces = Gridap.Geometry.num_faces(topo,Dc-1)
-  n_edges = Gridap.Geometry.num_faces(topo,1) # In 2D, == n_faces
+  n_edges = Gridap.Geometry.num_faces(topo,1) # In 2D, == n_facets
   n_ctt = length(Gridap.Geometry.get_faces(topo,0,Dc).data)
   n_ett = length(Gridap.Geometry.get_faces(topo,1,Dc).data)
 
@@ -214,7 +236,7 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
   end
   conn = pconn[]
 
-  # Fill geometrical information, i.e `vertices` and `tree_to_vertex`.
+  # A) Fill geometrical information, i.e `vertices` and `tree_to_vertex`.
   vertex_coordinates = Gridap.Geometry.get_node_coordinates(cmodel)
   vertices = unsafe_wrap(Array, conn.vertices, n_vertices*3)
   for (i,p) in enumerate(vertex_coordinates)
@@ -235,7 +257,13 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
     end
   end
 
-  # Fill topological information
+  # B) Fill corner topological information
+  # -> `tree_to_corner` : Topological equivalent to `tree_to_vertex`.
+  # -> `corner_to_tree` and `corner_to_corner` : 
+  #     For each corner, we have that `corner_to_X[ctt_offset[corner]:ctt_offset[corner+1]-1]`
+  #     contains
+  #      - the cell ids for the sourrounding cells
+  #      - its local corner id for those cells
   cell_to_corner = Gridap.Geometry.get_faces(topo,Dc,0)
   tree_to_corner = unsafe_wrap(Array, conn.tree_to_corner, n_trees*(2^Dc))
   t2c_cache = Gridap.Arrays.array_cache(cell_to_corner)
@@ -266,6 +294,8 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
   end
   @assert ctt_offset[n_corners+1] == n_ctt
 
+  # C) Fill edge topological information. Only for 3D. 
+  # Variables are equivalent to corner ones.
   if Dc == 3
     cell_to_edge = Gridap.Geometry.get_faces(topo,Dc,1)
     tree_to_edge = unsafe_wrap(Array, conn.tree_to_edge, n_trees*12)
@@ -298,6 +328,13 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
     @assert ett_offset[n_edges+1] == n_ett
   end
 
+  # D) Fill cell and face topological information, i.e `tree_to_tree` and `tree_to_face`.
+  # Given a cell and a local face id, tree_to_X[cell*PXEST_FACES+face] contains: 
+  #   - the nboring cell id for that face, or the cell id itself if it is a boundary face.
+  #   - the local face id of that face in the neighboring cell, plus the relative orientation
+  #     of the face in the neighboring cell. 
+  #     See [p4est_connectivity.h](https://p4est.github.io/api/p4est-latest/structp4est__connectivity.html) 
+  #     for more details.
   PXEST_FACES = 2*Dc
   face_to_cell = Gridap.Geometry.get_faces(topo,Dc-1,Dc)
   cell_to_face = Gridap.Geometry.get_faces(topo,Dc,Dc-1)
@@ -489,120 +526,6 @@ function generate_cell_vertex_gids(ptr_pXest_lnodes, cell_prange)
   return cell_vertex_gids
 end
 
-function generate_cell_vertex_lids_nlvertices(cell_vertex_gids)
-  map(cell_vertex_gids) do cell_vertex_gids
-    g2l = Dict{Int,Int}()
-    current = 1
-    data = Vector{Int}(undef,length(cell_vertex_gids.data))
-    for (i,gid) in enumerate(cell_vertex_gids.data)
-      if haskey(g2l,gid)
-        data[i] = g2l[gid]
-      else
-        data[i] = current
-        g2l[gid] = current
-        current = current+1
-      end
-    end
-    (PArrays.JaggedArray(data,cell_vertex_gids.ptrs), current-1)
-  end |> tuple_of_arrays
-end
-
-function generate_node_coordinates(::Type{Val{Dc}},
-                                  cell_vertex_lids,
-                                  nlvertices,
-                                  ptr_pXest_connectivity,
-                                  ptr_pXest,
-                                  ptr_pXest_ghost) where Dc
-
-  PXEST_CORNERS = 2^Dc
-  pXest_ghost = ptr_pXest_ghost[]
-  pXest       = ptr_pXest[]
-
-  # Obtain ghost quadrants
-  if (Dc==2)
-    ptr_ghost_quadrants = Ptr{p4est_quadrant_t}(pXest_ghost.ghosts.array)
-  else
-    ptr_ghost_quadrants = Ptr{p8est_quadrant_t}(pXest_ghost.ghosts.array)
-  end
-
-  tree_offsets = unsafe_wrap(Array, pXest_ghost.tree_offsets, pXest_ghost.num_trees+1)
-  dnode_coordinates = map(cell_vertex_lids,nlvertices) do cell_vertex_lids, nl
-     node_coordinates = Vector{Point{Dc,Float64}}(undef,nl)
-     current = 1
-     vxy = Vector{Cdouble}(undef,Dc)
-     pvxy = pointer(vxy,1)
-     cell_lids = cell_vertex_lids.data
-     for itree = 1:pXest_ghost.num_trees
-       if (Dc==2)
-         tree = p4est_tree_array_index(pXest.trees, itree-1)[]
-       else
-         tree = p8est_tree_array_index(pXest.trees, itree-1)[]
-       end
-       for cell = 1:tree.quadrants.elem_count
-          if (Dc==2)
-            quadrant = p4est_quadrant_array_index(tree.quadrants, cell-1)[]
-          else
-            quadrant = p8est_quadrant_array_index(tree.quadrants, cell-1)[]
-          end
-          for vertex = 1:PXEST_CORNERS
-            if (Dc==2)
-              p4est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                    p4est_topidx_t(itree-1),
-                                                    quadrant.x,
-                                                    quadrant.y,
-                                                    quadrant.level,
-                                                    Cint(vertex-1),
-                                                    pvxy)
-            else
-              p8est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                    p4est_topidx_t(itree-1),
-                                                    quadrant.x,
-                                                    quadrant.y,
-                                                    quadrant.z,
-                                                    quadrant.level,
-                                                    Cint(vertex-1),
-                                                    pvxy)
-            end
-
-            node_coordinates[cell_lids[current]] = Point{Dc,Float64}(vxy...)
-            current = current + 1
-          end
-       end
-     end
-
-     # Go over ghost cells
-     for i=1:pXest_ghost.num_trees
-      for j=tree_offsets[i]:tree_offsets[i+1]-1
-          quadrant = ptr_ghost_quadrants[j+1]
-          for vertex=1:PXEST_CORNERS
-            if (Dc==2)
-               p4est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                     p4est_topidx_t(i-1),
-                                                     quadrant.x,
-                                                     quadrant.y,
-                                                     quadrant.level,
-                                                     Cint(vertex-1),
-                                                     pvxy)
-            else
-              p8est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                     p4est_topidx_t(i-1),
-                                                     quadrant.x,
-                                                     quadrant.y,
-                                                     quadrant.z,
-                                                     quadrant.level,
-                                                     Cint(vertex-1),
-                                                     pvxy)
-
-            end
-           node_coordinates[cell_lids[current]]=Point{Dc,Float64}(vxy...)
-           current=current+1
-         end
-       end
-     end
-     node_coordinates
-  end
-end
-
 """
   Generate the topological cellwise corner lids from their gids.
 """
@@ -768,11 +691,15 @@ function generate_coords(
   return model_cell_ids, model_coords, topo_coords
 end
 
+"""
+  Generate a new grid and topology from 
+    - the cellwise corner ids (topology)
+    - the cellwise vertex coordinates (geometry)
+"""
 function generate_grid_and_topology(::Type{Val{Dc}},
                                     cell_corner_lids,
                                     cell_vertex_coordinates) where {Dc}
-  grid, topology = map(
-    cell_corner_lids, cell_vertex_coordinates) do cell_corner_lids, cell_vertex_coordinates
+  map(cell_corner_lids, cell_vertex_coordinates) do cell_corner_lids, cell_vertex_coordinates
 
     cell_vertex_lids, vertex_coords, corner_coords = generate_coords(
       cell_corner_lids, cell_vertex_coordinates
@@ -790,7 +717,6 @@ function generate_grid_and_topology(::Type{Val{Dc}},
     )
     return grid, topology
   end |> tuple_of_arrays
-  return grid, topology
 end
 
 const ITERATOR_RESTRICT_TO_BOUNDARY=Cint(100)
@@ -806,9 +732,8 @@ function generate_face_labeling(parts,
   pXest       = ptr_pXest[]
   pXest_ghost = ptr_pXest_ghost[]
 
-  coarse_grid_topology  = Gridap.Geometry.get_grid_topology(coarse_discrete_model)
-  coarse_grid_labeling  = Gridap.Geometry.get_face_labeling(coarse_discrete_model)
-
+  coarse_grid_topology = Gridap.Geometry.get_grid_topology(coarse_discrete_model)
+  coarse_grid_labeling = Gridap.Geometry.get_face_labeling(coarse_discrete_model)
   coarse_cell_vertices = Gridap.Geometry.get_faces(coarse_grid_topology,Dc,0)
   if (Dc==3)
     coarse_cell_edgets = Gridap.Geometry.get_faces(coarse_grid_topology,Dc,1)
