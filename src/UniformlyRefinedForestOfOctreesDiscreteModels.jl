@@ -727,9 +727,9 @@ function generate_cell_vertex_coordinates(::Type{Val{Dc}},
 end
 
 function generate_coords(
-  topo_cell_ids :: Table{<:Integer},
+  topo_cell_ids :: Table{<:Ti},
   model_cell_coords :: Table{<:VectorValue{Dp,T}}
-) where {Dp,T}
+) where {Ti,Dp,T}
   display(topo_cell_ids)
   display(model_cell_coords)
   n_vertices = length(unique(topo_cell_ids.data))
@@ -744,7 +744,7 @@ function generate_coords(
   topo_coords = model_coords[1:n_vertices]
   
   model_cell_ids = copy(topo_cell_ids)
-  new_nodes = Dict{VectorValue{2,Float64},Int64}()
+  new_nodes = Dict{VectorValue{Dp,T},Ti}()
   for (k,(vertex,coord)) in enumerate(zip(topo_cell_ids.data,model_cell_coords.data))
     if coord != topo_coords[vertex]
       if haskey(new_nodes,coord)
