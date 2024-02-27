@@ -2,7 +2,7 @@ module PeriodicModelsTests
 
 using Test
 using Gridap, Gridap.Geometry, Gridap.Adaptivity, Gridap.ReferenceFEs
-using PartitionedArrays, GridapDistributed
+using MPI, PartitionedArrays, GridapDistributed
 using GridapP4est
 
 function same_model(m1::GridapDistributed.DistributedDiscreteModel,m2)
