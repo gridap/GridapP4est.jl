@@ -1,3 +1,4 @@
+module PeriodicModelsTests
 
 using Test
 using Gridap, Gridap.Geometry, Gridap.Adaptivity, Gridap.ReferenceFEs
@@ -34,7 +35,7 @@ function same_model(m1::DiscreteModel{Dc},m2) where Dc
   return A && B
 end
 
-function run(ranks,Dc,isperiodic)
+function driver(ranks,Dc,isperiodic)
   nc = (Dc==2) ? (3,3) : (3,3,3)
   domain = (Dc==2) ? (0,3,0,3) : (0,3,0,3,0,3)
   good_cmodel = CartesianDiscreteModel(domain,nc;isperiodic=isperiodic)
@@ -50,18 +51,21 @@ function run(ranks,Dc,isperiodic)
   @test same_model(good_fmodel,fmodel)
 end
 
-ranks = with_mpi() do distribute
-  distribute(LinearIndices((1,)))
+function run(distribute)
+  np    = MPI.Comm_size(MPI.COMM_WORLD)
+  ranks = distribute(LinearIndices((np,)))
+
+  for isperiodic in [(true,true),(true,false),(false,true)]
+    driver(ranks,2,isperiodic)
+  end
+
+  for isperiodic in [
+    (true,true,true),
+    (false,true,true),(true,false,true),(true,true,false),
+    (false,false,true),(true,false,false),(false,true,false)
+    ]
+    driver(ranks,3,isperiodic)
+  end
 end
 
-for isperiodic in [(true,true),(true,false),(false,true)]
-  run(ranks,2,isperiodic)
-end
-
-for isperiodic in [
-  (true,true,true),
-  (false,true,true),(true,false,true),(true,true,false),
-  (false,false,true),(true,false,false),(false,true,false)
-  ]
-  run(ranks,3,isperiodic)
-end
+end # module
