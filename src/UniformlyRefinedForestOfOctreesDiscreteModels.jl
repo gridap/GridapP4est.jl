@@ -153,7 +153,7 @@ function setup_pXest_connectivity_from_geometry(cmodel::DiscreteModel{Dc,Dp}) wh
 
   cell_to_vertex = Gridap.Geometry.get_cell_node_ids(cmodel)
   tree_to_vertex = unsafe_wrap(Array, conn.tree_to_vertex, n_trees*(2^Dc))
-  c2v_cache = Gridap.Arrays.array_cache(cell_vertex_ids)
+  c2v_cache = Gridap.Arrays.array_cache(cell_to_vertex)
   for cell = 1:n_trees
     offset = (cell-1)*(2^Dc)
     vertices = Gridap.Arrays.getindex!(c2v_cache,cell_to_vertex,cell)
@@ -287,7 +287,7 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
     for edge in 1:n_edges
       offset = ett_offset[edge]
       cells = Gridap.Arrays.getindex!(e2t_cache,edge_to_cell,edge)
-      ctt_offset[edge+1] = offset + length(cells)
+      ett_offset[edge+1] = offset + length(cells)
       for (i,c) in enumerate(cells)
         cell_edges = getindex!(t2e_cache,cell_to_edge,c)
         edge_lid = findfirst(x->x==edge,cell_edges)
@@ -345,15 +345,6 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
   else
     @assert Bool(p8est_connectivity_is_valid(pconn))
   end
-
-  println(conn.num_trees)
-  println(conn.num_corners)
-  println(conn.num_vertices)
-  println(tree_to_corner)
-  println(tree_to_vertex)
-  println(ctt_offset)
-  println(tree_to_tree)
-  println(tree_to_face)
 
   return pconn
 end
@@ -729,12 +720,8 @@ function generate_coords(
   topo_cell_ids :: Gridap.Arrays.Table{<:Ti},
   model_cell_coords :: Gridap.Arrays.Table{<:VectorValue{Dp,T}}
 ) where {Ti,Dp,T}
-  display(topo_cell_ids)
-  display(model_cell_coords)
   n_vertices = length(unique(topo_cell_ids.data))
   n_nodes = length(unique(model_cell_coords.data))
-  println("n_vertices: ",n_vertices)
-  println("n_nodes: ",n_nodes)
 
   model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_nodes)
   for (vertex,coord) in zip(topo_cell_ids.data,model_cell_coords.data)
