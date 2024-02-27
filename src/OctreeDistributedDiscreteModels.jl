@@ -1222,7 +1222,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
                                      false,
                                      model)
 
-
       return ref_model, dglue
    else
     new_parts = isa(parts,Nothing) ? model.parts : parts
@@ -2014,7 +2013,7 @@ const p8est_face_corners = [ 0 2 4 6 ;
                              2 3 6 7 ;
                              0 1 2 3 ;
                              4 5 6 7 ]          
-                           
+
 const p8est_subface_to_hanging_edges_within_subface = 
 [ 
   1 3;

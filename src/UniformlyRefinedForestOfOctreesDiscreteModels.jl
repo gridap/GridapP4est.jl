@@ -108,39 +108,41 @@ function  p8est_get_quadrant_vertex_coordinates(connectivity::Ptr{p8est_connecti
                          vxyz)
 end
 
+function setup_pXest_connectivity(cmodel::DiscreteModel)
+  n_vertices = num_nodes(cmodel)
+  n_corners = num_vertices(cmodel)
 
-function setup_pXest_connectivity(
-  coarse_discrete_model::DiscreteModel{Dc,Dp}
-) where {Dc,Dp}
+  if n_vertices == n_corners
+    return setup_pXest_connectivity_from_geometry(cmodel)
+  else
+    return setup_pXest_connectivity_with_topology(cmodel)
+  end
+end
 
-  topo = Gridap.Geometry.get_grid_topology(coarse_discrete_model)
-  
-  # In periodic models, n_vertices != n_corners
-  n_trees = num_cells(coarse_discrete_model)
-  n_vertices = num_nodes(coarse_discrete_model)
-  n_corners = Gridap.Geometry.num_faces(topo,0)
+function setup_pXest_connectivity_from_geometry(cmodel::DiscreteModel{Dc,Dp}) where {Dc,Dp}
+  n_trees = num_cells(cmodel)
+  n_vertices = num_nodes(cmodel)
 
   if (Dc==2)
     pconn = p4est_connectivity_new(
         p4est_topidx_t(n_vertices), # num_vertices
         p4est_topidx_t(n_trees),    # num_trees
-        p4est_topidx_t(n_corners),  # num_corners
+        p4est_topidx_t(0),
         p4est_topidx_t(0))
   else
     @assert Dc==3
-    n_edges = Gridap.Geometry.num_faces(topo,1)
     pconn = p8est_connectivity_new(
         p4est_topidx_t(n_vertices), # num_vertices
         p4est_topidx_t(n_trees),    # num_trees
-        p4est_topidx_t(n_edges),    # num_edges
         p4est_topidx_t(0),
-        p4est_topidx_t(n_corners),  # num_corners
+        p4est_topidx_t(0),
+        p4est_topidx_t(0),
         p4est_topidx_t(0))
   end
   conn = pconn[]
 
-  # Fill vertex coordinates
-  vertex_coordinates = Gridap.Geometry.get_node_coordinates(coarse_discrete_model)
+  # Fill geometrical information, i.e `vertices` and `tree_to_vertex`.
+  vertex_coordinates = Gridap.Geometry.get_node_coordinates(cmodel)
   vertices = unsafe_wrap(Array, conn.vertices, n_vertices*3)
   for (i,p) in enumerate(vertex_coordinates)
     offset = (i-1)*3
@@ -149,26 +151,18 @@ function setup_pXest_connectivity(
     vertices[offset+3] = (Dp==3) ? Cdouble(p[3]) : Cdouble(0.0) # Z coordinate always to 0.0 in 2D
   end
 
-  # Fill tree_to_vertex and tree_to_corner
-  cell_vertex_ids = Gridap.Geometry.get_cell_node_ids(coarse_discrete_model)
-  cell_corner_ids = Gridap.Geometry.get_faces(topo,Dc,0)
+  cell_to_vertex = Gridap.Geometry.get_cell_node_ids(cmodel)
   tree_to_vertex = unsafe_wrap(Array, conn.tree_to_vertex, n_trees*(2^Dc))
-  tree_to_corner = unsafe_wrap(Array, conn.tree_to_corner, n_trees*(2^Dc))
-  vertex_cache = Gridap.Arrays.array_cache(cell_vertex_ids)
-  corner_cache = Gridap.Arrays.array_cache(cell_corner_ids)
+  c2v_cache = Gridap.Arrays.array_cache(cell_vertex_ids)
   for cell = 1:n_trees
     offset = (cell-1)*(2^Dc)
-    vertices = Gridap.Arrays.getindex!(vertex_cache,cell_vertex_ids,cell)
-    corners = Gridap.Arrays.getindex!(corner_cache,cell_corner_ids,cell)
+    vertices = Gridap.Arrays.getindex!(c2v_cache,cell_to_vertex,cell)
     for (i,v) in enumerate(vertices)
       tree_to_vertex[offset+i] = p4est_topidx_t(v-1)
     end
-    for (i,c) in enumerate(corners)
-      tree_to_corner[offset+i] = p4est_topidx_t(c-1)
-    end
   end
 
-  # Fill tree_to_tree and tree_to_face to make sure we have a valid connectivity.
+  # Mockup `tree_to_tree` and `tree_to_face` to make sure we have a valid connectivity.
   PXEST_FACES = 2*Dc
   tree_to_tree = unsafe_wrap(Array, conn.tree_to_tree, conn.num_trees*PXEST_FACES )
   tree_to_face = unsafe_wrap(Array, conn.tree_to_face, conn.num_trees*PXEST_FACES )
@@ -187,11 +181,172 @@ function setup_pXest_connectivity(
     @assert Bool(p8est_connectivity_is_valid(pconn))
   end
 
+  return pconn
+end
+
+function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) where {Dc,Dp}
+  
+  # In periodic models, n_vertices != n_corners
+  topo = Gridap.Geometry.get_grid_topology(cmodel)
+  n_trees = num_cells(cmodel)
+  n_vertices = num_nodes(cmodel)
+  n_corners = Gridap.Geometry.num_faces(topo,0)
+  n_faces = Gridap.Geometry.num_faces(topo,Dc-1)
+  n_edges = Gridap.Geometry.num_faces(topo,1) # In 2D, == n_faces
+  n_ctt = length(Gridap.Geometry.get_faces(topo,0,Dc).data)
+  n_ett = length(Gridap.Geometry.get_faces(topo,1,Dc).data)
+
+  if (Dc==2)
+    pconn = p4est_connectivity_new(
+        p4est_topidx_t(n_vertices), # num_vertices
+        p4est_topidx_t(n_trees),    # num_trees
+        p4est_topidx_t(n_corners),  # num_corners
+        p4est_topidx_t(n_ctt))
+  else
+    @assert Dc==3
+    pconn = p8est_connectivity_new(
+        p4est_topidx_t(n_vertices), # num_vertices
+        p4est_topidx_t(n_trees),    # num_trees
+        p4est_topidx_t(n_edges),    # num_edges
+        p4est_topidx_t(n_ett),
+        p4est_topidx_t(n_corners),  # num_corners
+        p4est_topidx_t(n_ctt))
+  end
+  conn = pconn[]
+
+  # Fill geometrical information, i.e `vertices` and `tree_to_vertex`.
+  vertex_coordinates = Gridap.Geometry.get_node_coordinates(cmodel)
+  vertices = unsafe_wrap(Array, conn.vertices, n_vertices*3)
+  for (i,p) in enumerate(vertex_coordinates)
+    offset = (i-1)*3
+    vertices[offset+1] = Cdouble(p[1])
+    vertices[offset+2] = Cdouble(p[2])
+    vertices[offset+3] = (Dp==3) ? Cdouble(p[3]) : Cdouble(0.0) # Z coordinate always to 0.0 in 2D
+  end
+
+  cell_to_vertex = Gridap.Geometry.get_cell_node_ids(cmodel)
   tree_to_vertex = unsafe_wrap(Array, conn.tree_to_vertex, n_trees*(2^Dc))
+  c2v_cache = Gridap.Arrays.array_cache(cell_to_vertex)
+  for cell = 1:n_trees
+    offset = (cell-1)*(2^Dc)
+    vertices = Gridap.Arrays.getindex!(c2v_cache,cell_to_vertex,cell)
+    for (i,v) in enumerate(vertices)
+      tree_to_vertex[offset+i] = p4est_topidx_t(v-1)
+    end
+  end
+
+  # Fill topological information
+  cell_to_corner = Gridap.Geometry.get_faces(topo,Dc,0)
   tree_to_corner = unsafe_wrap(Array, conn.tree_to_corner, n_trees*(2^Dc))
+  t2c_cache = Gridap.Arrays.array_cache(cell_to_corner)
+  for cell = 1:n_trees
+    offset = (cell-1)*(2^Dc)
+    corners = Gridap.Arrays.getindex!(t2c_cache,cell_to_corner,cell)
+    for (i,c) in enumerate(corners)
+      tree_to_corner[offset+i] = p4est_topidx_t(c-1)
+    end
+  end
+
+  corner_to_cell = Gridap.Geometry.get_faces(topo,0,Dc)
   ctt_offset = unsafe_wrap(Array, conn.ctt_offset, n_corners+1)
-  tree_to_tree = unsafe_wrap(Array, conn.tree_to_tree, conn.num_trees*PXEST_FACES )
-  tree_to_face = unsafe_wrap(Array, conn.tree_to_face, conn.num_trees*PXEST_FACES )
+  corner_to_tree = unsafe_wrap(Array, conn.corner_to_tree, n_ctt)
+  corner_to_corner = unsafe_wrap(Array, conn.corner_to_corner, n_ctt)
+  ctt_offset[1] = 0
+  c2t_cache = Gridap.Arrays.array_cache(corner_to_cell)
+  for corner in 1:n_corners
+    offset = ctt_offset[corner]
+    cells = Gridap.Arrays.getindex!(c2t_cache,corner_to_cell,corner)
+    ctt_offset[corner+1] = offset + length(cells)
+    for (i,c) in enumerate(cells)
+      cell_corners = getindex!(t2c_cache,cell_to_corner,c)
+      corner_lid = findfirst(x->x==corner,cell_corners)
+      corner_to_tree[offset+i] = p4est_topidx_t(c-1)
+      corner_to_corner[offset+i] = Int8(corner_lid-1)
+    end
+  end
+  @assert ctt_offset[n_corners+1] == n_ctt
+
+  if Dc == 3
+    cell_to_edge = Gridap.Geometry.get_faces(topo,Dc,1)
+    tree_to_edge = unsafe_wrap(Array, conn.tree_to_edge, n_trees*12)
+    t2e_cache = Gridap.Arrays.array_cache(cell_to_edge)
+    for cell = 1:n_trees
+      offset = (cell-1)*12
+      edges = Gridap.Arrays.getindex!(t2e_cache,cell_to_edge,cell)
+      for (i,e) in enumerate(edges)
+        tree_to_edge[offset+i] = p4est_topidx_t(e-1)
+      end
+    end
+
+    edge_to_cell = Gridap.Geometry.get_faces(topo,1,Dc)
+    ett_offset = unsafe_wrap(Array, conn.ett_offset, n_edges+1)
+    edge_to_tree = unsafe_wrap(Array, conn.edge_to_tree, n_ett)
+    edge_to_edge = unsafe_wrap(Array, conn.edge_to_edge, n_ett)
+    ett_offset[1] = 0
+    e2t_cache = Gridap.Arrays.array_cache(edge_to_cell)
+    for edge in 1:n_edges
+      offset = ett_offset[edge]
+      cells = Gridap.Arrays.getindex!(e2t_cache,edge_to_cell,edge)
+      ctt_offset[edge+1] = offset + length(cells)
+      for (i,c) in enumerate(cells)
+        cell_edges = getindex!(t2e_cache,cell_to_edge,c)
+        edge_lid = findfirst(x->x==edge,cell_edges)
+        edge_to_tree[offset+i] = p4est_topidx_t(c-1)
+        edge_to_edge[offset+i] = Int8(edge_lid-1)
+      end
+    end
+    @assert ett_offset[n_edges+1] == n_ett
+  end
+
+  PXEST_FACES = 2*Dc
+  face_to_cell = Gridap.Geometry.get_faces(topo,Dc-1,Dc)
+  cell_to_face = Gridap.Geometry.get_faces(topo,Dc,Dc-1)
+  tree_to_tree = unsafe_wrap(Array, conn.tree_to_tree, conn.num_trees*PXEST_FACES)
+  tree_to_face = unsafe_wrap(Array, conn.tree_to_face, conn.num_trees*PXEST_FACES)
+
+  P4EST_TO_GRIDAP_FACE = (Dc==2) ? P4EST_2_GRIDAP_FACET_2D : P4EST_2_GRIDAP_FACET_3D
+  GRIDAP_TO_P4EST_FACE = (Dc==2) ? GRIDAP_2_P4EST_FACET_2D : GRIDAP_2_P4EST_FACET_3D
+
+  pXest_face_corners = (Dc==2) ? p4est_face_corners : p8est_face_corners
+
+  f2t_cache = Gridap.Arrays.array_cache(face_to_cell)
+  t2f_cache = Gridap.Arrays.array_cache(cell_to_face)
+  nbor_t2c_cache = Gridap.Arrays.array_cache(cell_to_corner)
+  nbor_t2f_cache = Gridap.Arrays.array_cache(cell_to_face)
+  for tree = 1:conn.num_trees
+    corners = Gridap.Arrays.getindex!(t2c_cache,cell_to_corner,tree)
+    faces = view(Gridap.Arrays.getindex!(t2f_cache,cell_to_face,tree),GRIDAP_TO_P4EST_FACE)
+    @assert length(faces) == PXEST_FACES
+    for (face_lid,face) in enumerate(faces)
+      face_cells = Gridap.Arrays.getindex!(f2t_cache,face_to_cell,face)
+      nbor_lid = findfirst(x->x!=tree,face_cells)
+      nbor = isnothing(nbor_lid) ? tree : face_cells[nbor_lid]
+      tree_to_tree[PXEST_FACES * (tree-1) + face_lid] = p4est_topidx_t(nbor-1)
+
+      nbor_corners = Gridap.Arrays.getindex!(nbor_t2c_cache,cell_to_corner,nbor)
+      nbor_faces = view(Gridap.Arrays.getindex!(nbor_t2f_cache,cell_to_face,nbor),GRIDAP_TO_P4EST_FACE)
+      nbor_face_lid = findfirst(x->x==face,nbor_faces)
+
+      face_corners = corners[pXest_face_corners[face_lid,:].+1]
+      nbor_face_corners = nbor_corners[pXest_face_corners[nbor_face_lid,:].+1]
+
+      face_orientation = 0
+      if face_lid < nbor_face_lid
+        face_orientation = findfirst(x->x==face_corners[1],nbor_face_corners) - 1
+      else
+        face_orientation = findfirst(x->x==nbor_face_corners[1],face_corners) - 1
+      end
+      tree_to_face[PXEST_FACES * (tree-1) + face_lid] = Int8(PXEST_FACES*face_orientation + face_lid-1)
+    end
+  end
+
+  # Make sure we have a valid connectivity
+  if (Dc==2)
+    #@assert Bool(p4est_connectivity_is_valid(pconn))
+  else
+    @assert Bool(p8est_connectivity_is_valid(pconn))
+  end
+
   println(conn.num_trees)
   println(conn.num_corners)
   println(conn.num_vertices)
@@ -572,8 +727,12 @@ function generate_cell_vertex_coordinates(::Type{Val{Dc}},
 end
 
 function generate_coords(topo_cell_ids,model_cell_coords)
+  display(topo_cell_ids)
+  display(model_cell_coords)
   n_vertices = length(unique(topo_cell_ids.data))
   n_nodes = length(unique(model_cell_coords.data))
+  println("n_vertices: ",n_vertices)
+  println("n_nodes: ",n_nodes)
 
   model_coords = fill(VectorValue(fill(Inf,2)),n_nodes)
   for (vertex,coord) in zip(topo_cell_ids.data,model_cell_coords.data)
@@ -1076,10 +1235,6 @@ function setup_distributed_discrete_model(::Type{Val{Dc}},
                                               ptr_pXest_connectivity,
                                               ptr_pXest,
                                               ptr_pXest_ghost)
-
-  display(cell_vertex_gids.item)                                            
-  display(cell_corner_lids.item)
-  display(cell_vertex_coordinates.item)
 
   grid,topology = generate_grid_and_topology(
     Val{Dc},cell_corner_lids,cell_vertex_coordinates
