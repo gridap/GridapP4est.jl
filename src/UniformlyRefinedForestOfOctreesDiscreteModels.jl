@@ -726,7 +726,10 @@ function generate_cell_vertex_coordinates(::Type{Val{Dc}},
   return cell_vertex_coordinates
 end
 
-function generate_coords(topo_cell_ids,model_cell_coords)
+function generate_coords(
+  topo_cell_ids :: Table{<:Integer},
+  model_cell_coords :: Table{<:VectorValue{Dp,T}}
+) where {Dp,T}
   display(topo_cell_ids)
   display(model_cell_coords)
   n_vertices = length(unique(topo_cell_ids.data))
@@ -734,7 +737,7 @@ function generate_coords(topo_cell_ids,model_cell_coords)
   println("n_vertices: ",n_vertices)
   println("n_nodes: ",n_nodes)
 
-  model_coords = fill(VectorValue(fill(Inf,2)),n_nodes)
+  model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_nodes)
   for (vertex,coord) in zip(topo_cell_ids.data,model_cell_coords.data)
     model_coords[vertex] = min(model_coords[vertex],coord)
   end
