@@ -655,7 +655,7 @@ function generate_coords(
   topo_cell_ids :: Gridap.Arrays.Table{<:Ti},
   model_cell_coords :: Gridap.Arrays.Table{<:VectorValue{Dp,T}}
 ) where {Ti,Dp,T}
-  n_corners = maximum(topo_cell_ids.data)
+  n_corners = maximum(topo_cell_ids.data;init=0)
   n_vertices = length(unique(model_cell_coords.data))
 
   model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_vertices)
