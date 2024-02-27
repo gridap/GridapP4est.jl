@@ -2162,21 +2162,16 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
-  nlvertices = map(non_conforming_glue) do ncglue
-    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
-  end
-
-  node_coordinates=generate_node_coordinates(Val{Dc},
-                                             gridap_cell_faces[1],
-                                             nlvertices,
-                                             ptr_pXest_connectivity,
-                                             ptr_pXest,
-                                             ptr_pXest_ghost)
-
-  grid,topology=generate_grid_and_topology(Val{Dc},
-                                           gridap_cell_faces[1],
-                                           nlvertices,
-                                           node_coordinates)
+  cell_vertex_coordinates = generate_cell_vertex_coordinates(
+    Val{Dc},
+    gridap_cell_faces[1],
+    ptr_pXest_connectivity,
+    ptr_pXest,
+    ptr_pXest_ghost
+  )
+  grid, topology = generate_grid_and_topology(
+    Val{Dc},gridap_cell_faces[1],cell_vertex_coordinates
+  )
 
   map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
     cell_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
