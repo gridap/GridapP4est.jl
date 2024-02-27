@@ -2162,15 +2162,18 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
+  cell_corner_lids = map(gridap_cell_faces[1]) do cell_lids
+    Gridap.Arrays.Table(cell_lids.data,cell_lids.ptrs) # JaggedArray -> Table
+  end
   cell_vertex_coordinates = generate_cell_vertex_coordinates(
     Val{Dc},
-    gridap_cell_faces[1],
+    cell_corner_lids,
     ptr_pXest_connectivity,
     ptr_pXest,
     ptr_pXest_ghost
   )
   grid, topology = generate_grid_and_topology(
-    Val{Dc},gridap_cell_faces[1],cell_vertex_coordinates
+    Val{Dc},cell_corner_lids,cell_vertex_coordinates
   )
 
   map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
