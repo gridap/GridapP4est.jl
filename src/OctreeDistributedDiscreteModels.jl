@@ -1222,7 +1222,6 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
                                      false,
                                      model)
 
-
       return ref_model, dglue
    else
     new_parts = isa(parts,Nothing) ? model.parts : parts
@@ -2014,7 +2013,7 @@ const p8est_face_corners = [ 0 2 4 6 ;
                              2 3 6 7 ;
                              0 1 2 3 ;
                              4 5 6 7 ]          
-                           
+
 const p8est_subface_to_hanging_edges_within_subface = 
 [ 
   1 3;
@@ -2163,22 +2162,19 @@ function setup_non_conforming_distributed_discrete_model(::Type{Val{Dc}},
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(Val{Dc},ptr_pXest_lnodes, cell_prange)
 
-
-  nlvertices = map(non_conforming_glue) do ncglue
-    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
+  cell_corner_lids = map(gridap_cell_faces[1]) do cell_lids
+    Gridap.Arrays.Table(cell_lids.data,cell_lids.ptrs) # JaggedArray -> Table
   end
-
-  node_coordinates=generate_node_coordinates(Val{Dc},
-                                             gridap_cell_faces[1],
-                                             nlvertices,
-                                             ptr_pXest_connectivity,
-                                             ptr_pXest,
-                                             ptr_pXest_ghost)
-
-  grid,topology=generate_grid_and_topology(Val{Dc},
-                                           gridap_cell_faces[1],
-                                           nlvertices,
-                                           node_coordinates)
+  cell_vertex_coordinates = generate_cell_vertex_coordinates(
+    Val{Dc},
+    cell_corner_lids,
+    ptr_pXest_connectivity,
+    ptr_pXest,
+    ptr_pXest_ghost
+  )
+  grid, topology = generate_grid_and_topology(
+    Val{Dc},cell_corner_lids,cell_vertex_coordinates
+  )
 
   map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
     cell_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
