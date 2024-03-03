@@ -50,25 +50,18 @@ function _build_constraint_coefficients_matrix_in_ref_space(::PXestVerticalRefin
     modelH= _generate_unit_hypercube_model(Dc)
     modelh=refine(modelH,(2,1,1))
     return _generate_ref_constraints(modelH,modelh,cell_reffe)
+end
 
-    # ref_constraints=Vector{Vector{Matrix{Float64}}}(undef,Dc-1)
-    # # Edges
-    # ref_constraints[1]=Vector{Matrix{Float64}}(undef,12)
-    # for (i,partition) in enumerate(((2,1,1),(2,1,1),(2,1,1)))
-    #     modelh=refine(modelH,partition)
-    #     for j in (2*(i-1)+1,2*i)
-    #       ref_constraints[1][j]=_generate_ref_constraints(modelH,modelh,cell_reffe)
-    #     end
-    # end
-    # # Faces
-    # ref_constraints[2]=Vector{Matrix{Float64}}(undef,6)
-    # for (i,partition) in enumerate(((1,1,2),(1,2,1),(2,1,1)))
-    #     modelh=refine(modelH,partition)
-    #     for j in (2*i-1,2*i)
-    #         ref_constraints[2][j]=_generate_ref_constraints(modelH,modelh,cell_reffe)
-    #     end
-    # end
-    # ref_constraints
+function _build_constraint_coefficients_matrix_in_ref_space(::PXestHorizontalRefinementRuleType,
+                                                            Dc,
+                                                            reffe::Tuple{<:Lagrangian,Any,Any})
+    @assert Dc==3
+    cell_polytope = HEX
+    basis, reffe_args, reffe_kwargs = reffe
+    cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+    modelH= _generate_unit_hypercube_model(Dc)
+    modelh=refine(modelH,(1,2,2))
+    return _generate_ref_constraints(modelH,modelh,cell_reffe)
 end
 
 function _allocate_face_subface_ldof_to_cell_ldof(num_faces, num_subfaces, num_dofs_x_face)
@@ -191,78 +184,58 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestVerticalRefinem
             first_face)
 
         return face_subface_ldof_to_cell_ldof
-        
-        # for (i,partition) in enumerate(((1,1,2),(1,2,1),(2,1,1)))
-        #     modelh=refine(modelH,partition)
-        #     Vh=TestFESpace(modelh,reffe)
-        #     cells_dof_ids=get_cell_dof_ids(Vh)
-            
-        #     for j in (2*i-1,2*i)
-        #         face_subface_ldof_to_cell_ldof[j]= 
-        #            _allocate_face_subface_ldof_to_cell_ldof(num_faces,num_subfaces,num_dofs_x_face)
-                
-        #         _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof[j],
-        #                                               num_faces,
-        #                                               _coarse_faces_to_child_ids,
-        #                                               face_dofs,
-        #                                               cells_dof_ids,
-        #                                               first_face)
-        #     end
-        #     face_subface_ldof_to_cell_ldof
-        # end
     end 
-        
-
-    # if (Df==1 && Dc==3)
-    #     num_edges=12
-    #     num_subedges=2
-    #     num_faces=2*Dc
-    #     edge_subedge_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef,num_edges)
-    #     for (i,partition) in enumerate(((2,1,1),(1,2,1),(1,1,2)))
-    #         modelh=refine(modelH,partition)
-    #         Vh=TestFESpace(modelh,reffe)
-    #         cells_dof_ids=get_cell_dof_ids(Vh)
-    #         for j in (2*(i-1)+1,2*i)
-    #             println("YYY i=$(i) j=$(j)")
-    #             edge_subedge_ldof_to_cell_ldof[j]= 
-    #                _allocate_face_subface_ldof_to_cell_ldof(num_edges,num_subedges,num_dofs_x_face)
-    #             _fill_face_subface_ldof_to_cell_ldof!(edge_subedge_ldof_to_cell_ldof[j],
-    #                                                   num_edges,
-    #                                                   _coarse_faces_to_child_ids,
-    #                                                   face_dofs,
-    #                                                   cells_dof_ids,
-    #                                                   first_face)
-    #         end 
-    #     end 
-    #     return edge_subedge_ldof_to_cell_ldof
-    # else 
-    #     @assert Df==2 && Dc==3
-    #     num_faces = 2*Dc
-    #     num_subfaces = 2
-    #     face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef,num_faces)        
-
-    #     for (i,partition) in enumerate(((1,1,2),(1,2,1),(2,1,1)))
-    #         modelh=refine(modelH,partition)
-    #         Vh=TestFESpace(modelh,reffe)
-    #         cells_dof_ids=get_cell_dof_ids(Vh)
-            
-    #         for j in (2*i-1,2*i)
-    #             face_subface_ldof_to_cell_ldof[j]= 
-    #                _allocate_face_subface_ldof_to_cell_ldof(num_faces,num_subfaces,num_dofs_x_face)
-                
-    #             _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof[j],
-    #                                                   num_faces,
-    #                                                   _coarse_faces_to_child_ids,
-    #                                                   face_dofs,
-    #                                                   cells_dof_ids,
-    #                                                   first_face)
-    #         end
-    #         face_subface_ldof_to_cell_ldof
-    #     end
-    #     return face_subface_ldof_to_cell_ldof
-    # end
 end
 
+
+function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestHorizontalRefinementRuleType, 
+                                                  Df,Dc,reffe::Tuple{<:Lagrangian,Any,Any})
+    
+    cell_polytope = HEX
+    _coarse_faces_to_child_ids = coarse_faces_to_child_ids(ref_rule,Df,Dc)
+
+    basis, reffe_args, reffe_kwargs = reffe
+    cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
+
+    modelH=_generate_unit_hypercube_model(Dc)
+    modelh=refine(modelH,(1,2,2))
+    Vh=TestFESpace(modelh,reffe)
+    cells_dof_ids=get_cell_dof_ids(Vh)
+
+    first_face = get_offset(get_polytope(cell_reffe),Df)
+    face_dofs = get_face_dofs(cell_reffe)
+    num_dofs_x_face = length(face_dofs[first_face+1])
+
+    if (Df==1 && Dc==3)
+        num_edges=12
+        num_subedges=2
+        num_faces=2*Dc
+        edge_subedge_ldof_to_cell_ldof= 
+                   _allocate_face_subface_ldof_to_cell_ldof(num_edges,num_subedges,num_dofs_x_face)
+        _fill_face_subface_ldof_to_cell_ldof!(edge_subedge_ldof_to_cell_ldof,
+                                              num_edges,
+                                              _coarse_faces_to_child_ids,
+                                              face_dofs,
+                                              cells_dof_ids,
+                                              first_face)
+        return edge_subedge_ldof_to_cell_ldof
+    else
+        @assert Df==2 && Dc==3
+        num_faces = 2*Dc
+        num_subfaces = 4
+        face_subface_ldof_to_cell_ldof = 
+            _allocate_face_subface_ldof_to_cell_ldof(num_faces,num_subfaces,num_dofs_x_face)
+        
+        _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
+            num_faces,
+            _coarse_faces_to_child_ids,
+            face_dofs,
+            cells_dof_ids,
+            first_face)
+
+        return face_subface_ldof_to_cell_ldof
+    end 
+end
 
 const _coarse_faces_to_child_ids_2D=[1 2; 3 4; 1 3; 2 4]
 const _coarse_faces_to_child_ids_3D=[1 2 3 4; 5 6 7 8; 1 2 5 6; 3 4 7 8; 1 3 5 7; 2 4 6 8; ]
@@ -272,6 +245,13 @@ const _coarse_faces_to_child_ids_vertical_refinement=[1 2; 1 2; 1 2; 1 2; 1 1; 2
 const _coarse_edges_to_child_ids_vertical_refinement=[1 2; 1 2; 1 2; 1 2; 
                                                       1 1; 2 2; 1 1; 2 2; 
                                                       1 1; 2 2; 1 1; 2 2;]
+
+const _coarse_faces_to_child_ids_horizontal_refinement=[1 2 1 2; 3 4 3 4; 1 3 1 3; 2 4 2 4; 1 2 3 4; 1 2 3 4]
+
+const _coarse_edges_to_child_ids_horizontal_refinement=
+                                [1 1; 2 2; 3 3; 4 4; 
+                                 1 2; 1 2; 3 4; 3 4;
+                                 1 3; 1 3; 2 4; 2 4;]
 
 function coarse_faces_to_child_ids(::PXestUniformRefinementRuleType,Df,Dc)
   if (Df==Dc-1)
@@ -295,6 +275,19 @@ function coarse_faces_to_child_ids(::PXestVerticalRefinementRuleType,Df,Dc)
     _coarse_edges_to_child_ids_vertical_refinement
   end
 end
+
+
+
+
+function coarse_faces_to_child_ids(::PXestHorizontalRefinementRuleType,Df,Dc)
+    @assert Dc==3
+    if (Df==2)
+      _coarse_faces_to_child_ids_horizontal_refinement
+    else
+      @assert Df==1 && Dc==3
+      _coarse_edges_to_child_ids_horizontal_refinement
+    end
+  end
 
 function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefinementRuleType, 
                                                   Df,Dc,reffe::Tuple{<:RaviartThomas,Any,Any})
@@ -540,21 +533,27 @@ function _generate_constraints!(Df,
             elseif (Df == 1 && Dc == 3) # Am I an edge?
                 @debug "Df=$(Df) Dc=$(Dc) cell=$(cell) lface=$(lface) ocell=$(ocell) ocell_lface=$(ocell_lface) oface_dim=$(oface_dim) subface=$(subface) subface_own_dofs[oface_dim]=$(subface_own_dofs[oface_dim])"
                 if (subface < 0) # Edge hanging in the interior of a face 
-                    @assert subface == -1 || subface == -2 || subface == -3 || subface == -4
+                    @assert subface in (-1,-2,-3,-4,-5,-6)  
                     @assert oface_dim == Dc - 1
                     abs_subface = abs(subface)
                     if (abs_subface == 1)
                         subface = 1
-                        edge = 4 + 4 # num_vertices+edge_id
+                        edge = 8
                     elseif (abs_subface == 2)
                         subface = 3
-                        edge = 4 + 4 # num_vertices+edge_id 
+                        edge = 8 
                     elseif (abs_subface == 3)
                         subface = 3
-                        edge = 4 + 1 # num_vertices+edge_id 
+                        edge = 5  
                     elseif (abs_subface == 4)
                         subface = 4
-                        edge = 4 + 1 # num_vertices+edge_id 
+                        edge = 5
+                    elseif (abs_subface == 5)
+                        subface = 1
+                        edge = 6
+                    elseif (abs_subface == 6)
+                        subface = 1
+                        edge = 8 
                     end
                     cur_subface_own_dofs = subface_own_dofs[oface_dim][edge]
                 else
@@ -581,9 +580,9 @@ function _generate_constraints!(Df,
                 for (ifdof, icdof) in enumerate(face_dofs[ocell_lface])
                     pifdof = node_permutations[oface_dim][pindex][ifdof]
                     ldof_coarse = face_dofs[ocell_lface][pifdof]
-                    @debug "ldof_coarse=$(ldof_coarse) ifdof=$(ifdof) icdof=$(icdof) pifdof=$(pifdof) subface=$(subface) ldof_subface=$(ldof_subface)"
                     ldof_fine=face_subface_ldof_to_cell_ldof[oface_dim][ocell_lface_within_dim][subface][ldof_subface]
                     coeffs[ifdof] = ref_constraints[ldof_fine, ldof_coarse]
+                    @debug "ldof_fine=$(ldof_fine) ldof_coarse=$(ldof_coarse) ifdof=$(ifdof) icdof=$(icdof) pifdof=$(pifdof) subface=$(subface) ldof_subface=$(ldof_subface) coeffs[ifdof]=$(coeffs[ifdof])"
                 end
                 push!(sDOF_to_coeffs, coeffs)
             end
@@ -620,6 +619,28 @@ function _compute_owner_faces_lids(Df,Dc,num_hanging_faces,hanging_faces_glue,ce
     owner_faces_lids
 end 
 
+function _subface_to_face_corners(::PXestUniformRefinementRuleType, subface)
+    (subface,)
+end
+
+function _subface_to_face_corners(::PXestHorizontalRefinementRuleType, subface)
+    @assert subface==1 || subface==2
+    if (subface==1)
+      (1,2)
+    else 
+      (3,4)  
+    end
+end
+
+function _subface_to_face_corners(::PXestVerticalRefinementRuleType, subface)
+    @assert subface==1 || subface==2
+    if (subface==1)
+      (1,3)
+    else 
+      (2,4)  
+    end
+end
+
 
 # count how many different owner faces
 # for each owner face 
@@ -627,6 +648,7 @@ end
 # for each owner face 
 #    compute permutation id
 function _compute_owner_faces_pindex_and_lids(Dc,
+                                              pXest_refinement_rule,
                                               num_hanging_faces,
                                               hanging_faces_glue,
                                               hanging_faces_to_cell,
@@ -637,7 +659,9 @@ function _compute_owner_faces_pindex_and_lids(Dc,
                                               pindex_to_cfvertex_to_fvertex)
 
     owner_faces_lids =_compute_owner_faces_lids(Dc-1,Dc,
-                      num_hanging_faces,hanging_faces_glue,cell_faces)                                       
+                                                num_hanging_faces,
+                                                hanging_faces_glue,
+                                                cell_faces)                                       
     
     @debug "owner_faces_lids [Df=$(Dc-1) Dc=$(Dc)]: $(owner_faces_lids)"
 
@@ -655,14 +679,16 @@ function _compute_owner_faces_pindex_and_lids(Dc,
             if (oface_dim == Dc-1)
                 cell = hanging_faces_to_cell[fid_hanging]
                 lface = hanging_faces_to_lface[fid_hanging]
-                cvertex = lface_to_cvertices[lface][subface]
-                vertex = cell_vertices[cell][cvertex]
                 ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
                 owner_face = cell_faces[ocell][ocell_lface_within_dim]
                 owner_face_lid, _ = owner_faces_lids[owner_face]
-                @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: cell=$(cell) lface=$(lface) cvertex=$(cvertex) vertex=$(vertex) owner_face=$(owner_face) owner_face_lid=$(owner_face_lid)"
-                @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_face_vertex_ids[$((owner_face_lid-1)*num_face_vertices+subface)] = $(vertex)"
-                owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+subface] = vertex
+                for fcorner in _subface_to_face_corners(pXest_refinement_rule, subface)
+                  cvertex = lface_to_cvertices[lface][fcorner]
+                  vertex = cell_vertices[cell][cvertex]
+                  @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: cell=$(cell) lface=$(lface) cvertex=$(cvertex) vertex=$(vertex) owner_face=$(owner_face) owner_face_lid=$(owner_face_lid)"
+                  @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_face_vertex_ids[$((owner_face_lid-1)*num_face_vertices+fcorner)] = $(vertex)"
+                  owner_face_vertex_ids[(owner_face_lid-1)*num_face_vertices+fcorner] = vertex
+                end
             end
         end
     end
@@ -808,9 +834,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
     face_subface_ldof_to_cell_ldof) where {Dc}
 
     non_conforming_glue = dmodel.non_conforming_glue
-    dmodel = dmodel.dmodel
-
-    gridap_cell_faces = map(local_views(dmodel)) do model
+    gridap_cell_faces = map(local_views(dmodel.dmodel)) do model
         topo = Gridap.Geometry.get_grid_topology(model)
         Tuple(Gridap.Geometry.get_faces(topo, Dc, d) for d = 0:Dc-1)
     end
@@ -829,7 +853,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         num_regular_faces,
         num_hanging_faces,
         hanging_faces_glue,
-        dmodel.models,
+        dmodel.dmodel.models,
         spaces_wo_constraints) do gridap_cell_faces,
                                     num_regular_faces,
                                     num_hanging_faces,
@@ -910,6 +934,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
 
         lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc == 2 ? QUAD : HEX, Dc - 1, 0)
         owner_faces_pindex[Dc-1], owner_faces_lids[Dc-1] = _compute_owner_faces_pindex_and_lids(Dc,
+            dmodel.pXest_refinement_rule_type,
             num_hanging_faces[Dc],
             hanging_faces_glue[Dc],
             hanging_faces_to_cell[Dc],
@@ -1023,7 +1048,12 @@ function fe_space_with_linear_constraints_cell_dof_ids(Uc::FESpaceWithLinearCons
     U_cell_dof_ids = Gridap.Arrays.Table(get_cell_dof_ids(Uc.space))
     ndata = U_cell_dof_ids.ptrs[end] - 1
     Uc_cell_dof_ids_data = zeros(eltype(U_cell_dof_ids.data), ndata)
-    max_negative_minus_one = -maximum(-U_cell_dof_ids.data) - 1
+    
+    if (length(U_cell_dof_ids.data)>0)
+       max_negative_minus_one = -maximum(-U_cell_dof_ids.data) - 1
+    else 
+       max_negative_minus_one = 0 
+    end 
     # max_negative_minus_one can only be zero whenever there are no 
     # negative values in U_cell_dof_ids.data (i.e., no Dirichlet DoFs)
     if (max_negative_minus_one==0) 

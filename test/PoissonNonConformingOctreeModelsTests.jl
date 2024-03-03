@@ -52,7 +52,7 @@ module PoissonNonConformingOctreeModelsTests
         end
         flags
     end 
-    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
     # map(ranks,glue) do rank, glue 
     #   if rank==2
     #     print(glue.n2o_faces_map[end]); print("\n")
@@ -185,7 +185,7 @@ module PoissonNonConformingOctreeModelsTests
         end 
         flags
     end
-    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
 
     reffe=ReferenceFE(lagrangian,T,order)
     VH=FESpace(dmodel,reffe,conformity=:H1;dirichlet_tags="boundary")

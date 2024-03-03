@@ -290,16 +290,20 @@ end
 
 function pXest_update_flags!(pXest_type::P4P8estType, ptr_pXest_old, ptr_pXest_new)
   pXest_old = ptr_pXest_old[]
-  pXest_new = ptr_pXest_new[]
   flags=unsafe_wrap(Array, 
                     Ptr{Cint}(pXest_old.user_pointer), 
                     pXest_old.local_num_quadrants)
+  pXest_update_flags!(pXest_type, flags, ptr_pXest_old, ptr_pXest_new)
+end
+
+function pXest_update_flags!(pXest_type::P4P8estType, flags, ptr_pXest_old, ptr_pXest_new)
+  pXest_old = ptr_pXest_old[]
+  pXest_new = ptr_pXest_new[]
   
   num_trees = Cint(pXest_old.connectivity[].num_trees)
   @assert num_trees == Cint(pXest_new.connectivity[].num_trees)
 
   Dc=num_cell_dims(pXest_type)
-
   num_children = get_num_children(pXest_type, PXestUniformRefinementRuleType())
   global_iquad_old = 0
   for itree = 0:num_trees-1
@@ -333,6 +337,17 @@ function pXest_update_flags!(pXest_type::P4P8estType, ptr_pXest_old, ptr_pXest_n
      end
    end
   end
+end
+
+function p6est_horizontally_adapt_update_flags!(ptr_pXest_old, ptr_pXest_new)
+  pXest_old = ptr_pXest_old[]
+  pXest_new = ptr_pXest_new[]
+  ptr_p4est_old = pXest_old.columns
+  ptr_p4est_new = pXest_new.columns
+  flags=unsafe_wrap(Array, 
+                    Ptr{Cint}(pXest_old.user_pointer), 
+                    pXest_old.columns[].local_num_quadrants)
+  pXest_update_flags!(P4estType(), flags, ptr_p4est_old, ptr_p4est_new)
 end
 
 function p6est_vertically_adapt_update_flags!(ptr_pXest_old, ptr_pXest_new)
@@ -551,7 +566,8 @@ function _compute_fine_to_coarse_model_glue(
          cparts,
          cmodel::Union{Nothing,GridapDistributed.DistributedDiscreteModel{Dc}},
          fmodel::GridapDistributed.DistributedDiscreteModel{Dc},
-         refinement_and_coarsening_flags::MPIArray{<:AbstractVector}) where Dc
+         refinement_and_coarsening_flags::MPIArray{<:AbstractVector},
+         stride) where Dc
 
   function setup_communication_buffers_fine_partition(cparts,
                                               fmodel,
@@ -916,7 +932,8 @@ function _compute_fine_to_coarse_model_glue(
                                                          cpartition,
                                                          fpartition,
                                                          flags,
-                                                         coarsen)
+                                                         coarsen,
+                                                         stride)
     end
   end |> tuple_of_arrays
 
@@ -1008,7 +1025,8 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
                                                         cpartition,
                                                         fpartition,
                                                         flags,
-                                                        coarsen) where Dc
+                                                        coarsen,
+                                                        stride) where Dc
 
   function _setup_fine_to_coarse_faces_map_table(pXest_type,pXest_refinement_rule_type,flags,num_o_c_cells,num_f_cells)
     num_children = get_num_children(pXest_type, pXest_refinement_rule_type)
@@ -1095,21 +1113,34 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
              Gridap.Arrays.Table(fcell_to_child_id_data, fine_to_coarse_faces_map_ptrs)
   end
 
-  function _setup_fine_to_coarse_faces_map_vector!(pXest_type,pXest_refinement_rule_type,fine_to_coarse_faces_map,fcell_to_child_id,flags,num_o_c_cells)
+  function _setup_fine_to_coarse_faces_map_vector!(pXest_type,
+                                                   pXest_refinement_rule_type,
+                                                   fine_to_coarse_faces_map,
+                                                   fcell_to_child_id,
+                                                   flags,
+                                                   num_o_c_cells,
+                                                   stride)
     # Go over all cells of coarse grid portion
     num_children = get_num_children(pXest_type,pXest_refinement_rule_type)
     c = 1
-    for cell = 1:num_o_c_cells
+    cell=1
+    while cell<=num_o_c_cells
       if flags[cell]==refine_flag
         for child = 1:num_children
-          fine_to_coarse_faces_map[c+child-1] = cell
-          fcell_to_child_id[c+child-1] = child
+          current_cell=cell
+          for j=1:stride
+            fine_to_coarse_faces_map[c] = current_cell
+            fcell_to_child_id[c] = child
+            c+=1
+            current_cell+=1
+          end
         end
-        c = c + num_children
+        cell=cell+stride
       elseif (flags[cell]==nothing_flag)
         fine_to_coarse_faces_map[c] = cell
         fcell_to_child_id[c] = 1
-        c=c+1
+        c+=1
+        cell+=1
       else
         @assert flags[cell]!=coarsen_flag 
         error("Unknown AMR flag")
@@ -1131,7 +1162,12 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
     fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
     fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
     fcell_to_child_id = Vector{Int}(undef,num_f_cells)
-    _setup_fine_to_coarse_faces_map_vector!(pXest_type,pXest_refinement_rule_type,fine_to_coarse_faces_map[Dc+1],fcell_to_child_id,flags,num_o_c_cells)
+    _setup_fine_to_coarse_faces_map_vector!(pXest_type,
+                                            pXest_refinement_rule_type,
+                                            fine_to_coarse_faces_map[Dc+1],
+                                            fcell_to_child_id,flags,
+                                            num_o_c_cells,
+                                            stride)
     for d=1:Dc
       fine_to_coarse_faces_map[d] = Vector{Int}(undef,Gridap.Geometry.num_faces(ftopology,d-1))
     end
@@ -1310,12 +1346,14 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   pXest_ghost_destroy(model.pXest_type,ptr_pXest_ghost)
   pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
   pXest_refinement_rule_type = PXestUniformRefinementRuleType()
+  stride = pXest_stride_among_children(model.pXest_type,pXest_refinement_rule_type,model.ptr_pXest)
   adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
                                                        pXest_refinement_rule_type,
                                                        model.parts,
                                                        model.dmodel,
                                                        fmodel,
-                                                       _refinement_and_coarsening_flags)
+                                                       _refinement_and_coarsening_flags,
+                                                       stride)
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
@@ -1744,14 +1782,20 @@ const p8est_subface_to_hanging_edges_within_subface =
   0 2;
 ]   
 
+# Here, we assign the identifier 5 to a "horizontal" hanging edge
+# within a face, and the identifier 6 to a "vertical" hanging edge
+# within a face
 const p6est_subface_to_hanging_edges_within_face = 
 [ 
-  1;
-  1;
-  1;
-  1;
+  5;
+  5;
+  6;
+  6;
 ] 
 
+# Here, we are assigning arbitrarily a local identifier
+# within the master face to each hanging edge. 
+# 1: south, 2: north, 3: west and 4: east.
 const p8est_subface_to_hanging_edges_within_face = 
 [ 
   3 1;

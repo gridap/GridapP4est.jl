@@ -576,11 +576,6 @@ function generate_face_labeling(pXest_type::P4P8estType,
  facet_to_entity   = map(x->x[Dc]  , faces_to_entity)
  cell_to_entity    = map(x->x[Dc+1], faces_to_entity)
 
- function cell_to_faces(topology,cell_dim,face_dim)
-   map(topology) do topology
-    Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
-   end
- end
 
  polytope = Dc==2 ? QUAD : HEX
 
@@ -635,6 +630,12 @@ function generate_face_labeling(pXest_type::P4P8estType,
                                  copy(coarse_grid_labeling.tag_to_name))
   end
   face_labeling
+end
+
+function cell_to_faces(topology,cell_dim,face_dim)
+  map(topology) do topology
+   Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
+  end
 end
 
 function _fill_data!(data,entry::Integer,k)

@@ -97,12 +97,14 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   pXest_ghost_destroy(model.pXest_type,ptr_pXest_ghost)
   pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
   pXest_refinement_rule_type = PXestVerticalRefinementRuleType()
+  stride = pXest_stride_among_children(model.pXest_type,pXest_refinement_rule_type,model.ptr_pXest)
   adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
                                                        pXest_refinement_rule_type,
                                                        model.parts,
                                                        model.dmodel,
                                                        fmodel,
-                                                       _refinement_and_coarsening_flags)
+                                                       _refinement_and_coarsening_flags,
+                                                       stride)
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
@@ -403,11 +405,27 @@ function generate_face_labeling(pXest_type::P6estType,
  facet_to_entity   = map(x->x[Dc]  , faces_to_entity)
  cell_to_entity    = map(x->x[Dc+1], faces_to_entity)
 
- function cell_to_faces(topology,cell_dim,face_dim)
-   map(topology) do topology
-    Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
-   end
- end
+ polytope = HEX
+
+ update_face_to_entity_with_ghost_data!(vertex_to_entity,
+                                        cell_prange,
+                                        num_faces(polytope,0),
+                                        cell_to_faces(topology,Dc,0))
+
+ update_face_to_entity_with_ghost_data!(edget_to_entity,
+                                        cell_prange,
+                                        num_faces(polytope,1),
+                                        cell_to_faces(topology,Dc,1))
+ 
+ update_face_to_entity_with_ghost_data!(facet_to_entity,
+                                        cell_prange,
+                                        num_faces(polytope,Dc-1),
+                                        cell_to_faces(topology,Dc,Dc-1))
+ 
+ update_face_to_entity_with_ghost_data!(cell_to_entity,
+                                        cell_prange,
+                                        num_faces(polytope,Dc),
+                                        cell_to_faces(topology,Dc,Dc))
   
 faces_to_entity=[vertex_to_entity,edget_to_entity,facet_to_entity,cell_to_entity]
  
@@ -460,3 +478,183 @@ face_labeling =
   end
   face_labeling
 end
+
+function num_locally_owned_columns(octree_model)
+  @assert octree_model.pXest_type==P6estType()
+  map(octree_model.parts) do _
+    pXest=octree_model.ptr_pXest[]
+    num_cols = 0
+    num_trees = Cint(pXest.columns[].connectivity[].num_trees)
+    for itree = 0:num_trees-1
+      tree = pXest_tree_array_index(octree_model.pXest_type,pXest,itree)[]
+      num_cols += tree.quadrants.elem_count 
+    end
+    num_cols
+  end
+end 
+
+
+function _horizontally_refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+                                               refinement_and_coarsening_flags::MPIArray{<:Vector}) where {Dc,Dp}
+
+  pXest_type = model.pXest_type
+  init_fn_callback_c = p6est_horizontally_adapt_reset_callbacks()
+  coarsen_fn_callback_c = p6est_horizontally_coarsen_callbacks()
+  refine_callback_c,refine_replace_callback_c = p6est_horizontally_refine_callbacks()
+
+  num_cols = num_locally_owned_columns(model)
+
+  map(refinement_and_coarsening_flags,num_cols) do flags, num_cols
+    # The length of the local flags array has to match the number of locally owned columns in the model 
+    @assert num_cols==length(flags)
+    println("BBB: $(flags)")
+    pXest_reset_data!(pXest_type, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
+    println("CCC: $(flags)")
+  end
+
+
+  # # Copy input p4est, refine and balance
+  ptr_new_pXest = pXest_copy(pXest_type, model.ptr_pXest)
+
+  p6est_horizontally_refine!(ptr_new_pXest,
+                             refine_callback_c,
+                             refine_replace_callback_c)
+
+  p6est_horizontally_coarsen!(ptr_new_pXest, coarsen_fn_callback_c)
+  
+  pXest_balance!(pXest_type, ptr_new_pXest)
+
+  p6est_horizontally_adapt_update_flags!(model.ptr_pXest,ptr_new_pXest)
+  
+  ptr_new_pXest
+end 
+
+
+function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+		                        refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+                            parts=nothing) where {Dc,Dp}
+
+  Gridap.Helpers.@notimplementedif parts!=nothing
+
+  _refinement_and_coarsening_flags = map(refinement_and_coarsening_flags) do flags
+    convert(Vector{Cint},flags)
+  end 
+  
+  ptr_new_pXest = _horizontally_refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
+
+  # Extract ghost and lnodes
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
+
+  # Build fine-grid mesh
+  fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
+                                                                               model.parts,
+                                                                               model.coarse_model,
+                                                                               model.ptr_pXest_connectivity,
+                                                                               ptr_new_pXest,
+                                                                               ptr_pXest_ghost,
+                                                                               ptr_pXest_lnodes)
+    
+  pXest_ghost_destroy(model.pXest_type,ptr_pXest_ghost)
+  pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
+  pXest_refinement_rule_type = PXestHorizontalRefinementRuleType()
+
+  _extruded_flags = _extrude_refinement_and_coarsening_flags(_refinement_and_coarsening_flags, 
+                                                             model.ptr_pXest,
+                                                             ptr_new_pXest)
+  stride = pXest_stride_among_children(model.pXest_type,pXest_refinement_rule_type,model.ptr_pXest)
+  adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
+                                                       pXest_refinement_rule_type,
+                                                       model.parts,
+                                                       model.dmodel,
+                                                       fmodel,
+                                                       _extruded_flags,
+                                                       stride)
+  adaptive_models = map(local_views(model),
+                        local_views(fmodel),
+                        adaptivity_glue) do model, fmodel, glue 
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+  end
+  fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
+  ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
+                                             model.parts,
+                                             fmodel,
+                                             non_conforming_glue,
+                                             model.coarse_model,
+                                             model.ptr_pXest_connectivity,
+                                             ptr_new_pXest,
+                                             model.pXest_type,
+                                             pXest_refinement_rule_type,
+                                             false,
+                                             model)
+  return ref_model, adaptivity_glue
+end
+
+ function _extrude_refinement_and_coarsening_flags(
+          refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}},
+          ptr_pXest_old,
+          ptr_pXest_new)
+
+  pXest_old  = ptr_pXest_old[]
+  pXest_new  = ptr_pXest_new[]
+  pXest_type = P6estType()
+   
+  num_trees = Cint(pXest_old.columns[].connectivity[].num_trees)
+  @assert num_trees == Cint(pXest_new.columns[].connectivity[].num_trees)
+
+  map(refinement_and_coarsening_flags) do flags
+    current_old_quad=1
+    current_cell_old=1 
+    total=0
+    for itree=0:num_trees-1
+      tree = pXest_tree_array_index(pXest_type,pXest_old,itree)[]
+      num_quads = Cint(tree.quadrants.elem_count)
+      q = pXest_quadrant_array_index(pXest_type,tree,0)
+      f,l=P6EST_COLUMN_GET_RANGE(q[])
+      num_layers=l-f
+      total+=num_quads*num_layers
+    end
+    extruded_flags=similar(flags, total)
+
+    # Go over trees 
+    for itree=0:num_trees-1
+      tree = pXest_tree_array_index(pXest_type,pXest_old,itree)[]
+      num_quads = Cint(tree.quadrants.elem_count)  
+      iquad=0
+      # Go over columns of current tree 
+      while iquad<num_quads
+        q = pXest_quadrant_array_index(pXest_type,tree,iquad)
+        f,l=P6EST_COLUMN_GET_RANGE(q[])
+        num_layers=l-f
+        if (flags[current_old_quad]==nothing_flag)         
+          for j=1:num_layers
+            extruded_flags[current_cell_old] = nothing_flag 
+            current_cell_old += 1
+          end
+          iquad+=1
+          current_old_quad+=1
+        elseif (flags[current_old_quad]==refine_flag)
+          for j=1:num_layers
+            extruded_flags[current_cell_old]=refine_flag
+            current_cell_old += 1
+          end
+          iquad+=1
+          current_old_quad+=1
+        else 
+          @assert flags[current_old_quad  ]==coarsen_flag
+          @assert flags[current_old_quad+1]==coarsen_flag
+          @assert flags[current_old_quad+2]==coarsen_flag
+          @assert flags[current_old_quad+3]==coarsen_flag
+          for j=1:num_layers*4
+            extruded_flags[current_cell_old]=coarsen_flag
+            current_cell_old += 1
+          end
+          iquad+=4
+          current_old_quad+=4
+        end
+      end 
+    end
+
+    extruded_flags
+  end
+end 

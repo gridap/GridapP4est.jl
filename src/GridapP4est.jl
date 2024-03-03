@@ -24,10 +24,8 @@ module GridapP4est
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
   export AnisotropicallyAdapted3DDistributedDiscreteModel
-  export adapt
-  export refine
-  export coarsen
-  export redistribute
+  export vertically_adapt 
+  export horizontally_adapt
   export nothing_flag, refine_flag, coarsen_flag
   export FixedFractionAdaptiveFlagsMarkingStrategy
   export update_adaptivity_flags!

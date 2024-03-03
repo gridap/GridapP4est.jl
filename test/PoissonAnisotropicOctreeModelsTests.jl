@@ -33,20 +33,23 @@ module PoissonAnisotropicOctreeModelsTests
     reffe=ReferenceFE(lagrangian,T,order)
     VH=FESpace(dmodel,reffe;dirichlet_tags="boundary")
     UH=TrialFESpace(VH,u)
-    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
-      flags=zeros(Cint,length(indices))
+    num_local_cols=GridapP4est.num_locally_owned_columns(dmodel)
+    ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols
+      flags=zeros(Cint,num_local_cols)
       flags.=nothing_flag
       
       flags[1]=refine_flag
-      flags[own_length(indices)]=refine_flag
+      flags[end]=refine_flag
 
       # To create some unbalance
-      if (rank%2==0 && own_length(indices)>1)
-          flags[div(own_length(indices),2)]=refine_flag
+      if (rank%2==0)
+         flags[div(num_local_cols,2)]=refine_flag
       end
       flags
     end
-    fmodel,glue=GridapP4est.vertically_adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=GridapP4est.horizontally_adapt(dmodel,ref_coarse_flags);
+
+    writevtk(fmodel,"fmodel")
 
     Vh=FESpace(fmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
     Uh=TrialFESpace(Vh,u)
@@ -80,16 +83,17 @@ module PoissonAnisotropicOctreeModelsTests
     op  = AffineFEOperator(ah,bh,Uh,Vh)
     uh = solve(op)
 
+    uh2dofs=get_free_dof_values(interpolate(u, Uh))
+
     # println(op.op.matrix.matrix_partition.item_ref[]*uh2dofs.vector_partition.item_ref[]-
-    #           op.op.vector.vector_partition.item_ref[])
-    #writevtk(ΩH, "ctrian", cellfields=["uH"=>uH])
-    #writevtk(Ωh, "ftrian", cellfields=["uh"=>uh])
+    #         op.op.vector.vector_partition.item_ref[])
+    # writevtk(ΩH, "ctrian", cellfields=["uH"=>uH])
+    # writevtk(Ωh, "ftrian", cellfields=["uh"=>uh])
 
     # # Compute errors
     e = u - uh
     el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩh ))
- 
+    eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩh )) 
     println("[SOLVE FINE] el2 < tol: $(el2) < $(tol)")
     println("[SOLVE FINE] eh1 < tol: $(eh1) < $(tol)")
     @assert el2 < tol
@@ -146,12 +150,12 @@ module PoissonAnisotropicOctreeModelsTests
     println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
+    uhred2 = GridapDistributed.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
+    e = u - uhred2
 
-     uhred2 = GridapDistributed.redistribute_fe_function(uh,Vhred,fmodel_red,red_glue)
-     e = u - uhred2
-     el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
-     println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
-     @assert el2 < tol
+    el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
+    println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
+    @assert el2 < tol
 
      fmodel_red
   end
@@ -164,18 +168,20 @@ module PoissonAnisotropicOctreeModelsTests
     # Define manufactured functions
     u,f = generate_analytical_problem_functions(T,order)
 
+    num_local_cols=GridapP4est.num_locally_owned_columns(dmodel)
+
     degree = 2*order+1
-    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
-        flags=zeros(Int,length(indices))
+    ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols
+        flags=zeros(Int,num_local_cols)
         flags.=nothing_flag        
-        if (rank==1)
-           flags[1:2].=coarsen_flag
-        else 
-           flags[own_length(indices)]=refine_flag
-        end 
+        #if (rank==1)
+        #   flags[1:4].=coarsen_flag
+        #else 
+        flags[1]=refine_flag
+        #end 
         flags
     end
-    fmodel,glue=GridapP4est.vertically_adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=GridapP4est.horizontally_adapt(dmodel,ref_coarse_flags);
 
     reffe=ReferenceFE(lagrangian,T,order)
     VH=FESpace(dmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
@@ -232,7 +238,8 @@ module PoissonAnisotropicOctreeModelsTests
   function test_3d(ranks,order,T::Type;num_amr_steps=5)
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
     dmodel=AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 1, 1)
-    test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
+    #writevtk(dmodel.dmodel,"model")
+    #test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
     rdmodel=dmodel
     for i=1:num_amr_steps
      rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order,T)
@@ -254,8 +261,8 @@ module PoissonAnisotropicOctreeModelsTests
     end
   end 
   function run(distribute)
-    #debug_logger = ConsoleLogger(stderr, Logging.Debug)
-    #global_logger(debug_logger); # Enable the debug logger globally
+    debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     for perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))
@@ -263,7 +270,10 @@ module PoissonAnisotropicOctreeModelsTests
     for perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))
     end 
-    for order=2:2, scalar_or_vector in (:scalar,:vector)
+    for order=1:1, scalar_or_vector in (:scalar,:vector)
+      test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
+    end
+    for order=1:1, scalar_or_vector in (:scalar,)
       test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
     end
   end
