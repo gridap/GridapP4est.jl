@@ -47,6 +47,9 @@ function run_tests(testdir)
         elseif f in ["PoissonNonConformingOctreeModelsTests.jl"]
           np = [1,2,4]
           extra_args = ""
+        elseif f in ["PoissonAnisotropicOctreeModelsTests.jl"]
+          np = [1,4]
+          extra_args = ""
         else
           np = [nprocs]
           extra_args = ""

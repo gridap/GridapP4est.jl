@@ -35,6 +35,8 @@ module PoissonAnisotropicOctreeModelsTests
     UH=TrialFESpace(VH,u)
     num_local_cols=GridapP4est.num_locally_owned_columns(dmodel)
     ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols
+      println("[rank:$(rank)] $(num_local_cols)")
+      
       flags=zeros(Cint,num_local_cols)
       flags.=nothing_flag
       
@@ -237,7 +239,7 @@ module PoissonAnisotropicOctreeModelsTests
 
   function test_3d(ranks,order,T::Type;num_amr_steps=5)
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
-    dmodel=AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 1, 1)
+    dmodel=AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 2, 2)
     #writevtk(dmodel.dmodel,"model")
     #test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
     rdmodel=dmodel
@@ -261,8 +263,8 @@ module PoissonAnisotropicOctreeModelsTests
     end
   end 
   function run(distribute)
-    debug_logger = ConsoleLogger(stderr, Logging.Debug)
-    global_logger(debug_logger); # Enable the debug logger globally
+    # debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    # global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     for perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))

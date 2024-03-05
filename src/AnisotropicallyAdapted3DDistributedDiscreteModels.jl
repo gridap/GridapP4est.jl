@@ -37,7 +37,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
                                           pXest_type,
-                                          nothing,
+                                          PXestHorizontalRefinementRuleType(),
                                           true,
                                           nothing)
 end
@@ -407,10 +407,13 @@ function generate_face_labeling(pXest_type::P6estType,
 
  polytope = HEX
 
+
+
  update_face_to_entity_with_ghost_data!(vertex_to_entity,
                                         cell_prange,
                                         num_faces(polytope,0),
                                         cell_to_faces(topology,Dc,0))
+
 
  update_face_to_entity_with_ghost_data!(edget_to_entity,
                                         cell_prange,
@@ -421,11 +424,13 @@ function generate_face_labeling(pXest_type::P6estType,
                                         cell_prange,
                                         num_faces(polytope,Dc-1),
                                         cell_to_faces(topology,Dc,Dc-1))
+
  
  update_face_to_entity_with_ghost_data!(cell_to_entity,
                                         cell_prange,
                                         num_faces(polytope,Dc),
                                         cell_to_faces(topology,Dc,Dc))
+
   
 faces_to_entity=[vertex_to_entity,edget_to_entity,facet_to_entity,cell_to_entity]
  
@@ -476,6 +481,21 @@ face_labeling =
     
     face_labeling
   end
+
+  # map(partition(cell_prange)) do indices 
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] l2g=$(local_to_global(indices))")
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] l2o=$(local_to_own(indices))")
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] l2p=$(local_to_owner(indices))")
+
+    
+  #   cache=PartitionedArrays.assembly_cache(indices)
+    
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] ns=$(cache.neighbors_snd[])")
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] nr=$(cache.neighbors_rcv[])")
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] li_snd=$(cache.local_indices_snd[])")
+  #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] li_rcv=$(cache.local_indices_rcv[])")
+  # end
+
   face_labeling
 end
 
@@ -507,9 +527,7 @@ function _horizontally_refine_coarsen_balance!(model::OctreeDistributedDiscreteM
   map(refinement_and_coarsening_flags,num_cols) do flags, num_cols
     # The length of the local flags array has to match the number of locally owned columns in the model 
     @assert num_cols==length(flags)
-    println("BBB: $(flags)")
     pXest_reset_data!(pXest_type, model.ptr_pXest, Cint(sizeof(Cint)), init_fn_callback_c, pointer(flags))
-    println("CCC: $(flags)")
   end
 
 
@@ -559,16 +577,23 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
   pXest_refinement_rule_type = PXestHorizontalRefinementRuleType()
 
-  _extruded_flags = _extrude_refinement_and_coarsening_flags(_refinement_and_coarsening_flags, 
-                                                             model.ptr_pXest,
-                                                             ptr_new_pXest)
+  extruded_ref_coarsen_flags=map(partition(get_cell_gids(model)),refinement_and_coarsening_flags) do indices, flags
+     similar(flags, length(local_to_global(indices)))
+  end  
+
+  _extrude_refinement_and_coarsening_flags!(extruded_ref_coarsen_flags,
+                                            refinement_and_coarsening_flags,
+                                            model.ptr_pXest,
+                                            ptr_new_pXest)
+
   stride = pXest_stride_among_children(model.pXest_type,pXest_refinement_rule_type,model.ptr_pXest)
+
   adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
                                                        pXest_refinement_rule_type,
                                                        model.parts,
                                                        model.dmodel,
                                                        fmodel,
-                                                       _extruded_flags,
+                                                       extruded_ref_coarsen_flags,
                                                        stride)
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
@@ -590,10 +615,11 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   return ref_model, adaptivity_glue
 end
 
- function _extrude_refinement_and_coarsening_flags(
-          refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}},
-          ptr_pXest_old,
-          ptr_pXest_new)
+function _extrude_refinement_and_coarsening_flags!(
+         extruded_flags::MPIArray{<:Vector{<:Integer}},
+         flags::MPIArray{<:Vector{<:Integer}},
+         ptr_pXest_old,
+         ptr_pXest_new)
 
   pXest_old  = ptr_pXest_old[]
   pXest_new  = ptr_pXest_new[]
@@ -602,19 +628,9 @@ end
   num_trees = Cint(pXest_old.columns[].connectivity[].num_trees)
   @assert num_trees == Cint(pXest_new.columns[].connectivity[].num_trees)
 
-  map(refinement_and_coarsening_flags) do flags
+  map(flags,extruded_flags) do flags,extruded_flags
     current_old_quad=1
-    current_cell_old=1 
-    total=0
-    for itree=0:num_trees-1
-      tree = pXest_tree_array_index(pXest_type,pXest_old,itree)[]
-      num_quads = Cint(tree.quadrants.elem_count)
-      q = pXest_quadrant_array_index(pXest_type,tree,0)
-      f,l=P6EST_COLUMN_GET_RANGE(q[])
-      num_layers=l-f
-      total+=num_quads*num_layers
-    end
-    extruded_flags=similar(flags, total)
+    current_cell_old=1
 
     # Go over trees 
     for itree=0:num_trees-1
@@ -654,7 +670,5 @@ end
         end
       end 
     end
-
-    extruded_flags
   end
-end 
+end

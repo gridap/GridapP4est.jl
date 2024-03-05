@@ -2409,12 +2409,52 @@ end
 function pXest_stride_among_children(pXest_type::P6estType,
                                      ::PXestHorizontalRefinementRuleType,  
                                      ptr_pXest)
-  # Here we are assuming:
-  # (1) Each processor has at least one column.
-  # (2) The number of layers in each column is the same within and accross processors.
-  pXest = ptr_pXest[]
-  tree = pXest_tree_array_index(pXest_type, pXest, 0)[]
-  q = pXest_quadrant_array_index(pXest_type, tree, 0)
-  f,l=P6EST_COLUMN_GET_RANGE(q[])
-  return l-f
+ # Here we are assuming:
+ # (1) Each processor has at least one column.
+ # (2) The number of layers in each column is the same within and accross processors.
+ num_trees = ptr_pXest[].columns[].connectivity[].num_trees
+ for itree = 0:num_trees-1
+   tree = pXest_tree_array_index(pXest_type, ptr_pXest[], itree)[]
+   if tree.quadrants.elem_count>0
+     q = pXest_quadrant_array_index(pXest_type, tree, 0)
+     f,l=P6EST_COLUMN_GET_RANGE(q[])
+     return l-f
+   end
+ end
+ return 0
+end
+
+function pXest_uniformly_refine!(::P4estType, ptr_pXest)
+  # Refine callbacks
+  function refine_fn_2d(::Ptr{p4est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p4est_quadrant_t})
+    return Cint(1)
+  end
+  refine_fn_c = @cfunction($refine_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+  p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
+end
+
+function pXest_uniformly_refine!(::P8estType, ptr_pXest)
+  # Refine callbacks
+  function refine_fn_3d(::Ptr{p8est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p8est_quadrant_t})
+    return Cint(1)
+  end
+  # C-callable refine callback 3D
+  refine_fn_c = @cfunction($refine_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+  p8est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
+end
+
+function pXest_uniformly_coarsen!(::P4estType, ptr_pXest)
+  function coarsen_fn_2d(::Ptr{p4est_t},::p4est_topidx_t,::Ptr{Ptr{p4est_quadrant_t}})
+    return Cint(1)
+  end
+  coarsen_fn_c=@cfunction($coarsen_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
+  p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
+end
+
+function pXest_uniformly_coarsen!(::P8estType, ptr_pXest)
+  function coarsen_fn_3d(::Ptr{p8est_t},::p4est_topidx_t,::Ptr{Ptr{p8est_quadrant_t}})
+    return Cint(1)
+  end
+  coarsen_fn_c=@cfunction($coarsen_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
+  p8est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
 end
