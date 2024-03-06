@@ -245,6 +245,9 @@ module PoissonAnisotropicOctreeModelsTests
     rdmodel=dmodel
     for i=1:num_amr_steps
      rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order,T)
+     if i==1
+      rdmodel,_=vertically_uniformly_refine(dmodel)
+     end
     end
   end 
 
@@ -271,11 +274,8 @@ module PoissonAnisotropicOctreeModelsTests
     end
     for perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))
-    end 
-    for order=1:1, scalar_or_vector in (:scalar,:vector)
-      test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
     end
-    for order=1:1, scalar_or_vector in (:scalar,)
+    for order=1:1, scalar_or_vector in (:scalar,:vector)
       test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
     end
   end

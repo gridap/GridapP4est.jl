@@ -125,6 +125,81 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   return ref_model, adaptivity_glue
 end
 
+function _vertically_uniformly_refine!(model::OctreeDistributedDiscreteModel{Dc,Dp}) where {Dc,Dp}
+  pXest_type = model.pXest_type
+  function refine_layer_callback(p6est::Ptr{p6est_t},
+    which_tree::p4est_topidx_t,
+    column::Ptr{p4est_quadrant_t},
+    layer::Ptr{p2est_quadrant_t})
+    Cint(1)
+  end
+  
+  refine_layer_fn_callback_c = @cfunction($refine_layer_callback, Cint, 
+                                    (Ptr{p6est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}, Ptr{p2est_quadrant_t}))
+  
+  # # Copy input p4est, refine and balance
+  ptr_new_pXest = pXest_copy(pXest_type, model.ptr_pXest)
+  p6est_vertically_refine!(ptr_new_pXest,
+                           refine_layer_fn_callback_c,
+                           C_NULL)
+  ptr_new_pXest
+end 
+
+function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)  
+  ptr_new_pXest = _vertically_uniformly_refine!(model)
+
+  # Extract ghost and lnodes
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
+
+  # Build fine-grid mesh
+  fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
+                                                                               model.parts,
+                                                                               model.coarse_model,
+                                                                               model.ptr_pXest_connectivity,
+                                                                               ptr_new_pXest,
+                                                                               ptr_pXest_ghost,
+                                                                               ptr_pXest_lnodes)
+    
+  pXest_ghost_destroy(model.pXest_type,ptr_pXest_ghost)
+  pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
+
+  pXest_refinement_rule_type = PXestVerticalRefinementRuleType()
+  _refinement_and_coarsening_flags = map(partition(get_cell_gids(model))) do indices
+    flags  = Vector{Cint}(undef,length(local_to_global(indices)))
+    flags .= refine_flag
+  end
+
+  stride = pXest_stride_among_children(model.pXest_type,pXest_refinement_rule_type,model.ptr_pXest)
+  adaptivity_glue = _compute_fine_to_coarse_model_glue(model.pXest_type,
+                                                       pXest_refinement_rule_type,
+                                                       model.parts,
+                                                       model.dmodel,
+                                                       fmodel,
+                                                       _refinement_and_coarsening_flags,
+                                                       stride)
+  adaptive_models = map(local_views(model),
+                        local_views(fmodel),
+                        adaptivity_glue) do model, fmodel, glue 
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+  end
+  fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
+  ref_model = OctreeDistributedDiscreteModel(3,3,
+                                             model.parts,
+                                             fmodel,
+                                             non_conforming_glue,
+                                             model.coarse_model,
+                                             model.ptr_pXest_connectivity,
+                                             ptr_new_pXest,
+                                             model.pXest_type,
+                                             model.pXest_refinement_rule_type,
+                                             false,
+                                             model)
+  return ref_model, adaptivity_glue
+end
+
+
+
 function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                                          parts,
                                                          coarse_discrete_model,

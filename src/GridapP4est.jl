@@ -26,6 +26,7 @@ module GridapP4est
   export AnisotropicallyAdapted3DDistributedDiscreteModel
   export vertically_adapt 
   export horizontally_adapt
+  export vertically_uniformly_refine
   export nothing_flag, refine_flag, coarsen_flag
   export FixedFractionAdaptiveFlagsMarkingStrategy
   export update_adaptivity_flags!
