@@ -759,6 +759,9 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
     num_uniform_refinements::Int) where {Dc,Dp}
 
   comm = parts.comm
+
+  pXest_type = _dim_to_pXest_type(Dc)
+
   ptr_pXest_connectivity,
      ptr_pXest,
        ptr_pXest_ghost,
