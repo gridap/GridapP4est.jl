@@ -1407,6 +1407,8 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
 
      nc_glue=_create_conforming_model_non_conforming_glue(cmodel)
 
+     pXest_type = _dim_to_pXest_type(Dc)
+
      c_octree_model = OctreeDistributedDiscreteModel(Dc,Dp,
                                     model.parts,
                                     cmodel,
@@ -1414,6 +1416,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                     model.coarse_model,
                                     model.ptr_pXest_connectivity,
                                     ptr_new_pXest,
+                                    pXest_type,
                                     PXestUniformRefinementRuleType(),
                                     false,
                                     model)
@@ -1638,7 +1641,7 @@ function _redistribute_parts_supset_parts_redistributed(
     # "p4est_partition_cut_gloidx" function in the p4est library
     psub=PArrays.getany(parts_redistributed_model)
     Psub=GridapDistributed.num_parts(subset_comm)
-    first_global_quadrant=Int64((Float64(N)*Float64(psub-1))/(Float64(Psub)))
+    first_global_quadrant=Int64(floor((Float64(N)*Float64(psub-1))/(Float64(Psub))))
     @assert first_global_quadrant>=0 && first_global_quadrant<N
   else
     first_global_quadrant=N

@@ -858,10 +858,9 @@ function setup_cell_prange(pXest_type::PXestType,
         k=k+1
       end
     end
-    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]  gho_to_glo=$(gho_to_glo) gho_to_own=$(gho_to_own)"
     global_first_quadrant[part+1]-global_first_quadrant[part],global_first_quadrant[part]+1,gho_to_glo,gho_to_own
   end |> tuple_of_arrays
-  ngids = global_first_quadrant[end]+1
+  ngids = global_first_quadrant[end]
 
   partition=map(parts,noids,firstgid,gho_to_glo,gho_to_own) do part, noids, firstgid, gho_to_glo, gho_to_own
     owner = part
@@ -2457,4 +2456,12 @@ function pXest_uniformly_coarsen!(::P8estType, ptr_pXest)
   end
   coarsen_fn_c=@cfunction($coarsen_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
   p8est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
+end
+
+function pXest_partition_given!(::P4estType, ptr_pXest, new_num_cells_per_part)
+  p4est_partition_given(ptr_pXest, new_num_cells_per_part)
+end
+
+function pXest_partition_given!(::P8estType, ptr_pXest, new_num_cells_per_part)
+  p8est_partition_given(ptr_pXest, new_num_cells_per_part)
 end
