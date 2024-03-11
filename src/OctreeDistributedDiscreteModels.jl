@@ -347,7 +347,8 @@ function p6est_horizontally_adapt_update_flags!(ptr_pXest_old, ptr_pXest_new)
   flags=unsafe_wrap(Array, 
                     Ptr{Cint}(pXest_old.user_pointer), 
                     pXest_old.columns[].local_num_quadrants)
-  pXest_update_flags!(P4estType(), flags, ptr_p4est_old, ptr_p4est_new)
+  println("XXX: $(flags)")
+  #pXest_update_flags!(P4estType(), flags, ptr_p4est_old, ptr_p4est_new)
 end
 
 function p6est_vertically_adapt_update_flags!(ptr_pXest_old, ptr_pXest_new)
