@@ -498,7 +498,7 @@ function p6est_horizontally_adapt_reset_callbacks()
        q2_ptr=p2est_quadrant_array_index(forest.layers[], f)
        @assert p2est_quadrant_is_equal(q2_ptr,layer_ptr)
         
-       unsafe_store!(Ptr{Cint}(q2_ptr[].p.user_data), user_data, 1)
+       #unsafe_store!(Ptr{Cint}(q2_ptr[].p.user_data), user_data, 1)
     end
   
     current_layer_within_column=current_layer_within_column+1
