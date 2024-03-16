@@ -69,9 +69,9 @@ function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteMod
   ptr_new_pXest
 end 
 
-function vertically_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
+function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3}, 
 		                      refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
-                          parts=nothing) where {Dc,Dp}
+                          parts=nothing)
 
   Gridap.Helpers.@notimplementedif parts!=nothing
 
@@ -111,7 +111,7 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
       Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
-  ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
+  ref_model = OctreeDistributedDiscreteModel(3,3,
                                              model.parts,
                                              fmodel,
                                              non_conforming_glue,
@@ -578,13 +578,7 @@ function num_locally_owned_columns(octree_model)
   @assert octree_model.pXest_type==P6estType()
   map(octree_model.parts) do _
     pXest=octree_model.ptr_pXest[]
-    num_cols = 0
-    num_trees = Cint(pXest.columns[].connectivity[].num_trees)
-    for itree = 0:num_trees-1
-      tree = pXest_tree_array_index(octree_model.pXest_type,pXest,itree)[]
-      num_cols += tree.quadrants.elem_count 
-    end
-    num_cols
+    pXest.columns[].local_num_quadrants
   end
 end 
 
@@ -652,14 +646,19 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   pXest_lnodes_destroy(model.pXest_type,ptr_pXest_lnodes)
   pXest_refinement_rule_type = PXestHorizontalRefinementRuleType()
 
-  extruded_ref_coarsen_flags=map(partition(get_cell_gids(model)),refinement_and_coarsening_flags) do indices, flags
+
+  extruded_ref_coarsen_flags=map(partition(get_cell_gids(model)),_refinement_and_coarsening_flags) do indices, flags
      similar(flags, length(local_to_global(indices)))
   end  
 
+
+
   _extrude_refinement_and_coarsening_flags!(extruded_ref_coarsen_flags,
-                                            refinement_and_coarsening_flags,
+                                            _refinement_and_coarsening_flags,
                                             model.ptr_pXest,
                                             ptr_new_pXest)
+
+
 
   stride = pXest_stride_among_children(model.pXest_type,pXest_refinement_rule_type,model.ptr_pXest)
 

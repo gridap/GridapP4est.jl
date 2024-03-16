@@ -269,15 +269,15 @@ function pXest_coarsen!(::P8estType, ptr_pXest, coarsen_fn_c)
 end 
 
 function pXest_copy(::P4estType, ptr_pXest)
-  p4est_copy(ptr_pXest, Cint(0))
+  p4est_copy(ptr_pXest, Cint(1))
 end 
 
 function pXest_copy(::P6estType, ptr_pXest)
-  p6est_copy(ptr_pXest, Cint(0))
+  p6est_copy(ptr_pXest, Cint(1))
 end
 
 function pXest_copy(::P8estType, ptr_pXest)
-  p8est_copy(ptr_pXest, Cint(0))
+  p8est_copy(ptr_pXest, Cint(1))
 end
 
 function pXest_balance!(::P4estType, ptr_pXest; k_2_1_balance=0)
