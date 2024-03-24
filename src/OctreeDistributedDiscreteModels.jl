@@ -347,8 +347,7 @@ function p6est_horizontally_adapt_update_flags!(ptr_pXest_old, ptr_pXest_new)
   flags=unsafe_wrap(Array, 
                     Ptr{Cint}(pXest_old.user_pointer), 
                     pXest_old.columns[].local_num_quadrants)
-  println("XXX: $(flags)")
-  #pXest_update_flags!(P4estType(), flags, ptr_p4est_old, ptr_p4est_new)
+  pXest_update_flags!(P4estType(), flags, ptr_p4est_old, ptr_p4est_new)
 end
 
 function p6est_vertically_adapt_update_flags!(ptr_pXest_old, ptr_pXest_new)
@@ -432,6 +431,8 @@ function _compute_fine_to_coarse_model_glue(
       
       # Note: Reversing snd and rcv    
       lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(partition(fgids)))
+      @debug "$(MPI.Comm_rank(MPI.COMM_WORLD)): lids_rcv: $(lids_rcv)"
+      @debug "$(MPI.Comm_rank(MPI.COMM_WORLD)): lids_snd: $(lids_snd)"
       cgids_data  = local_to_global(cpartition)[fine_to_coarse_faces_map[Dc+1][lids_snd.data]]
       cgids_snd   = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
       cgids_rcv   = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
@@ -598,6 +599,8 @@ function _compute_fine_to_coarse_model_glue(
         cpartition::AbstractLocalIndices)
     # Note: Reversing snd and rcv
     lids_rcv,lids_snd = map(PArrays.getany,assembly_local_indices(fpartition))
+    @debug "$(MPI.Comm_rank(MPI.COMM_WORLD)): lids_rcv: $(lids_rcv)"
+    @debug "$(MPI.Comm_rank(MPI.COMM_WORLD)): lids_snd: $(lids_snd)"
     cgids_data = local_to_global(cpartition)[fine_to_coarse_faces_map[end][lids_snd.data]]
     cgids_snd  = PArrays.JaggedArray(cgids_data,lids_snd.ptrs)
     cgids_rcv  = PArrays.JaggedArray(Vector{Int}(undef,length(lids_rcv.data)),lids_rcv.ptrs)
@@ -814,6 +817,7 @@ function _compute_fine_to_coarse_model_glue(
             gid = cgids_rcv.data[i]
             fine_to_coarse_faces_map[end][lid] = glo_to_loc[gid]
             fcell_to_child_id[lid] = child_id_rcv.data[i]
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id.data[$(lid)]=$(child_id_rcv.data[i])"
           end
         end
       end
@@ -848,6 +852,7 @@ function _compute_fine_to_coarse_model_glue(
                @assert (ptrs[lid+1]-ptrs[lid])==1
                data[ptrs[lid]] = glo_to_loc[gid]
                fcell_to_child_id.data[ptrs[lid]] = child_id_rcv.data[i]
+               @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id.data[$(ptrs[lid])]=$(child_id_rcv.data[i])"
             end
           end
         end
@@ -1075,6 +1080,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
     # Fill children data: 
     fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     fcell_to_child_id_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
+    fcell_to_child_id_data .= -1
     cell = 1
     c = 1
     while cell <= num_o_c_cells
@@ -1121,6 +1127,13 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
                                                    flags,
                                                    num_o_c_cells,
                                                    stride)
+
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] num_o_c_cells: $(num_o_c_cells)"
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] flags: $(flags)"
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] len(fcell_to_child_id): $(length(fcell_to_child_id))"
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] stride: $(stride)"
+
+
     # Go over all cells of coarse grid portion
     num_children = get_num_children(pXest_type,pXest_refinement_rule_type)
     c = 1
@@ -1132,6 +1145,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
           for j=1:stride
             fine_to_coarse_faces_map[c] = current_cell
             fcell_to_child_id[c] = child
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id[$(c)]: $(child)"
             c+=1
             current_cell+=1
           end
@@ -1140,6 +1154,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
       elseif (flags[cell]==nothing_flag)
         fine_to_coarse_faces_map[c] = cell
         fcell_to_child_id[c] = 1
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id[$(c)]: 1"
         c+=1
         cell+=1
       else
@@ -1151,6 +1166,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
   
   num_f_cells   = num_cells(fmodel)       # Number of fine cells (owned+ghost)
   num_o_c_cells = own_length(cpartition)  # Number of coarse cells (owned)
+  @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] own_length(fpartition): $(own_length(fpartition))"
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
   if coarsen
     fine_to_coarse_faces_map = Vector{Gridap.Arrays.Table{Int,Vector{Int},Vector{Int}}}(undef,Dc+1)
@@ -1163,6 +1179,7 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
     fine_to_coarse_faces_map = Vector{Vector{Int}}(undef,Dc+1)
     fine_to_coarse_faces_map[Dc+1] = Vector{Int}(undef,num_f_cells)
     fcell_to_child_id = Vector{Int}(undef,num_f_cells)
+    fcell_to_child_id .= -1
     _setup_fine_to_coarse_faces_map_vector!(pXest_type,
                                             pXest_refinement_rule_type,
                                             fine_to_coarse_faces_map[Dc+1],

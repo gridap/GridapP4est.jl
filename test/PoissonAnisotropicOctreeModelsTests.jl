@@ -34,15 +34,11 @@ module PoissonAnisotropicOctreeModelsTests
     VH=FESpace(dmodel,reffe;dirichlet_tags="boundary")
     UH=TrialFESpace(VH,u)
     num_local_cols=GridapP4est.num_locally_owned_columns(dmodel)
-    ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols
-      println("[rank:$(rank)] $(num_local_cols)")
-      
+    ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols      
       flags=zeros(Cint,num_local_cols)
       flags.=nothing_flag
-      
       flags[1]=refine_flag
       flags[end]=refine_flag
-
       # To create some unbalance
       if (rank%2==0)
          flags[div(num_local_cols,2)]=refine_flag
@@ -50,8 +46,6 @@ module PoissonAnisotropicOctreeModelsTests
       flags
     end
     fmodel,glue=GridapP4est.horizontally_adapt(dmodel,ref_coarse_flags);
-
-    writevtk(fmodel,"fmodel")
 
     Vh=FESpace(fmodel,reffe,conformity=:H1;dirichlet_tags="boundary")
     Uh=TrialFESpace(Vh,u)

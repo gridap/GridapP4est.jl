@@ -624,6 +624,7 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   Gridap.Helpers.@notimplementedif parts!=nothing
 
   _refinement_and_coarsening_flags = map(refinement_and_coarsening_flags) do flags
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] horizontally_adapt_flags=$(flags)"
     convert(Vector{Cint},flags)
   end 
   
