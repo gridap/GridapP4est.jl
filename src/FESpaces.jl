@@ -935,9 +935,10 @@ function _add_constraints(model::GridapDistributed.DistributedDiscreteModel{Dc},
     map(partition(gids)) do indices 
         @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
         @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
-    end 
+    end
+    trian = Triangulation(model)
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
-    GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,vector_type)
+    GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,trian,vector_type)
 end
 
 # Generates a new DistributedSingleFieldFESpace composed 
