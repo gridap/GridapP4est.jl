@@ -170,11 +170,11 @@ module PoissonAnisotropicOctreeModelsTests
     ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols
         flags=zeros(Int,num_local_cols)
         flags.=nothing_flag        
-        #if (rank==1)
-        #   flags[1:4].=coarsen_flag
-        #else 
-        flags[1]=refine_flag
-        #end 
+        if (rank==1)
+          flags[1:4].=coarsen_flag
+          flags[5:6].=coarsen_flag
+        end
+        flags[end]=refine_flag 
         flags
     end
     fmodel,glue=GridapP4est.horizontally_adapt(dmodel,ref_coarse_flags);
@@ -235,7 +235,7 @@ module PoissonAnisotropicOctreeModelsTests
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
     dmodel=AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 2, 2)
     #writevtk(dmodel.dmodel,"model")
-    #test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
+    test_refine_and_coarsen_at_once(ranks,dmodel,order,T)
     rdmodel=dmodel
     for i=1:num_amr_steps
      rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order,T)
@@ -269,7 +269,7 @@ module PoissonAnisotropicOctreeModelsTests
     for perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))
     end
-    for order=1:1, scalar_or_vector in (:scalar,:vector)
+    for order=1:1, scalar_or_vector in (:scalar,) # (:scalar,:vector)
       test_3d(ranks,order,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
     end
   end

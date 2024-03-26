@@ -551,13 +551,13 @@ function _process_owned_cells_fine_to_coarse_model_glue(cmodel::DiscreteModel{Dc
   return fine_to_coarse_faces_map, fine_to_coarse_faces_dim, fcell_to_child_id
 end
 
-function _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
-  e=cell+num_children-1
+function _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children,stride)
+  e=cell+num_children*stride-1
   while (cell <= num_o_c_cells) && (cell <= e)
     if (flags[cell]!=coarsen_flag)
       break
     end
-    cell = cell+1
+    cell = cell+stride
   end
   return cell,cell==e+1
 end
@@ -707,13 +707,14 @@ function _compute_fine_to_coarse_model_glue(
   function _check_if_coarsen(pXest_type,
                              pXest_refinement_rule_type,
                              cpartition,
-                             flags)
+                             flags,
+                             stride)
     num_children = get_num_children(pXest_type,pXest_refinement_rule_type)
     num_o_c_cells = own_length(cpartition)
     cell = 1
     while cell <= num_o_c_cells
       if (flags[cell]==coarsen_flag)
-        cell,coarsen = _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        cell,coarsen = _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children,stride)
         if coarsen
           return true
         end 
@@ -911,7 +912,7 @@ function _compute_fine_to_coarse_model_glue(
   # Check if there is at least one part in which a cell was coarsened
   cgids = get_cell_gids(cmodel)
   coarsen_array = map(partition(cgids),refinement_and_coarsening_flags) do cpartition,flags
-    _check_if_coarsen(pXest_type,pXest_refinement_rule_type,cpartition,flags) 
+    _check_if_coarsen(pXest_type,pXest_refinement_rule_type,cpartition,flags,stride) 
   end
   or_func(a,b)=a || b
   coarsen = PArrays.getany(reduction(or_func,coarsen_array;destination=:all,init=false))
@@ -1034,46 +1035,56 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
                                                         coarsen,
                                                         stride) where Dc
 
-  function _setup_fine_to_coarse_faces_map_table(pXest_type,pXest_refinement_rule_type,flags,num_o_c_cells,num_f_cells)
+  function _setup_fine_to_coarse_faces_map_table(pXest_type,
+                                                 pXest_refinement_rule_type,
+                                                 flags,
+                                                 num_o_c_cells,
+                                                 num_f_cells,
+                                                 stride)
     num_children = get_num_children(pXest_type, pXest_refinement_rule_type)
 
     # Count cell children: 
     fine_to_coarse_faces_map_ptrs = Vector{Int}(undef,num_f_cells+1)
     fine_to_coarse_faces_map_ptrs[1] = 1
-    cell = 1
-    c = 1
-    while cell <= num_o_c_cells # For each coarse cell
-      if (flags[cell]==nothing_flag)    # Cell not touched 
-        fine_to_coarse_faces_map_ptrs[c+1] = fine_to_coarse_faces_map_ptrs[c]+1
-        cell = cell+1
-        c = c+1
-      elseif (flags[cell]==refine_flag) # Cell is refined 
+    old_cell = 1
+    new_cell = 1
+    while old_cell <= num_o_c_cells # For each coarse cell
+      if (flags[old_cell]==nothing_flag)    # Cell not touched 
+        fine_to_coarse_faces_map_ptrs[new_cell+1] = fine_to_coarse_faces_map_ptrs[new_cell]+1
+        old_cell += 1
+        new_cell += 1
+      elseif (flags[old_cell]==refine_flag) # Cell is refined 
         for child = 1:num_children
-          fine_to_coarse_faces_map_ptrs[c+1] = fine_to_coarse_faces_map_ptrs[c]+1
-          c = c+1
-        end
-        cell = cell+1
-      else                             # Cell is coarsened
-        @assert flags[cell]==coarsen_flag
-        cell_fwd,coarsen = _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
-        if coarsen
-          @assert cell_fwd-cell==num_children
-          fine_to_coarse_faces_map_ptrs[c+1] = fine_to_coarse_faces_map_ptrs[c]+num_children
-          cell = cell+num_children
-          c = c+1
-        else 
-          for j = c:c+(cell_fwd-cell+1) 
-            fine_to_coarse_faces_map_ptrs[j+1] = fine_to_coarse_faces_map_ptrs[j]+1
-            c = c+1
+          for j=1:stride
+            fine_to_coarse_faces_map_ptrs[new_cell+1] = fine_to_coarse_faces_map_ptrs[new_cell]+1
+            new_cell+=1
           end
-          cell = cell_fwd
-          c = c+cell_fwd-cell
+        end
+        old_cell=old_cell+stride
+      else                             # Cell is coarsened
+        @assert flags[old_cell]==coarsen_flag
+        cell_fwd,coarsen = _move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,old_cell,num_children,stride)
+        if coarsen
+          @assert (cell_fwd-old_cell)==(num_children*stride)
+            for j=1:stride
+              fine_to_coarse_faces_map_ptrs[new_cell+1] = fine_to_coarse_faces_map_ptrs[new_cell]+num_children
+              old_cell = old_cell+num_children
+              new_cell = new_cell+1
+            end
+        else
+          @Gridap.Helpers.@unreachable
+          # for j = new_cell:new_cell+(cell_fwd-old_cell+1) 
+          #   fine_to_coarse_faces_map_ptrs[j+1] = fine_to_coarse_faces_map_ptrs[j]+1
+          #   new_cell = new_cell+1
+          # end
+          # old_cell = cell_fwd
+          # new_cell = new_cell+cell_fwd-old_cell
         end
       end
     end
 
     # Counts to pointers: 
-    for j = c:num_f_cells
+    for j = new_cell:num_f_cells
       fine_to_coarse_faces_map_ptrs[j+1] = fine_to_coarse_faces_map_ptrs[j]
     end
 
@@ -1081,38 +1092,47 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
     fine_to_coarse_faces_map_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     fcell_to_child_id_data = Vector{Int}(undef,fine_to_coarse_faces_map_ptrs[end]-1)
     fcell_to_child_id_data .= -1
-    cell = 1
-    c = 1
-    while cell <= num_o_c_cells
-      if (flags[cell]==refine_flag)      # Cell is refined
+    old_cell = 1
+    new_cell = 1
+    while old_cell <= num_o_c_cells
+      if (flags[old_cell]==refine_flag)      # Cell is refined
         for child = 1:num_children
-          fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
-          fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = child
-        end 
-        c = c + num_children
-        cell = cell+1
-      elseif (flags[cell]==nothing_flag) # Cell is not touched
-        fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=cell
-        fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
-        c = c+1
-        cell = cell+1
+          current_cell=old_cell
+          for j=1:stride
+            fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[new_cell]] = current_cell
+            fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[new_cell]] = child
+            new_cell+=1
+            current_cell+=1
+          end
+        end
+        old_cell=old_cell+stride
+      elseif (flags[old_cell]==nothing_flag) # Cell is not touched
+        fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[new_cell]]=old_cell
+        fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[new_cell]]=1
+        new_cell+=1
+        old_cell+=1
       else                               # Cell is coarsened
-        @assert flags[cell]==coarsen_flag
-        cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,cell,num_children)
+        @assert flags[old_cell]==coarsen_flag
+        cell_fwd,coarsen=_move_fwd_and_check_if_all_children_coarsened(flags,num_o_c_cells,old_cell,num_children,stride)
         if coarsen
           for child = 1:num_children
-            fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = child
-            fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]+child-1] = cell
-            cell=cell+1
+            current_cell=new_cell
+            for j=1:stride
+               fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[current_cell]+child-1] = old_cell
+               fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[current_cell]+child-1] = child
+               old_cell+=1
+               current_cell+=1
+            end
           end 
-          c = c+1
+          new_cell=new_cell+stride
         else 
-          for j = cell:cell_fwd-1 
-            fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=j
-            fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
-            c = c+1
-            cell = cell+1
-          end
+          @Gridap.Helpers.@unreachable
+          # for j = cell:cell_fwd-1 
+          #   fine_to_coarse_faces_map_data[fine_to_coarse_faces_map_ptrs[c]]=j
+          #   fcell_to_child_id_data[fine_to_coarse_faces_map_ptrs[c]]=1
+          #   c = c+1
+          #   cell = cell+1
+          # end
         end
       end
     end
@@ -1157,6 +1177,8 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
         @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))] fcell_to_child_id[$(c)]: 1"
         c+=1
         cell+=1
+      elseif (flags[cell]==coarsen_flag)
+        Gridap.Helpers.@notimplemented
       else
         @assert flags[cell]!=coarsen_flag 
         error("Unknown AMR flag")
@@ -1170,7 +1192,12 @@ function _process_owned_cells_fine_to_coarse_model_glue(pXest_type,
   ftopology = Gridap.Geometry.get_grid_topology(fmodel)
   if coarsen
     fine_to_coarse_faces_map = Vector{Gridap.Arrays.Table{Int,Vector{Int},Vector{Int}}}(undef,Dc+1)
-    a,b = _setup_fine_to_coarse_faces_map_table(pXest_type,pXest_refinement_rule_type,flags,num_o_c_cells,num_f_cells)
+    a,b = _setup_fine_to_coarse_faces_map_table(pXest_type,
+                                                pXest_refinement_rule_type,
+                                                flags,
+                                                num_o_c_cells,
+                                                num_f_cells,
+                                                stride)
     fine_to_coarse_faces_map[Dc+1] = a
     fcell_to_child_id = b
     # In the future we should also have here the code to also setup
