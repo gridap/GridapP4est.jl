@@ -172,7 +172,6 @@ module PoissonAnisotropicOctreeModelsTests
         flags.=nothing_flag        
         if (rank==1)
           flags[1:4].=coarsen_flag
-          flags[5:6].=coarsen_flag
         end
         flags[end]=refine_flag 
         flags
