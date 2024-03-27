@@ -34,21 +34,17 @@ function run_tests(testdir)
     @time @testset "$f" for f in testfiles
       MPI.mpiexec() do cmd
         if f in ["PoissonUniformlyRefinedOctreeModelsTests.jl"]
-          return
           np = [4]
           extra_args = "-s 2 2 -r 2"
         elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl",
                      "AdaptivityFlagsMarkingStrategiesTests.jl"]
-          return
           np = [4]
           extra_args = ""
         elseif f in ["DarcyNonConformingOctreeModelsTests.jl"]
-          return
           np = [1,4]
           extra_args = ""
         elseif f in ["PoissonNonConformingOctreeModelsTests.jl"]
-          return
           np = [1,2,4]
           extra_args = ""
         elseif f in ["PoissonAnisotropicOctreeModelsTests.jl"] 
