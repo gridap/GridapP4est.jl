@@ -53,7 +53,7 @@ module AdaptivityFlagsMarkingStrategiesTests
                              error_indicators;
                              verbose=true)
 
-    model,glue=adapt(dmodel,ref_coarse_flags);
+    model,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
 
     # Define manufactured functions
     u(x) = x[1]+x[2]^order

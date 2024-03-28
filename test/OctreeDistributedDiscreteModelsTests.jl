@@ -87,7 +87,7 @@ module OctreeDistributedDiscreteModelsTests
     f_model_tasks_L2_back, dglueL1toL2 = redistribute(fmodel_tasks_L1,level_parts[2])
 
     # Coarsening
-    model_back, glue = coarsen(f_model_tasks_L2_back)
+    model_back, glue = Gridap.Adaptivity.coarsen(f_model_tasks_L2_back)
 
     if GridapDistributed.i_am_in(level_parts[2])
       @test num_cells(model_back)==num_cells(model)
@@ -103,7 +103,7 @@ module OctreeDistributedDiscreteModelsTests
     model  = OctreeDistributedDiscreteModel(level_parts[1],coarse_model,3)
     imodel = model
     for i=1:3
-      omodel, glue = coarsen(imodel)
+      omodel, glue = Gridap.Adaptivity.coarsen(imodel)
       imodel = omodel
     end
     @test num_cells(imodel) == prod(nc)

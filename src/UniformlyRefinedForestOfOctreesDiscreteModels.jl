@@ -1,36 +1,3 @@
-
-function pXest_lnodes_destroy(::Type{Val{Dc}}, ptr_pXest_lnodes) where Dc
-  if (Dc==2)
-    p4est_lnodes_destroy(ptr_pXest_lnodes)
-  else
-    p8est_lnodes_destroy(ptr_pXest_lnodes)
-  end
-end
-
-function pXest_ghost_destroy(::Type{Val{Dc}}, ptr_pXest_ghost) where Dc
-  if (Dc==2)
-    p4est_ghost_destroy(ptr_pXest_ghost)
-  else
-    p8est_ghost_destroy(ptr_pXest_ghost)
-  end
-end
-
-function pXest_destroy(::Type{Val{Dc}}, ptr_pXest) where Dc
-  if (Dc==2)
-    p4est_destroy(ptr_pXest)
-  else
-    p8est_destroy(ptr_pXest)
-  end
-end
-
-function pXest_connectivity_destroy(::Type{Val{Dc}}, ptr_pXest_connectivity) where Dc
-  if (Dc==2)
-    p4est_connectivity_destroy(ptr_pXest_connectivity)
-  else
-    p8est_connectivity_destroy(ptr_pXest_connectivity)
-  end
-end
-
 const P4EST_2_GRIDAP_FACET_2D  = [ 3, 4, 1, 2 ]
 const GRIDAP_2_P4EST_FACET_2D  = [ 3, 4, 1, 2 ]
 
@@ -65,6 +32,49 @@ function p4est_get_quadrant_vertex_coordinates(connectivity::Ptr{p4est_connectiv
                           neighbour[].x,
                           neighbour[].y,
                           vxy)
+end
+
+function p6est_get_quadrant_vertex_coordinates(connectivity::Ptr{p6est_connectivity_t},
+                                               treeid::p4est_topidx_t,
+                                               x::p4est_qcoord_t,
+                                               y::p4est_qcoord_t,
+                                               z::p4est_qcoord_t,
+                                               xylevel::Int8,
+                                               zlevel::Int8,
+                                               corner::Cint,
+                                               pvxyz::Ptr{Cdouble})
+   
+   function p6est_corner_to_p4est_corner(p6est_corner::Cint)
+      div(p6est_corner,Cint(2))
+   end 
+
+   function zquadrant_to_zcorner(z, zlevel_quadrant, p6est_corner)
+      if p6est_corner in (0,2,4,6)
+        z
+      elseif p6est_corner in (1,3,5,7)
+        z + P4EST_QUADRANT_LEN(zlevel)
+      end 
+   end
+
+   p6est_qcoord_to_vertex(connectivity,
+                          treeid,
+                          x, 
+                          y,
+                          zquadrant_to_zcorner(z,zlevel,corner), 
+                          pvxyz)
+
+   vxyz=unsafe_wrap(Array, pvxyz, 3)
+   zcoord=vxyz[3]
+   
+   # Always sets the z-coordinate to 0.0!
+   p4est_get_quadrant_vertex_coordinates(connectivity[].conn4,
+                                         treeid,
+                                         x,
+                                         y,
+                                         xylevel,
+                                         p6est_corner_to_p4est_corner(corner),
+                                         pvxyz)
+   vxyz[3]=zcoord
 end
 
 function  p8est_get_quadrant_vertex_coordinates(connectivity::Ptr{p8est_connectivity_t},
@@ -385,96 +395,6 @@ function setup_pXest_connectivity_with_topology(cmodel::DiscreteModel{Dc,Dp}) wh
   return pconn
 end
 
-function setup_pXest(::Type{Val{Dc}}, comm, connectivity, num_uniform_refinements) where Dc
-   if (Dc==2)
-       p4est_new_ext(comm,
-                     connectivity,
-                     Cint(0), Cint(num_uniform_refinements), Cint(1), Cint(0),
-                     C_NULL, C_NULL)
-   else
-      p8est_new_ext(comm,
-                    connectivity,
-                    Cint(0), Cint(num_uniform_refinements), Cint(1), Cint(0),
-                    C_NULL, C_NULL)
-   end
-end
-
-function setup_pXest_ghost(::Type{Val{Dc}}, ptr_pXest) where Dc
-  if (Dc==2)
-    p4est_ghost_new(ptr_pXest,P4est_wrapper.P4EST_CONNECT_FULL)
-  else
-    p8est_ghost_new(ptr_pXest,P4est_wrapper.P8EST_CONNECT_FULL)
-  end
-end
-
-function setup_cell_prange(::Type{Val{Dc}},
-                           parts::AbstractVector{<:Integer},
-                           ptr_pXest,
-                           ptr_pXest_ghost) where Dc
-  comm = parts.comm
-
-  pXest_ghost = ptr_pXest_ghost[]
-  pXest       = ptr_pXest[]
-
-  # Obtain ghost quadrants
-  if (Dc==2)
-    ptr_ghost_quadrants = Ptr{p4est_quadrant_t}(pXest_ghost.ghosts.array)
-  else
-    ptr_ghost_quadrants = Ptr{p8est_quadrant_t}(pXest_ghost.ghosts.array)
-  end
-  proc_offsets = unsafe_wrap(Array, pXest_ghost.proc_offsets, pXest_ghost.mpisize+1)
-
-  global_first_quadrant = unsafe_wrap(Array,
-                                      pXest.global_first_quadrant,
-                                      pXest.mpisize+1)
-
-  noids,firstgid,gho_to_glo,gho_to_own=map(parts) do part
-    gho_to_glo = Vector{Int}(undef, pXest_ghost.ghosts.elem_count)
-    gho_to_own = Vector{Int32}(undef, pXest_ghost.ghosts.elem_count)
-    k=1
-    for i=1:pXest_ghost.mpisize
-      for j=proc_offsets[i]:proc_offsets[i+1]-1
-        quadrant       = ptr_ghost_quadrants[j+1]
-        piggy3         = quadrant.p.piggy3
-        gho_to_glo[k]  = global_first_quadrant[i]+piggy3.local_num+1
-        gho_to_own[k] = Int32(i)
-        k=k+1
-      end
-    end
-    pXest.local_num_quadrants,global_first_quadrant[part]+1,gho_to_glo,gho_to_own
-  end |> tuple_of_arrays
-  ngids = pXest.global_num_quadrants
-
-  partition = map(parts,noids,firstgid,gho_to_glo,gho_to_own) do part, noids, firstgid, gho_to_glo, gho_to_own
-    owner = part
-    own_indices=OwnIndices(ngids,owner,(collect(firstgid:firstgid+noids-1)))
-    ghost_indices=GhostIndices(ngids,gho_to_glo,gho_to_own)
-    OwnAndGhostIndices(own_indices,ghost_indices)
-  end
-  # This is required to provide the hint that the communication 
-  # pattern underlying partition is symmetric, so that we do not have 
-  # to execute the algorithm the reconstructs the reciprocal in the 
-  # communication graph
-  assembly_neighbors(partition;symmetric=true)
-  return PRange(partition)
-end
-
-function setup_pXest_lnodes(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where Dc
-  if (Dc==2)
-    p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))
-  else
-    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))
-  end
-end
-
-function setup_pXest_lnodes_nonconforming(::Type{Val{Dc}}, ptr_pXest, ptr_pXest_ghost) where Dc
-  if (Dc==2)
-    p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-2))
-  else
-    p8est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(-3))
-  end
-end 
-
 function fetch_vector_ghost_values_cache(vector_partition,partition)
   cache = PArrays.p_vector_cache(vector_partition,partition)
   map(reverse,cache)
@@ -550,92 +470,68 @@ end
 """
   Generate the geometrical cellwise vertex coordinates.
 """
-function generate_cell_vertex_coordinates(::Type{Val{Dc}},
+function generate_cell_vertex_coordinates(pXest_type::PXestType,
                                           cell_vertex_lids,
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
-                                          ptr_pXest_ghost) where Dc
+                                          ptr_pXest_ghost)
+
+  Dc = num_cell_dims(pXest_type)
 
   PXEST_CORNERS = 2^Dc
   pXest_ghost = ptr_pXest_ghost[]
   pXest       = ptr_pXest[]
 
-  # Obtain ghost quadrants
-  if (Dc==2)
-    ptr_ghost_quadrants = Ptr{p4est_quadrant_t}(pXest_ghost.ghosts.array)
-  else
-    ptr_ghost_quadrants = Ptr{p8est_quadrant_t}(pXest_ghost.ghosts.array)
-  end
-
-  tree_offsets = unsafe_wrap(Array, pXest_ghost.tree_offsets, pXest_ghost.num_trees+1)
   cell_vertex_coordinates = map(cell_vertex_lids) do cell_vertex_lids
     data = Vector{Point{Dc,Float64}}(undef,length(cell_vertex_lids.data))
     current = 1
     vxy = Vector{Cdouble}(undef,Dc)
     pvxy = pointer(vxy,1)
     for itree = 1:pXest_ghost.num_trees
-      if (Dc==2)
-        tree = p4est_tree_array_index(pXest.trees, itree-1)[]
-      else
-        tree = p8est_tree_array_index(pXest.trees, itree-1)[]
-      end
-      for cell = 1:tree.quadrants.elem_count
-         if (Dc==2)
-           quadrant = p4est_quadrant_array_index(tree.quadrants, cell-1)[]
-         else
-           quadrant = p8est_quadrant_array_index(tree.quadrants, cell-1)[]
-         end
-         for vertex = 1:PXEST_CORNERS
-           if (Dc==2)
-             p4est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                   p4est_topidx_t(itree-1),
-                                                   quadrant.x,
-                                                   quadrant.y,
-                                                   quadrant.level,
-                                                   Cint(vertex-1),
-                                                   pvxy)
-           else
-             p8est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                   p4est_topidx_t(itree-1),
-                                                   quadrant.x,
-                                                   quadrant.y,
-                                                   quadrant.z,
-                                                   quadrant.level,
-                                                   Cint(vertex-1),
-                                                   pvxy)
-           end
-           data[current] = Point{Dc,Float64}(vxy...)
-           current = current + 1
-         end
+      tree = pXest_tree_array_index(pXest_type, pXest, itree-1)[]
+      for cell=1:tree.quadrants.elem_count
+        quadrant=pXest_quadrant_array_index(pXest_type,tree,cell-1)[] 
+        # Loop over layers in the current column
+        for l=1:pXest_num_quadrant_layers(pXest_type,quadrant)
+          layer=pXest_get_layer(pXest_type, quadrant, pXest, l-1)
+          coords=pXest_cell_coords(pXest_type,quadrant,layer)
+          levels=pXest_get_quadrant_and_layer_levels(pXest_type,quadrant,layer)
+          
+          for vertex=1:PXEST_CORNERS
+            pXest_get_quadrant_vertex_coordinates(pXest_type,
+                                                  ptr_pXest_connectivity,
+                                                  p4est_topidx_t(itree-1),
+                                                  coords,
+                                                  levels,
+                                                  Cint(vertex-1),
+                                                  pvxy)
+            data[current] = Point{Dc,Float64}(vxy...)
+            current=current+1
+          end
+        end 
       end
     end
 
+    tree_offsets = unsafe_wrap(Array, pXest_ghost.tree_offsets, pXest_ghost.num_trees+1)
+    ptr_ghost_quadrants = _unwrap_ghost_quadrants(pXest_type, pXest_ghost)
+
     # Go over ghost cells
-    for i = 1:pXest_ghost.num_trees
-     for j = tree_offsets[i]:tree_offsets[i+1]-1
-         quadrant = ptr_ghost_quadrants[j+1]
-         for vertex=1:PXEST_CORNERS
-           if (Dc==2)
-              p4est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
+    for i=1:pXest_ghost.num_trees
+      for j=tree_offsets[i]:tree_offsets[i+1]-1
+          quadrant = ptr_ghost_quadrants[j+1]
+          coords=pXest_cell_coords(pXest_type,quadrant,0)
+          levels=pXest_get_quadrant_and_layer_levels(pXest_type,quadrant,0)
+          for vertex=1:PXEST_CORNERS
+              pXest_get_quadrant_vertex_coordinates(pXest_type,
+                                                    ptr_pXest_connectivity,
                                                     p4est_topidx_t(i-1),
-                                                    quadrant.x,
-                                                    quadrant.y,
-                                                    quadrant.level,
+                                                    coords,
+                                                    levels,
                                                     Cint(vertex-1),
                                                     pvxy)
-           else
-             p8est_get_quadrant_vertex_coordinates(ptr_pXest_connectivity,
-                                                    p4est_topidx_t(i-1),
-                                                    quadrant.x,
-                                                    quadrant.y,
-                                                    quadrant.z,
-                                                    quadrant.level,
-                                                    Cint(vertex-1),
-                                                    pvxy)
-           end
-           data[current] = Point{Dc,Float64}(vxy...)
-           current = current+1
-        end
+              data[current]=Point{Dc,Float64}(vxy...)
+              current=current+1
+          end
       end
     end
     ptrs = copy(cell_vertex_lids.ptrs)
@@ -696,9 +592,12 @@ end
     - the cellwise corner ids (topology)
     - the cellwise vertex coordinates (geometry)
 """
-function generate_grid_and_topology(::Type{Val{Dc}},
+function generate_grid_and_topology(pXest_type::P4P8estType,
                                     cell_corner_lids,
-                                    cell_vertex_coordinates) where {Dc}
+                                    cell_vertex_coordinates)
+
+  Dc = num_cell_dims(pXest_type)
+
   map(cell_corner_lids, cell_vertex_coordinates) do cell_corner_lids, cell_vertex_coordinates
 
     cell_vertex_lids, vertex_coords, corner_coords = generate_coords(
@@ -722,7 +621,8 @@ end
 const ITERATOR_RESTRICT_TO_BOUNDARY=Cint(100)
 const ITERATOR_RESTRICT_TO_INTERIOR=Cint(101)
 
-function generate_face_labeling(parts,
+function generate_face_labeling(pXest_type::P4P8estType,
+                                parts,
                                 cell_prange,
                                 coarse_discrete_model::DiscreteModel{Dc,Dp},
                                 topology,
@@ -1024,32 +924,23 @@ function generate_face_labeling(parts,
   facet_to_entity   = map(x->x[Dc]  , faces_to_entity)
   cell_to_entity    = map(x->x[Dc+1], faces_to_entity)
 
-  function cell_to_faces(topology,cell_dim,face_dim)
-    map(topology) do topology
-      Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
-    end
-  end
 
   polytope = Dc==2 ? QUAD : HEX
   update_face_to_entity_with_ghost_data!(vertex_to_entity,
                                           cell_prange,
                                           num_faces(polytope,0),
                                           cell_to_faces(topology,Dc,0))
-
   if Dc==3
     update_face_to_entity_with_ghost_data!(edget_to_entity,
                                             cell_prange,
                                             num_faces(polytope,1),
-                                            cell_to_faces(topology,Dc,1))
-    #  map(edget_to_entity) do edget_to_entity
-    #   @assert all(edget_to_entity .!= 0)
-    #  end   
+                                            cell_to_faces(topology,Dc,1))   
   end
 
   update_face_to_entity_with_ghost_data!(facet_to_entity,
-                                        cell_prange,
-                                        num_faces(polytope,Dc-1),
-                                        cell_to_faces(topology,Dc,Dc-1))
+                                         cell_prange,
+                                         num_faces(polytope,Dc-1),
+                                         cell_to_faces(topology,Dc,Dc-1))
  
   update_face_to_entity_with_ghost_data!(cell_to_entity,
                                         cell_prange,
@@ -1081,6 +972,12 @@ function generate_face_labeling(parts,
                                  copy(coarse_grid_labeling.tag_to_name))
   end
   face_labeling
+end
+
+function cell_to_faces(topology,cell_dim,face_dim)
+  map(topology) do topology
+   Gridap.Geometry.get_faces(topology,cell_dim,face_dim)
+  end
 end
 
 function _fill_data!(data,entry::Integer,k)
@@ -1128,7 +1025,6 @@ end
 function update_face_to_entity_with_ghost_data!(
    face_to_entity,cell_prange,num_faces_x_cell,cell_to_faces)
 
-
    part_to_cell_to_entity = map(init_cell_to_face_entity,
                                       map(x->num_faces_x_cell,partition(cell_prange)),
                                       cell_to_faces,
@@ -1142,46 +1038,52 @@ function update_face_to_entity_with_ghost_data!(
              part_to_cell_to_entity)
 end
 
-function setup_ptr_pXest_objects(::Type{Val{Dc}},
+function setup_ptr_pXest_objects(pXest_type::PXestType,
                                  comm,
                                  coarse_discrete_model,
-                                 num_uniform_refinements) where Dc
+                                 num_uniform_refinements)
   ptr_pXest_connectivity=setup_pXest_connectivity(coarse_discrete_model)
   # Create a new forest
-  ptr_pXest = setup_pXest(Val{Dc},comm,ptr_pXest_connectivity,num_uniform_refinements)
+  ptr_pXest = setup_pXest(pXest_type,comm,ptr_pXest_connectivity,num_uniform_refinements)
   # Build the ghost layer
-  ptr_pXest_ghost=setup_pXest_ghost(Val{Dc},ptr_pXest)
-  ptr_pXest_lnodes=setup_pXest_lnodes(Val{Dc}, ptr_pXest, ptr_pXest_ghost)
+  ptr_pXest_ghost=setup_pXest_ghost(pXest_type,ptr_pXest)
+  ptr_pXest_lnodes=setup_pXest_lnodes(pXest_type, ptr_pXest, ptr_pXest_ghost)
   ptr_pXest_connectivity, ptr_pXest, ptr_pXest_ghost, ptr_pXest_lnodes
 end
 
-function setup_distributed_discrete_model(::Type{Val{Dc}},
+function setup_distributed_discrete_model(pXest_type::PXestType,
                                           parts,
                                           coarse_discrete_model,
                                           ptr_pXest_connectivity,
                                           ptr_pXest,
                                           ptr_pXest_ghost,
-                                          ptr_pXest_lnodes) where Dc
-  cell_prange = setup_cell_prange(Val{Dc},parts,ptr_pXest,ptr_pXest_ghost)
-  cell_vertex_gids = generate_cell_vertex_gids(ptr_pXest_lnodes,cell_prange)
-  cell_corner_lids = generate_cell_corner_lids(cell_vertex_gids)
-  cell_vertex_coordinates = generate_cell_vertex_coordinates(Val{Dc},
+                                          ptr_pXest_lnodes)
+  
+   cell_prange = setup_cell_prange(pXest_type,parts,ptr_pXest,ptr_pXest_ghost)
+   cell_vertex_gids=generate_cell_vertex_gids(ptr_pXest_lnodes,cell_prange)
+   cell_corner_lids = generate_cell_corner_lids(cell_vertex_gids)
+   cell_vertex_coordinates = generate_cell_vertex_coordinates(pXest_type,
                                               cell_corner_lids,
                                               ptr_pXest_connectivity,
                                               ptr_pXest,
                                               ptr_pXest_ghost)
 
-  grid,topology = generate_grid_and_topology(
-    Val{Dc},cell_corner_lids,cell_vertex_coordinates
-  )
-  face_labeling = generate_face_labeling(
-    parts,cell_prange,coarse_discrete_model,topology,ptr_pXest,ptr_pXest_ghost
-  )
+   grid,topology = generate_grid_and_topology(pXest_type,
+                                              cell_corner_lids,
+                                              cell_vertex_coordinates)
 
-  local_models = map(grid,topology,face_labeling) do grid, topology, face_labeling
+   face_labeling = generate_face_labeling(pXest_type,
+                                          parts,
+                                          cell_prange,
+                                          coarse_discrete_model,
+                                          topology,
+                                          ptr_pXest,
+                                          ptr_pXest_ghost)
+
+   local_models = map(grid,topology,face_labeling) do grid, topology, face_labeling
      Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
-  end
-  return GridapDistributed.DistributedDiscreteModel(local_models,cell_prange)
+   end
+   return GridapDistributed.DistributedDiscreteModel(local_models,cell_prange)
 end
 
 
@@ -1194,17 +1096,20 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
 ) where {Dc,Dp}
 
   comm = parts.comm
+
+  pXest_type = _dim_to_pXest_type(Dc)
+
   ptr_pXest_connectivity,
      ptr_pXest,
        ptr_pXest_ghost,
-         ptr_pXest_lnodes = setup_ptr_pXest_objects(Val{Dc},
+         ptr_pXest_lnodes = setup_ptr_pXest_objects(pXest_type,
                                                     comm,
                                                     coarse_discrete_model,
                                                     num_uniform_refinements)
 
   # Write forest to VTK file
   # p4est_vtk_write_file(unitsquare_forest, C_NULL, "my_step")
-  dmodel = setup_distributed_discrete_model(Val{Dc},
+  dmodel=setup_distributed_discrete_model(pXest_type,
                                           parts,
                                           coarse_discrete_model,
                                           ptr_pXest_connectivity,
@@ -1212,9 +1117,9 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
                                           ptr_pXest_ghost,
                                           ptr_pXest_lnodes)
 
-  pXest_lnodes_destroy(Val{Dc},ptr_pXest_lnodes)
-  pXest_ghost_destroy(Val{Dc},ptr_pXest_ghost)
-  pXest_destroy(Val{Dc},ptr_pXest)
-  pXest_connectivity_destroy(Val{Dc},ptr_pXest_connectivity)
+  pXest_lnodes_destroy(pXest_type,ptr_pXest_lnodes)
+  pXest_ghost_destroy(pXest_type,ptr_pXest_ghost)
+  pXest_destroy(pXest_type,ptr_pXest)
+  pXest_connectivity_destroy(pXest_type,ptr_pXest_connectivity)
   dmodel
 end
