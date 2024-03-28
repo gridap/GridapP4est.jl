@@ -2162,7 +2162,7 @@ function generate_node_coordinates(pXest_type::PXestType,
   end
 end
 
-function generate_grid_and_topology(pXest_type::PXestType,
+function generate_grid_and_topology(pXest_type::P6estType,
                                     cell_vertex_lids,
                                     nlvertices,
                                     node_coordinates)
