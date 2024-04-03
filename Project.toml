@@ -20,7 +20,7 @@ FillArrays = "0.8.4, 0.9, 0.10, 0.11, 0.12, 1"
 Gridap = "0.17.22, 0.18"
 GridapDistributed = "0.3.1, 0.4"
 MPI = "0.20"
-P4est_wrapper = "0.2.0"
+P4est_wrapper = "0.2.2"
 PartitionedArrays = "0.3.3"
 julia = "1.5,1.6,1.7,1.8,1.9"
 
