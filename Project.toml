@@ -1,7 +1,7 @@
 name = "GridapP4est"
 uuid = "c2c8e14b-f5fd-423d-9666-1dd9ad120af9"
 authors = ["Alberto F. Martin <alberto.f.martin@anu.edu.au>"]
-version = "0.3.7"
+version = "0.3.6"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
