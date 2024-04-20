@@ -26,7 +26,7 @@ module DarcyNonConformingOctreeModelsTests
         end
         flags
     end 
-    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
     
     # Solve coarse
     xH,XH=solve_darcy(dmodel,order)
@@ -120,7 +120,7 @@ module DarcyNonConformingOctreeModelsTests
         end 
         flags
     end
-    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
 
     # Solve coarse
     xH,XH=solve_darcy(dmodel,order)
@@ -262,7 +262,7 @@ module DarcyNonConformingOctreeModelsTests
         flags[own_length(indices)]=refine_flag 
         flags
     end
-    fmodel,glue=adapt(model,ref_coarse_flags)
+    fmodel,glue=Gridap.Adaptivity.adapt(model,ref_coarse_flags)
     xh,Xh = solve_darcy(fmodel,order)
     check_error_darcy(fmodel,order,xh)
   end 
