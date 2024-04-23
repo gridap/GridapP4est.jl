@@ -565,7 +565,7 @@ function generate_coords(
     if norm(coord-model_coords[vertex]) > eps(T)
       pos = findfirst(x -> norm(x-coord) < eps(T), model_coords[n_corners+1:n_vertices])
       if !isnothing(pos)
-        model_cell_ids.data[k] = model_coords[n_corners+pos]
+        model_cell_ids.data[k] = n_corners+pos
       else
         n_vertices += 1
         model_coords[n_vertices] = coord
