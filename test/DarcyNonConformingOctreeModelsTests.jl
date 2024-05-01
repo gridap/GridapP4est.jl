@@ -251,21 +251,7 @@ module DarcyNonConformingOctreeModelsTests
     @test eu_l2 < tol
     @test ep_l2 < tol
     @test ep_h1 < tol
-  end 
-
-  function driver(ranks,coarse_model,order)
-    model=OctreeDistributedDiscreteModel(ranks,coarse_model,1)
-    ref_coarse_flags=map(ranks,partition(get_cell_gids(model.dmodel))) do rank,indices
-        flags=zeros(Cint,length(indices))
-        flags.=nothing_flag        
-        #flags[1:2^2].=coarsen_flag
-        flags[own_length(indices)]=refine_flag 
-        flags
-    end
-    fmodel,glue=Gridap.Adaptivity.adapt(model,ref_coarse_flags)
-    xh,Xh = solve_darcy(fmodel,order)
-    check_error_darcy(fmodel,order,xh)
-  end 
+  end
 
   function run(distribute)
     # debug_logger = ConsoleLogger(stderr, Logging.Debug)

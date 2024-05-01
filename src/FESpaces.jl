@@ -1,3 +1,7 @@
+
+const LagragianOrNedelec = 
+    Union{Tuple{Gridap.ReferenceFEs.Lagrangian,Any,Any},Tuple{Gridap.ReferenceFEs.Nedelec,Any,Any}}
+
 function _generate_ref_constraints(modelH,modelh,cell_reffe)
     VH=TestFESpace(modelH,cell_reffe)
     Vh=TestFESpace(modelh,cell_reffe)
@@ -31,7 +35,7 @@ end
 
 function _build_constraint_coefficients_matrix_in_ref_space(::PXestUniformRefinementRuleType,
                                                             Dc,
-                                                            reffe::Tuple{<:Lagrangian,Any,Any})
+                                                            reffe::LagragianOrNedelec)
     cell_polytope = Dc == 2 ? QUAD : HEX
     basis, reffe_args, reffe_kwargs = reffe
     cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
@@ -93,8 +97,28 @@ function _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
     end
 end 
 
+function _get_face_dofs(cell_reffe::GenericRefFE{Nedelec, 3})
+    # Go over faces
+    Dc=3
+    first_face = get_offset(get_polytope(cell_reffe),Dc-1)
+    nfaces=num_faces(cell_reffe,Dc-1)
+    nverts=num_faces(cell_reffe,0)
+    face_dofs=deepcopy(cell_reffe.face_dofs)
+    face_edges = get_faces(get_polytope(cell_reffe),Dc-1,Dc-2)
+    for face=first_face+1:first_face+nfaces
+        for edge in face_edges[face-first_face]
+            edge_own_dofs = face_dofs[nverts+edge]
+            for dof in edge_own_dofs
+                push!(face_dofs[face],dof)
+            end
+        end
+    end
+    face_dofs
+end 
+
+
 function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefinementRuleType, 
-                                                  Df,Dc,reffe::Tuple{<:Lagrangian,Any,Any})
+                                                  Df,Dc,reffe::LagragianOrNedelec)
     
     cell_polytope = (Dc == 2) ? QUAD : HEX
     _coarse_faces_to_child_ids = coarse_faces_to_child_ids(ref_rule,Df,Dc)
@@ -109,7 +133,12 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
 
     first_face = get_offset(get_polytope(cell_reffe),Df)
     face_dofs=get_face_dofs(cell_reffe)
-    num_dofs_x_face = length(face_dofs[first_face+1])
+    _face_dofs = face_dofs
+    if (isa(reffe,Tuple{Gridap.ReferenceFEs.Nedelec,Any,Any}) && Dc==3)
+        xxx
+        _face_dofs = _get_face_dofs(cell_reffe)
+    end
+    num_dofs_x_face = length(_face_dofs[first_face+1])
     
     if (Df==Dc-1) # Facets    
         num_faces = 2*Dc
@@ -118,7 +147,7 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
         _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
                                                num_faces,
                                                _coarse_faces_to_child_ids,
-                                               face_dofs,
+                                               _face_dofs,
                                                cells_dof_ids,
                                                first_face)
         face_subface_ldof_to_cell_ldof
@@ -130,7 +159,7 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
         _fill_face_subface_ldof_to_cell_ldof!(edge_subedge_ldof_to_cell_ldof,
                                              num_edges,
                                              _coarse_faces_to_child_ids,
-                                             face_dofs,
+                                             _face_dofs,
                                              cells_dof_ids,
                                              first_face)
         edge_subedge_ldof_to_cell_ldof
@@ -275,9 +304,6 @@ function coarse_faces_to_child_ids(::PXestVerticalRefinementRuleType,Df,Dc)
     _coarse_edges_to_child_ids_vertical_refinement
   end
 end
-
-
-
 
 function coarse_faces_to_child_ids(::PXestHorizontalRefinementRuleType,Df,Dc)
     @assert Dc==3
@@ -450,7 +476,10 @@ function _restrict_face_dofs_to_face_dim(cell_reffe,Df)
     first_face = Gridap.ReferenceFEs.get_offset(polytope,Df)+1
     face_own_dofs=get_face_own_dofs(cell_reffe)
     first_face_faces = Gridap.ReferenceFEs.get_faces(polytope)[first_face]
-    face_dofs_to_face_dim = face_own_dofs[first_face_faces]
+    face_dofs_to_face_dim = Vector{Vector{Int}}()
+    for face in first_face_faces
+        push!(face_dofs_to_face_dim,copy(face_own_dofs[face])) 
+    end
     touched=Dict{Int,Int}()
     dofs=Int64[]
     current=1
@@ -815,7 +844,22 @@ end
 function get_face_dofs_permutations(
          reffe::Gridap.ReferenceFEs.GenericRefFE{Gridap.ReferenceFEs.RaviartThomas, Dc},Df::Integer) where Dc
     first_face = get_offset(get_polytope(reffe),Df)
-    order = length(get_face_dofs(reffe)[first_face])-1
+    order = length(get_face_dofs(reffe)[first_face+1])-1
+    nfaces=num_faces(reffe,Df)
+    if (Df==Dc-1)
+       facet_polytope = Dc == 2 ? SEGMENT : QUAD
+       nodes, _ = Gridap.ReferenceFEs.compute_nodes(facet_polytope, [order for i = 1:Dc-1])
+       Fill(Gridap.ReferenceFEs._compute_node_permutations(facet_polytope, nodes),nfaces)
+    elseif (Dc == 3 && Df==1)
+       nodes, _ = Gridap.ReferenceFEs.compute_nodes(SEGMENT, [order for i = 1:Dc-2])
+       Fill(Gridap.ReferenceFEs._compute_node_permutations(SEGMENT, nodes),nfaces)
+    end
+end 
+
+function get_face_dofs_permutations(
+         reffe::Gridap.ReferenceFEs.GenericRefFE{Gridap.ReferenceFEs.Nedelec, Dc},Df::Integer) where Dc
+    first_face = get_offset(get_polytope(reffe),Df)
+    order = length(get_face_dofs(reffe)[first_face+1])-1
     nfaces=num_faces(reffe,Df)
     if (Df==Dc-1)
        facet_polytope = Dc == 2 ? SEGMENT : QUAD
@@ -900,15 +944,20 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
             hanging_faces_glue[1],
             cell_dof_ids)
 
+        _face_dofs = face_dofs
+        if (isa(cell_reffe,GenericRefFE{Nedelec,3}))
+            _face_dofs = _get_face_dofs(cell_reffe)
+        end 
+
         if (Dc == 3)
             hanging_faces_owner_face_dofs[2] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[2],
-                face_dofs,
+                _face_dofs,
                 hanging_faces_glue[2],
                 cell_dof_ids)
         end
 
         hanging_faces_owner_face_dofs[Dc] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[Dc],
-            face_dofs,
+            _face_dofs,
             hanging_faces_glue[Dc],
             cell_dof_ids)
 
@@ -978,7 +1027,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 hanging_faces_owner_face_dofs[1],
                 hanging_faces_glue[1],
                 face_subface_ldof_to_cell_ldof,
-                face_dofs,
+                _face_dofs,
                 face_own_dofs,
                 subface_own_dofs,
                 cell_dof_ids,
@@ -1002,7 +1051,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                     hanging_faces_owner_face_dofs[2],
                     hanging_faces_glue[2],
                     face_subface_ldof_to_cell_ldof,
-                    face_dofs,
+                    _face_dofs,
                     face_own_dofs,
                     subface_own_dofs,
                     cell_dof_ids,
@@ -1025,7 +1074,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 hanging_faces_owner_face_dofs[Dc],
                 hanging_faces_glue[Dc],
                 face_subface_ldof_to_cell_ldof,
-                face_dofs,
+                _face_dofs,
                 face_own_dofs,
                 subface_own_dofs,
                 cell_dof_ids,
@@ -1142,7 +1191,7 @@ end
 # Generates a new DistributedSingleFieldFESpace composed 
 # by local FE spaces with linear multipoint constraints added
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
-                                 reffe::Tuple{Gridap.ReferenceFEs.Lagrangian,Any,Any}; 
+                                 reffe::LagragianOrNedelec; 
                                  kwargs...) where {Dc}
     spaces_wo_constraints = map(local_views(model)) do m
         FESpace(m, reffe; kwargs...)
