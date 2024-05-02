@@ -97,26 +97,6 @@ function _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
     end
 end 
 
-function _get_face_dofs(cell_reffe::GenericRefFE{Nedelec, 3})
-    # Go over faces
-    Dc=3
-    first_face = get_offset(get_polytope(cell_reffe),Dc-1)
-    nfaces=num_faces(cell_reffe,Dc-1)
-    nverts=num_faces(cell_reffe,0)
-    face_dofs=deepcopy(cell_reffe.face_dofs)
-    face_edges = get_faces(get_polytope(cell_reffe),Dc-1,Dc-2)
-    for face=first_face+1:first_face+nfaces
-        for edge in face_edges[face-first_face]
-            edge_own_dofs = face_dofs[nverts+edge]
-            for dof in edge_own_dofs
-                push!(face_dofs[face],dof)
-            end
-        end
-    end
-    face_dofs
-end 
-
-
 function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefinementRuleType, 
                                                   Df,Dc,reffe::LagragianOrNedelec)
     
@@ -133,12 +113,7 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
 
     first_face = get_offset(get_polytope(cell_reffe),Df)
     face_dofs=get_face_dofs(cell_reffe)
-    _face_dofs = face_dofs
-    if (isa(reffe,Tuple{Gridap.ReferenceFEs.Nedelec,Any,Any}) && Dc==3)
-        xxx
-        _face_dofs = _get_face_dofs(cell_reffe)
-    end
-    num_dofs_x_face = length(_face_dofs[first_face+1])
+    num_dofs_x_face = length(face_dofs[first_face+1])
     
     if (Df==Dc-1) # Facets    
         num_faces = 2*Dc
@@ -147,7 +122,7 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
         _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
                                                num_faces,
                                                _coarse_faces_to_child_ids,
-                                               _face_dofs,
+                                               face_dofs,
                                                cells_dof_ids,
                                                first_face)
         face_subface_ldof_to_cell_ldof
@@ -159,7 +134,7 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
         _fill_face_subface_ldof_to_cell_ldof!(edge_subedge_ldof_to_cell_ldof,
                                              num_edges,
                                              _coarse_faces_to_child_ids,
-                                             _face_dofs,
+                                             face_dofs,
                                              cells_dof_ids,
                                              first_face)
         edge_subedge_ldof_to_cell_ldof
@@ -944,20 +919,15 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
             hanging_faces_glue[1],
             cell_dof_ids)
 
-        _face_dofs = face_dofs
-        if (isa(cell_reffe,GenericRefFE{Nedelec,3}))
-            _face_dofs = _get_face_dofs(cell_reffe)
-        end 
-
         if (Dc == 3)
             hanging_faces_owner_face_dofs[2] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[2],
-                _face_dofs,
+                face_dofs,
                 hanging_faces_glue[2],
                 cell_dof_ids)
         end
 
         hanging_faces_owner_face_dofs[Dc] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[Dc],
-            _face_dofs,
+            face_dofs,
             hanging_faces_glue[Dc],
             cell_dof_ids)
 
@@ -1027,7 +997,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 hanging_faces_owner_face_dofs[1],
                 hanging_faces_glue[1],
                 face_subface_ldof_to_cell_ldof,
-                _face_dofs,
+                face_dofs,
                 face_own_dofs,
                 subface_own_dofs,
                 cell_dof_ids,
@@ -1051,7 +1021,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                     hanging_faces_owner_face_dofs[2],
                     hanging_faces_glue[2],
                     face_subface_ldof_to_cell_ldof,
-                    _face_dofs,
+                    face_dofs,
                     face_own_dofs,
                     subface_own_dofs,
                     cell_dof_ids,
@@ -1074,7 +1044,7 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                 hanging_faces_owner_face_dofs[Dc],
                 hanging_faces_glue[Dc],
                 face_subface_ldof_to_cell_ldof,
-                _face_dofs,
+                face_dofs,
                 face_own_dofs,
                 subface_own_dofs,
                 cell_dof_ids,
