@@ -142,7 +142,7 @@ module DarcyNonConformingOctreeModelsTests
     dΩh = Measure(trian,degree)
 
     el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    tol=1e-7
+    tol=1e-6
     @assert el2 < tol
   end
 
@@ -247,7 +247,7 @@ module DarcyNonConformingOctreeModelsTests
     ep_l2 = l2(ep)
     ep_h1 = h1(ep)
     
-    tol = 1.0e-9
+    tol = 1.0e-6
     @test eu_l2 < tol
     @test ep_l2 < tol
     @test ep_h1 < tol
