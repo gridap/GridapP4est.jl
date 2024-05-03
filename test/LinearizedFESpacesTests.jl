@@ -39,7 +39,7 @@ module LinearizedFESpacesTests
       end 
       flags
     end
-    modelH,_=adapt(model,ref_coarse_flags)
+    modelH,_=Gridap.Adaptivity.adapt(model,ref_coarse_flags)
 
     for order in (2,4,8)
       degree = 2*order+1

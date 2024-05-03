@@ -71,7 +71,9 @@ function _setup_one_level_refined_octree_model(model::OctreeDistributedDiscreteM
                         fmodel.non_conforming_glue,
                         model.coarse_model,
                         model.ptr_pXest_connectivity,
-                        pXest_copy(Val{Dc},fmodel.ptr_pXest),
+                        pXest_copy(fmodel.pXest_type,fmodel.ptr_pXest),
+                        fmodel.pXest_type,
+                        fmodel.pXest_refinement_rule_type,
                         false,
                         fmodel)
 end 
@@ -90,7 +92,7 @@ function Gridap.LinearizedFESpace(model::OctreeDistributedDiscreteModel{Dc},
             flags=Vector{Cint}(undef,local_length(indices))
             flags.=refine_flag
         end
-        ref_model,glue=Gridap.adapt(ref_model,ref_coarse_flags)
+        ref_model,glue=Gridap.Adaptivity.adapt(ref_model,ref_coarse_flags)
     end
     adaptivity_glue=_create_adaptivity_glue(model,ref_model,num_refinements)
     one_level_ref_model=_setup_one_level_refined_octree_model(model,ref_model,adaptivity_glue)
