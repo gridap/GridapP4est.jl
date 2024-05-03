@@ -230,9 +230,9 @@ module MaxwellNonConformingOctreeModelsTests
     np    = MPI.Comm_size(MPI.COMM_WORLD)
     ranks = distribute(LinearIndices((np,)))
 
-    #for order=0:2
-    # test_2d(ranks,order)
-    #end
+    for order=0:2
+    test_2d(ranks,order)
+    end
 
     for order=0:2
       test_3d(ranks,order)
