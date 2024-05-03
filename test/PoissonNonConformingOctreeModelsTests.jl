@@ -63,7 +63,7 @@ module PoissonNonConformingOctreeModelsTests
         end
         flags
     end 
-    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
     # map(ranks,glue) do rank, glue 
     #   if rank==2
     #     print(glue.n2o_faces_map[end]); print("\n")
@@ -291,7 +291,7 @@ module PoissonNonConformingOctreeModelsTests
         end 
         flags
     end
-    fmodel,glue=adapt(dmodel,ref_coarse_flags);
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
 
     conformity=cg_or_dg==:cg ? :H1 : :L2
 
@@ -442,12 +442,9 @@ module PoissonNonConformingOctreeModelsTests
   end 
 
   function run(distribute)
-    # debug_logger = ConsoleLgger(stderr, Logging.Debug)
-    # global_logger(debug_logger); # Enable the debug logger globally
+    #debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    #global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    # for Dc=2:3, perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
-    #     test(ranks,Val{Dc},perm,order,:cg,_field_type(Val{Dc}(),scalar_or_vector))
-    # end
     for Dc=2:3, perm in (1,2,4), order=(1,2), scalar_or_vector in (:scalar,)
       test(ranks,Val{Dc},perm,order,:dg,_field_type(Val{Dc}(),scalar_or_vector))
     end
