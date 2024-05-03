@@ -1,4 +1,4 @@
-module DarcyNonConformingOctreeModelsTests
+module MaxwellNonConformingOctreeModelsTests
   using P4est_wrapper
   using GridapP4est
   using Gridap
@@ -29,23 +29,19 @@ module DarcyNonConformingOctreeModelsTests
     fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
     
     # Solve coarse
-    xH,XH=solve_darcy(dmodel,order)
-    check_error_darcy(dmodel,order,xH)
-    uH,pH=xH
-    UH,PH=XH
+    uH,UH=solve_maxwell(dmodel,order)
+    check_error_maxwell(dmodel,order,uH)
 
     # Solve fine
-    xh,Xh=solve_darcy(fmodel,order)
-    check_error_darcy(fmodel,order,xh)
-    uh,ph=xh
-    Uh,Ph=Xh
+    uh,Uh=solve_maxwell(fmodel,order)
+    check_error_maxwell(fmodel,order,uh)
 
     Ωh = Triangulation(fmodel)
     degree = 2*(order+1)
     dΩh = Measure(Ωh,degree)
 
     # prolongation via interpolation
-    uHh=interpolate(uH,Uh)   
+    uHh=interpolate(uH,Uh)
     e = uh - uHh
     el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
     tol=1e-6
@@ -84,17 +80,14 @@ module DarcyNonConformingOctreeModelsTests
     el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
 
     fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
-    xh_red,Xh_red=solve_darcy(fmodel_red,order)
-    check_error_darcy(fmodel_red,order,xh_red)
-    uhred,phred=xh_red
-    Uh_red,Ph_red=Xh_red
-
+    uh_red,Uh_red=solve_maxwell(fmodel_red,order)
+    check_error_maxwell(fmodel_red,order,uh_red)
 
     trian = Triangulation(fmodel_red)
     degree = 2*(order+1)
     dΩhred = Measure(trian,degree)
 
-    u_ex, p_ex, f_ex=get_analytical_functions(Dc)
+    u_ex, f_ex=get_analytical_functions(Dc)
 
     uhred2 = GridapDistributed.redistribute_fe_function(uh,Uh_red,fmodel_red,red_glue)
     
@@ -114,26 +107,22 @@ module DarcyNonConformingOctreeModelsTests
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag        
         if (rank==1)
-           flags[1:2^Dc].=coarsen_flag
-        else 
-           flags[own_length(indices)]=refine_flag
-        end 
+          flags[1:min(2^Dc,own_length(indices))].=coarsen_flag
+        end  
+        flags[own_length(indices)]=refine_flag 
         flags
     end
     fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
 
     # Solve coarse
-    xH,XH=solve_darcy(dmodel,order)
-    check_error_darcy(dmodel,order,xH)
-    uH,pH=xH
+    uH,UH=solve_maxwell(dmodel,order)
+    check_error_maxwell(dmodel,order,uH)
 
     # Solve fine
-    xh,Xh=solve_darcy(fmodel,order)
-    check_error_darcy(fmodel,order,xh)
-    uh,ph=xh
+    uh,Uh=solve_maxwell(fmodel,order)
+    check_error_maxwell(fmodel,order,uh)
 
-    # prolongation via interpolation
-    Uh,Ph=Xh
+    # # prolongation via interpolation
     uHh=interpolate(uH,Uh)
     e = uh - uHh
 
@@ -148,7 +137,7 @@ module DarcyNonConformingOctreeModelsTests
 
   function test_2d(ranks,order)
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
-    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,1)
     test_refine_and_coarsen_at_once(ranks,dmodel,order)
     rdmodel=dmodel
     for i=1:5
@@ -157,8 +146,8 @@ module DarcyNonConformingOctreeModelsTests
   end 
 
   function test_3d(ranks,order)
-    coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
-    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+    coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(2,2,2))
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,0)
     test_refine_and_coarsen_at_once(ranks,dmodel,order)
     rdmodel=dmodel
     for i=1:5
@@ -166,92 +155,74 @@ module DarcyNonConformingOctreeModelsTests
     end
   end
 
-  u_ex_2D(x) = VectorValue(2*x[1],x[1]+x[2])
-  p_ex_2D(x) = x[1]-x[2]
-  f_ex_2D(x) = u_ex_2D(x) + ∇(p_ex_2D)(x)
-  u_ex_3D(x) = VectorValue(x[1],x[2],x[3])
-  p_ex_3D(x) = x[2]
-  f_ex_3D(x) = u_ex_3D(x) + ∇(p_ex_3D)(x)
+  u_ex_2D((x,y)) = 2*VectorValue(-y,x)
+  f_ex_2D(x) = u_ex_2D(x)
+  u_ex_3D((x,y,z)) = 2*VectorValue(-y,x,0.) - VectorValue(0.,-z,y)
+  f_ex_3D(x) = u_ex_3D(x)
   
   function get_analytical_functions(Dc)
     if Dc==2
-      return u_ex_2D, p_ex_2D, f_ex_2D
+      return u_ex_2D, f_ex_2D
     else
       @assert Dc==3
-      return u_ex_3D, p_ex_3D, f_ex_3D
+      return u_ex_3D, f_ex_3D
     end
   end
 
   include("CoarseDiscreteModelsTools.jl")
 
-  function solve_darcy(model::GridapDistributed.DistributedDiscreteModel{Dc},order) where {Dc}
-    if (Dc==2)
-      dirichlet_tags=[5,6]
-      neumanntags = [7,8]
-    else
-      @assert Dc==3
-      dirichlet_tags=[21,22,23]
-      neumanntags=[24,25,26]
-    end 
-
-    u_ex, p_ex, f_ex=get_analytical_functions(Dc)
+  function solve_maxwell(model::GridapDistributed.DistributedDiscreteModel{Dc},order) where {Dc}
+    u_ex, f_ex=get_analytical_functions(Dc)
 
     V = FESpace(model,
-                ReferenceFE(raviart_thomas,Float64,order),
-                conformity=:Hdiv,
-                dirichlet_tags=dirichlet_tags)
-    
-    Q = FESpace(model,
-                ReferenceFE(lagrangian,Float64,order); 
-                conformity=:L2)
+                ReferenceFE(nedelec,order),
+                conformity=:Hcurl,
+                dirichlet_tags="boundary")
     
     U = TrialFESpace(V,u_ex)
-    P = TrialFESpace(Q)
-    
-    Y = MultiFieldFESpace([V, Q])
-    X = MultiFieldFESpace([U, P])
     
     trian = Triangulation(model)
     degree = 2*(order+1)
     dΩ = Measure(trian,degree)
-    
-    btrian = Boundary(model,tags=neumanntags)
-    degree = 2*(order+1)
-    dΓ = Measure(btrian,degree)
-    nb = get_normal_vector(btrian)
-    
-    a((u, p),(v, q)) = ∫(u⋅v)dΩ +∫(q*(∇⋅u))dΩ-∫((∇⋅v)*p)dΩ
-    b(( v, q)) = ∫( v⋅f_ex + q*(∇⋅u_ex))dΩ - ∫((v⋅nb)*p_ex )dΓ
+        
+    a(u,v) = ∫( (∇×u)⋅(∇×v) + u⋅v )dΩ
+    l(v) = ∫(f_ex⋅v)dΩ
 
-    op = AffineFEOperator(a,b,X,Y)
-    xh = solve(op)
-    xh,X
+    op = AffineFEOperator(a,l,U,V)
+    if (num_free_dofs(U)==0)
+      # UMFPACK cannot handle empty linear systems
+      uh = zero(U)
+    else
+      uh = solve(op)
+    end
+   
+    # uh_ex=interpolate(u_ex_3D,U)
+    # map(local_views(get_free_dof_values(uh_ex)), local_views(op.op.matrix), local_views(op.op.vector)) do U_ex, A, b 
+    #   r_ex = A*U_ex - b
+    #   println(r_ex)
+    # end
+    uh,U
   end 
 
-  function check_error_darcy(model::GridapDistributed.DistributedDiscreteModel{Dc},order,xh) where {Dc}
+  function check_error_maxwell(model::GridapDistributed.DistributedDiscreteModel{Dc},order,uh) where {Dc}
     trian = Triangulation(model)
     degree = 2*(order+1)
     dΩ = Measure(trian,degree)
 
-    uh, ph = xh
-
-    u_ex, p_ex, f_ex = get_analytical_functions(Dc)
+    u_ex, f_ex = get_analytical_functions(Dc)
     
     eu = u_ex - uh
-    ep = p_ex - ph
 
     l2(v) = sqrt(sum(∫(v⋅v)*dΩ))
-    h1(v) = sqrt(sum(∫(v*v + ∇(v)⋅∇(v))*dΩ))
+    hcurl(v) = sqrt(sum(∫(v⋅v + (∇×v)⋅(∇×v))*dΩ))
     
     eu_l2 = l2(eu)
-    ep_l2 = l2(ep)
-    ep_h1 = h1(ep)
+    eu_hcurl = hcurl(eu)
     
     tol = 1.0e-6
     @test eu_l2 < tol
-    @test ep_l2 < tol
-    @test ep_h1 < tol
-  end
+    @test eu_hcurl < tol
+  end 
 
   function run(distribute)
     # debug_logger = ConsoleLogger(stderr, Logging.Debug)
@@ -259,10 +230,12 @@ module DarcyNonConformingOctreeModelsTests
     np    = MPI.Comm_size(MPI.COMM_WORLD)
     ranks = distribute(LinearIndices((np,)))
 
-    order=1
+    for order=0:2
     test_2d(ranks,order)
+    end
 
-    order=2
-    test_3d(ranks,order)
+    for order=0:2
+      test_3d(ranks,order)
+    end
   end
 end
