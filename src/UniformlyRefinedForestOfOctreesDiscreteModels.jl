@@ -552,38 +552,31 @@ function generate_coords(
   model_cell_coords :: Gridap.Arrays.Table{<:VectorValue{Dp,T}}
 ) where {Ti,Dp,T}
   n_corners = maximum(topo_cell_ids.data;init=0)
-  n_vertices = length(unique(model_cell_coords.data))
-
-  model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_vertices)
+  
+  n_vertices_max = length(model_cell_coords.data)
+  model_coords = fill(VectorValue(fill(T(Inf),Dp)),n_vertices_max)
   for (vertex,coord) in zip(topo_cell_ids.data,model_cell_coords.data)
     model_coords[vertex] = min(model_coords[vertex],coord)
   end
-
-  # A) Non-periodic case: geometry == topology
-  if n_corners == n_vertices
-    return topo_cell_ids, model_coords, model_coords
-  end
-
-  # B) Periodic case: geometry != topology
-  topo_coords = model_coords[1:n_corners]
   
-  current = n_corners
-  model_cell_ids = copy(topo_cell_ids)
-  new_nodes = Dict{VectorValue{Dp,T},Ti}()
+  n_vertices = n_corners
+  model_cell_ids = Gridap.Arrays.Table(copy(topo_cell_ids.data),copy(topo_cell_ids.ptrs))
   for (k,(vertex,coord)) in enumerate(zip(topo_cell_ids.data,model_cell_coords.data))
-    if coord != topo_coords[vertex]
-      if haskey(new_nodes,coord)
-        model_cell_ids.data[k] = new_nodes[coord]
+    if norm(coord-model_coords[vertex]) > eps(T)
+      pos = findfirst(x -> norm(x-coord) < eps(T), model_coords[n_corners+1:n_vertices])
+      if !isnothing(pos)
+        model_cell_ids.data[k] = n_corners+pos
       else
-        current += 1
-        model_coords[current] = coord
-        new_nodes[coord] = current
-        model_cell_ids.data[k] = current
+        n_vertices += 1
+        model_coords[n_vertices] = coord
+        model_cell_ids.data[k] = n_vertices
       end
     end
   end
-  @assert current == n_vertices
+  @debug "function generate_coords :: n_vertices=$n_vertices, n_corners=$n_corners."
 
+  resize!(model_coords,n_vertices)
+  topo_coords = (n_vertices == n_corners) ? model_coords : model_coords[1:n_corners]
   return model_cell_ids, model_coords, topo_coords
 end
 
