@@ -139,7 +139,14 @@ module PoissonNonConformingOctreeModelsTests
     e       = uH - uhH
     el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
 
-    fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
+    weights=map(ranks,fmodel.dmodel.models) do rank,lmodel
+      if (rank%2==0)
+        zeros(Cint,num_cells(lmodel))
+      else
+        ones(Cint,num_cells(lmodel))
+      end
+    end 
+    fmodel_red, red_glue=GridapDistributed.redistribute(fmodel,weights=weights);
     Vhred=FESpace(fmodel_red,reffe,conformity=:H1;dirichlet_tags="boundary")
     Uhred=TrialFESpace(Vhred,u)
 
