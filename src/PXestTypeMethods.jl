@@ -309,16 +309,31 @@ function pXest_balance!(::P8estType, ptr_pXest; k_2_1_balance=0)
   end
 end
 
-function pXest_partition!(::P4estType, ptr_pXest)
-  p4est_partition(ptr_pXest, 0, C_NULL)
+function pXest_partition!(pXest_type::P4estType, ptr_pXest; weights_set=false)
+  if (!weights_set)
+    p4est_partition(ptr_pXest, 0, C_NULL)
+  else
+    wcallback=pXest_weight_callback(pXest_type)
+    p4est_partition(ptr_pXest, 0, wcallback)
+  end
 end 
 
-function pXest_partition!(::P6estType, ptr_pXest)
-  p6est_partition(ptr_pXest, C_NULL)
+function pXest_partition!(pXest_type::P6estType, ptr_pXest; weights_set=false)
+  if (!weights_set)
+    p6est_partition(ptr_pXest, C_NULL)
+  else
+    wcallback=pXest_weight_callback(pXest_type)
+    p6est_partition(ptr_pXest, wcallback)
+  end
 end 
 
-function pXest_partition!(::P8estType, ptr_pXest)
-  p8est_partition(ptr_pXest, 0, C_NULL)
+function pXest_partition!(pXest_type::P8estType, ptr_pXest; weights_set=false)
+  if (!weights_set)
+    p8est_partition(ptr_pXest, 0, C_NULL)
+  else
+    wcallback=pXest_weight_callback(pXest_type)
+    p8est_partition(ptr_pXest, 0, wcallback)
+  end
 end 
 
 
@@ -803,6 +818,30 @@ function pXest_refine_callbacks(::P8estType)
                                                   Ptr{Ptr{p8est_quadrant_t}}))
 
   refine_callback_c, refine_replace_callback_c
+end 
+
+function pXest_weight_callback(::P4estType)
+  function weight_callback(::Ptr{p4est_t},
+    which_tree::p4est_topidx_t,
+    quadrant_ptr::Ptr{p4est_quadrant_t})
+    quadrant = quadrant_ptr[]
+    return unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]
+  end
+  @cfunction($weight_callback, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+end
+
+function pXest_weight_callback(::P6estType)
+  Gridap.Helpers.@notimplemented
+end 
+
+function pXest_weight_callback(::P8estType)
+  function weight_callback(::Ptr{p8est_t},
+    which_tree::p4est_topidx_t,
+    quadrant_ptr::Ptr{p8est_quadrant_t})
+    quadrant = quadrant_ptr[]
+    return unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]
+  end
+  @cfunction($weight_callback, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
 end 
 
 function _unwrap_ghost_quadrants(::P4estType, pXest_ghost)

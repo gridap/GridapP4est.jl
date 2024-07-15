@@ -1834,9 +1834,23 @@ end
 # Assumptions. Either:
 # A) model.parts MPI tasks are included in parts_redistributed_model MPI tasks; or
 # B) model.parts MPI tasks include parts_redistributed_model MPI tasks
+const WeightsArrayType=Union{Nothing,MPIArray{<:Vector{<:Integer}}}
 function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-                                        parts_redistributed_model=model.parts) where {Dc,Dp}
+                                        parts_redistributed_model=model.parts;
+                                        weights::WeightsArrayType=nothing) where {Dc,Dp}
   parts = (parts_redistributed_model === model.parts) ? model.parts : parts_redistributed_model
+  _weights=nothing
+  if (weights !== nothing)
+    Gridap.Helpers.@notimplementedif parts!==model.parts
+    _weights=map(model.dmodel.models,weights) do lmodel,weights
+       # The length of the local weights array has to match the number of 
+       # cells in the model. This includes both owned and ghost cells. 
+       # Only the flags for owned cells are actually taken into account. 
+       @assert num_cells(lmodel)==length(weights)
+       convert(Vector{Cint},weights)
+    end
+  end
+
   comm  = parts.comm
   if (GridapDistributed.i_am_in(model.parts.comm) || GridapDistributed.i_am_in(parts.comm))
     if (parts_redistributed_model !== model.parts)
@@ -1845,7 +1859,7 @@ function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc
       @assert A || B
     end
     if (parts_redistributed_model===model.parts || A)
-      _redistribute_parts_subseteq_parts_redistributed(model,parts_redistributed_model)
+      _redistribute_parts_subseteq_parts_redistributed(model,parts_redistributed_model,_weights)
     else
       _redistribute_parts_supset_parts_redistributed(model, parts_redistributed_model)
     end
@@ -1854,7 +1868,9 @@ function GridapDistributed.redistribute(model::OctreeDistributedDiscreteModel{Dc
   end
 end
 
-function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistributedDiscreteModel{Dc,Dp}, parts_redistributed_model) where {Dc,Dp}
+function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistributedDiscreteModel{Dc,Dp},
+                                                          parts_redistributed_model, 
+                                                          _weights::WeightsArrayType) where {Dc,Dp}
   parts = (parts_redistributed_model === model.parts) ? model.parts : parts_redistributed_model
   if (parts_redistributed_model === model.parts)
     ptr_pXest_old = model.ptr_pXest
@@ -1866,7 +1882,15 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
                                        parts.comm)
   end
   ptr_pXest_new = pXest_copy(model.pXest_type, ptr_pXest_old)
-  pXest_partition!(model.pXest_type, ptr_pXest_new)
+  if (_weights !== nothing)
+    init_fn_callback_c = pXest_reset_callbacks(model.pXest_type)
+    map(_weights) do _weights 
+      pXest_reset_data!(model.pXest_type, ptr_pXest_new, Cint(sizeof(Cint)), init_fn_callback_c, pointer(_weights))
+    end
+    pXest_partition!(model.pXest_type, ptr_pXest_new; weights_set=true)
+  else
+    pXest_partition!(model.pXest_type, ptr_pXest_new; weights_set=false)
+  end 
 
   # Compute RedistributeGlue
   parts_snd, lids_snd, old2new = pXest_compute_migration_control_data(model.pXest_type,ptr_pXest_old,ptr_pXest_new)
