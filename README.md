@@ -5,8 +5,8 @@
 [![Build Status](https://github.com/gridap/GridapP4est.jl/workflows/CI/badge.svg)](https://github.com/gridap/GridapP4est.jl/actions)
 [![Coverage](https://codecov.io/gh/gridap/GridapP4est.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/gridap/GridapP4est.jl)
 
-| ![](https://user-images.githubusercontent.com/38347633/134634010-2be9b499-201b-4166-80ac-e161f6adceb0.png)   |  ![](https://user-images.githubusercontent.com/38347633/134634023-83f37646-f6b9-435c-9f9f-291dea9f86c2.png) 
-|:-------------:|:-------------:|
+![amr_cubed_sphere](https://github.com/gridap/GridapP4est.jl/assets/38347633/596ab00e-58a8-4aeb-bb0f-efbe63cb2b59)
+
 
 ## Purpose 
 
