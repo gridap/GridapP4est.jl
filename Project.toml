@@ -17,7 +17,7 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [compat]
 ArgParse = "1"
 FillArrays = "0.8.4, 0.9, 0.10, 0.11, 0.12, 1"
-Gridap = "0.18.5"
+Gridap = "0.18.6"
 GridapDistributed = "0.4"
 MPI = "0.20"
 P4est_wrapper = "0.2.2"
