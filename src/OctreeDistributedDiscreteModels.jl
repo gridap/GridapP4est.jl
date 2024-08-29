@@ -297,7 +297,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
     ptr_pXest_connectivity,
     ptr_pXest,
     pXest_type::PXestType,
-    pXest_refinement_rule_type::Union{Nothing,PXestRefinementRuleType},
+    pXest_refinement_rule_type::PXestRefinementRuleType,
     owns_ptr_pXest_connectivity::Bool,
     gc_ref)
 
@@ -401,7 +401,7 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
     ## HUGE WARNING: Shouldn't we provide here the complementary of parts
     ##               instead of parts? Otherwise, when calling _free!(...)
     ##               we cannot trust on parts.
-    return VoidOctreeDistributedDiscreteModel(coarse_model,parts)
+    return VoidOctreeDistributedDiscreteModel(coarse_model,parts,PXestUniformRefinementRuleType())
   end
 end
 
@@ -415,7 +415,9 @@ end
 
 const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscreteModel{Dc,Dp,A,Nothing,C,D,Nothing}
 
-function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},
+                                            parts,
+                                            pXest_refinement_rule_type::PXestRefinementRuleType) where {Dc,Dp}
   ptr_pXest_connectivity = setup_pXest_connectivity(coarse_model)
   OctreeDistributedDiscreteModel(Dc,
                                  Dp,
@@ -426,7 +428,7 @@ function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},p
                                  ptr_pXest_connectivity,
                                  nothing,
                                  _dim_to_pXest_type(Dc),
-                                 nothing,
+                                 pXest_refinement_rule_type,
                                  true,
                                  nothing)
 end
@@ -441,7 +443,7 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
                                  model.ptr_pXest_connectivity,
                                  nothing,
                                  _dim_to_pXest_type(Dc),
-                                 nothing,
+                                 model.pXest_refinement_rule_type,
                                  false,
                                  model)
 end

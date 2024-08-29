@@ -64,9 +64,11 @@ module OctreeDistributedDiscreteModelsTests
     level_parts  = generate_level_parts(ranks,num_parts_x_level)
     coarse_model = CartesianDiscreteModel(domain,nc)
     model        = OctreeDistributedDiscreteModel(level_parts[2],coarse_model,1) 
-    vmodel1      = GridapP4est.VoidOctreeDistributedDiscreteModel(model,ranks) 
-    vmodel2      = GridapP4est.VoidOctreeDistributedDiscreteModel(coarse_model,ranks)
-
+    vmodel1      = GridapP4est.VoidOctreeDistributedDiscreteModel(model,
+                                                                  ranks)
+    vmodel2      = GridapP4est.VoidOctreeDistributedDiscreteModel(coarse_model,
+                                                                  ranks,
+                                                                  GridapP4est.PXestUniformRefinementRuleType())
     # Refining and distributing
     fmodel , rglue  = refine(model,parts=level_parts[1])
     dfmodel, dglue  = redistribute(fmodel)
