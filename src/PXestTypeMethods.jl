@@ -1061,11 +1061,11 @@ function pXest_lnodes_decode(::P8estType,face_code, hanging_face, hanging_edge)
   p8est_lnodes_decode(face_code, hanging_face, hanging_edge)
 end
 
-function num_cell_dims(::P4estType)
+function Gridap.Geometry.num_cell_dims(::P4estType)
   2
 end 
 
-function num_cell_dims(::P6P8estType)
+function Gridap.Geometry.num_cell_dims(::P6P8estType)
   3
 end 
 
@@ -1255,7 +1255,8 @@ end
 
 const p6est_half_to_regular_vertices = [ 0 1; 2 3; 0 2; 1 3]
 
-function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType, 
+function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
+                                                     pXest_refinement_rule::PXestRefinementRuleType,
                                                      ptr_pXest_lnodes, 
                                                      cell_prange) 
   
@@ -1317,7 +1318,11 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
   num_regular_faces,
   num_hanging_faces,
   gridap_cell_faces,
-  hanging_faces_glue = 
+  hanging_faces_glue,
+  hanging_faces_to_cell,
+  hanging_faces_to_lface,
+  owner_faces_pindex,
+  owner_faces_lids = 
       map(partition(cell_prange),
           element_nodes_with_ghosts,
           face_code_with_ghosts) do indices, 
@@ -1874,11 +1879,54 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
     end 
     hanging_faces_glue[Dc]  = hanging_faces_owner_cell_and_lface
 
+    hanging_faces_to_cell = Vector{Vector{Int}}(undef, Dc)
+    hanging_faces_to_lface = Vector{Vector{Int}}(undef, Dc)
+    for i=1:Dc 
+      # Locate for each hanging facet a cell to which it belongs 
+      # and local position within that cell 
+      hanging_faces_to_cell[i],
+      hanging_faces_to_lface[i] =
+          _generate_hanging_faces_to_cell_and_lface(num_regular_faces[i],
+              num_hanging_faces[i],
+              gridap_cell_faces[i])
+    end
+
+    owner_faces_pindex = Vector{Vector{Int}}(undef, Dc - 1)
+    owner_faces_lids = Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef, Dc - 1)
+
+    lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc == 2 ? QUAD : HEX, Dc - 1, 0)
+    pindex_to_cfvertex_to_fvertex = Gridap.ReferenceFEs.get_vertex_permutations(Dc == 2 ? SEGMENT : QUAD)
+
+    owner_faces_pindex[Dc-1], owner_faces_lids[Dc-1] = _compute_owner_faces_pindex_and_lids(Dc,
+        pXest_refinement_rule,
+        num_hanging_faces[Dc],
+        hanging_faces_glue[Dc],
+        hanging_faces_to_cell[Dc],
+        hanging_faces_to_lface[Dc],
+        gridap_cell_faces[1],
+        gridap_cell_faces[Dc],
+        lface_to_cvertices,
+        pindex_to_cfvertex_to_fvertex)
+
+    if (Dc == 3)
+      owner_faces_pindex[1], owner_faces_lids[1]=
+        _compute_owner_edges_pindex_and_lids(
+            num_hanging_faces[2],
+            hanging_faces_glue[2],
+            hanging_faces_to_cell[2],
+            hanging_faces_to_lface[2],
+            gridap_cell_faces[1],
+            gridap_cell_faces[2])
+    end
 
     return num_regular_faces, 
            num_hanging_faces,
            gridap_cell_faces,
-           hanging_faces_glue
+           hanging_faces_glue,
+           hanging_faces_to_cell,
+           hanging_faces_to_lface,
+           owner_faces_pindex,
+           owner_faces_lids
 
   end |> tuple_of_arrays
 
@@ -1889,8 +1937,14 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
       gridap_cell_faces[i]
     end
   end
-  non_conforming_glue=map(num_regular_faces,num_hanging_faces,hanging_faces_glue) do nrf, nhf, hfg
-    NonConformingGlue(nrf, nhf, hfg)
+  non_conforming_glue=map(num_regular_faces,
+                          num_hanging_faces,
+                          hanging_faces_glue,
+                          hanging_faces_to_cell,
+                          hanging_faces_to_lface,
+                          owner_faces_pindex,
+                          owner_faces_lids) do nrf, nhf, hfg, hfc, hfl, ofp,ofl
+    NonConformingGlue(nrf, nhf, hfg, hfc, hfl, ofp, ofl)
   end 
   gridap_cell_faces_out,non_conforming_glue
  end
