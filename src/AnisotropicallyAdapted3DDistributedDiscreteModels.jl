@@ -18,6 +18,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
     ptr_pXest_lnodes=setup_pXest_lnodes_nonconforming(pXest_type, ptr_pXest, ptr_pXest_ghost)
 
     dmodel,non_conforming_glue  = setup_non_conforming_distributed_discrete_model(pXest_type,
+                                                    PXestHorizontalRefinementRuleType(),
                                                     parts,
                                                     coarse_model,
                                                     ptr_pXest_connectivity,
@@ -87,6 +88,7 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
 
   # Build fine-grid mesh
   fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
+                                                                              model.pXest_refinement_rule_type,
                                                                               model.parts,
                                                                               model.coarse_model,
                                                                               model.ptr_pXest_connectivity,
@@ -154,6 +156,7 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
 
   # Build fine-grid mesh
   fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
+                                                                               model.pXest_refinement_rule_type,
                                                                                model.parts,
                                                                                model.coarse_model,
                                                                                model.ptr_pXest_connectivity,
@@ -201,6 +204,7 @@ end
 
 
 function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
+                                                         pXest_refinement_rule_type::PXestRefinementRuleType,
                                                          parts,
                                                          coarse_discrete_model,
                                                          ptr_pXest_connectivity,
@@ -214,7 +218,7 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
 
   gridap_cell_faces,
   non_conforming_glue=
-    generate_cell_faces_and_non_conforming_glue(pXest_type,ptr_pXest_lnodes, cell_prange)
+    generate_cell_faces_and_non_conforming_glue(pXest_type,pXest_refinement_rule_type,ptr_pXest_lnodes, cell_prange)
 
 
   nlvertices = map(non_conforming_glue) do ncglue
@@ -341,6 +345,7 @@ function generate_face_labeling(pXest_type::P6estType,
   ptr_p4est_lnodes = setup_pXest_lnodes_nonconforming(p4est_type, ptr_p4est, ptr_p4est_ghost)
 
   bottom_boundary_model,_=setup_non_conforming_distributed_discrete_model(p4est_type,
+                                                                        PXestUniformRefinementRuleType(),
                                                                         parts,
                                                                         coarse_discrete_model,
                                                                         ptr_p4est_connectivity,
@@ -637,6 +642,7 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
 
   # Build fine-grid mesh
   fmodel,non_conforming_glue = setup_non_conforming_distributed_discrete_model(model.pXest_type,
+                                                                               model.pXest_refinement_rule_type,
                                                                                model.parts,
                                                                                model.coarse_model,
                                                                                model.ptr_pXest_connectivity,

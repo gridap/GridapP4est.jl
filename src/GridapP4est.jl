@@ -16,10 +16,12 @@ module GridapP4est
   include("PXestTypeMethods.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
   include("OctreeDistributedDiscreteModels.jl")
+  include("Geometry.jl")
   include("AnisotropicallyAdapted3DDistributedDiscreteModels.jl")
   include("GridapFixes.jl")
   include("FESpaces.jl")
   include("AdaptivityFlagsMarkingStrategies.jl")
+
   
   export UniformlyRefinedForestOfOctreesDiscreteModel
   export OctreeDistributedDiscreteModel
