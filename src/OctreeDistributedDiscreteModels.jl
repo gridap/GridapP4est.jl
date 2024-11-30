@@ -38,15 +38,17 @@ struct NonConformingGlue{Dc,A,B,C,D,E,F,G}
   end
 end
 
-function _compute_owner_faces_lids(Df,Dc,num_hanging_faces,hanging_faces_glue,cell_faces)
+function _compute_owner_faces_lids(Df,Dc,
+                                   num_cell_vertices,num_cell_edges,num_cell_faces,
+                                   num_hanging_faces,hanging_faces_glue,cell_faces)
   num_owner_faces = 0
   owner_faces_lids = Dict{Int,Tuple{Int,Int,Int}}()
   for fid_hanging = 1:num_hanging_faces
       ocell, ocell_lface, _ = hanging_faces_glue[fid_hanging]
       if (ocell!=-1)
-          ocell_dim = face_dim(Val{Dc}, ocell_lface)
+          ocell_dim = face_dim(num_cell_vertices,num_cell_edges,num_cell_faces,ocell_lface)
           if (ocell_dim == Df)
-              ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+              ocell_lface_within_dim = face_lid_within_dim(num_cell_vertices,num_cell_edges,num_cell_faces,ocell_lface)
               owner_face = cell_faces[ocell][ocell_lface_within_dim]
               if !(haskey(owner_faces_lids, owner_face))
                   num_owner_faces += 1
@@ -88,6 +90,9 @@ end
 #    compute permutation id
 function _compute_owner_faces_pindex_and_lids(Dc,
                                             pXest_refinement_rule,
+                                            num_cell_vertices,
+                                            num_cell_edges,
+                                            num_cell_faces,
                                             num_hanging_faces,
                                             hanging_faces_glue,
                                             hanging_faces_to_cell,
@@ -98,6 +103,9 @@ function _compute_owner_faces_pindex_and_lids(Dc,
                                             pindex_to_cfvertex_to_fvertex)
 
   owner_faces_lids =_compute_owner_faces_lids(Dc-1,Dc,
+                                              num_cell_vertices,
+                                              num_cell_edges,
+                                              num_cell_faces,
                                               num_hanging_faces,
                                               hanging_faces_glue,
                                               cell_faces)                                       
@@ -114,11 +122,11 @@ function _compute_owner_faces_pindex_and_lids(Dc,
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fid_hanging=$(fid_hanging) ocell=$(ocell) ocell_lface=$(ocell_lface) subface=$(subface)"
 
       if (ocell!=-1)
-          oface_dim = face_dim(Val{Dc}, ocell_lface)
+          oface_dim = face_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_lface)
           if (oface_dim == Dc-1)
               cell = hanging_faces_to_cell[fid_hanging]
               lface = hanging_faces_to_lface[fid_hanging]
-              ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+              ocell_lface_within_dim = face_lid_within_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_lface)
               owner_face = cell_faces[ocell][ocell_lface_within_dim]
               owner_face_lid, _ = owner_faces_lids[owner_face]
               for fcorner in _subface_to_face_corners(pXest_refinement_rule, subface)
@@ -136,7 +144,7 @@ function _compute_owner_faces_pindex_and_lids(Dc,
   owner_faces_pindex = Vector{Int}(undef, num_owner_faces)
   for owner_face in keys(owner_faces_lids)
       (owner_face_lid, ocell, ocell_lface) = owner_faces_lids[owner_face]
-      ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+      ocell_lface_within_dim = face_lid_within_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_lface)
       # Compute permutation id by comparing 
       #  1. cell_vertices[ocell][ocell_lface]
       #  2. owner_face_vertex_ids 
@@ -172,6 +180,7 @@ end
 
 
 function _compute_owner_edges_pindex_and_lids(
+  num_cell_vertices, num_cell_edges, num_cell_faces,
   num_hanging_edges,
   hanging_edges_glue,
   hanging_edges_to_cell,
@@ -194,9 +203,9 @@ function _compute_owner_edges_pindex_and_lids(
   # Find the owner hanging edge
   for fid_hanging = 1:num_hanging_edges
       ocell, ocell_ledge, subedge = hanging_edges_glue[fid_hanging]
-      ocell_dim = face_dim(Val{Dc}, ocell_ledge)
+      ocell_dim = face_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_ledge)
       if (ocell!=-1 && ocell_dim==1)
-        ocell_ledge_within_dim = face_lid_within_dim(Val{Dc}, ocell_ledge)
+        ocell_ledge_within_dim = face_lid_within_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_ledge)
         cell = hanging_edges_to_cell[fid_hanging]
         ledge = hanging_edges_to_ledge[fid_hanging]
         gvertex1 = cell_vertices[cell][ledge_to_cvertices[ledge][subedge]]
