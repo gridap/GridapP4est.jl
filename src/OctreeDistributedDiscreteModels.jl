@@ -190,6 +190,9 @@ function _compute_owner_edges_pindex_and_lids(
   Dc=3
   owner_edges_lids =_compute_owner_faces_lids(1,
                                               Dc,
+                                              num_cell_vertices,
+                                              num_cell_edges,
+                                              num_cell_faces,
                                               num_hanging_edges,
                                               hanging_edges_glue,
                                               cell_edges)
