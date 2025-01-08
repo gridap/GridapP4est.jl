@@ -507,23 +507,38 @@ function get_num_children(::Type{Val{Dc}}) where Dc
 end
 
 function get_refinement_rule(::P4estType,::PXestUniformRefinementRuleType)
-  reffe  = LagrangianRefFE(Float64,QUAD,1)
-  Gridap.Adaptivity.RefinementRule(reffe,2)
+  Gridap.Adaptivity.RedRefinementRule(QUAD)
 end 
 
 function get_refinement_rule(::P8estType,::PXestUniformRefinementRuleType)
-  reffe  = LagrangianRefFE(Float64,HEX,1)
-  Gridap.Adaptivity.RefinementRule(reffe,2)
+  Gridap.Adaptivity.RedRefinementRule(HEX)
 end 
 
+function _grid_to_unstructured_grid_with_affine_map(ref_grid)
+  coords     = Gridap.Geometry.get_node_coordinates(ref_grid) |> collect
+  coords     = reshape(coords,(length(coords),))
+  conn       = Gridap.Geometry.get_cell_node_ids(ref_grid) |> collect |> Gridap.Arrays.Table
+  reffes     = Gridap.Geometry.get_reffes(ref_grid) |> collect
+  cell_types = Gridap.Geometry.get_cell_type(ref_grid) |> collect
+  UnstructuredGrid(coords,conn,reffes,cell_types;has_affine_map=true)
+end  
+
 function get_refinement_rule(::P6estType,::PXestVerticalRefinementRuleType)
-  reffe  = LagrangianRefFE(Float64,HEX,1)
-  Gridap.Adaptivity.RefinementRule(reffe,(2,1,1))
+  # reffe  = LagrangianRefFE(Float64,HEX,1)
+  # Gridap.Adaptivity.RefinementRule(reffe,(2,1,1))
+
+  # Alternative version to the two lines above with AffineMaps
+  ref_grid   = _grid_to_unstructured_grid_with_affine_map(Gridap.Geometry.compute_reference_grid(HEX,(2,1,1)))
+  RefinementRule(Gridap.Adaptivity.GenericRefinement(),HEX,ref_grid)
 end 
 
 function get_refinement_rule(::P6estType,::PXestHorizontalRefinementRuleType)
-  reffe  = LagrangianRefFE(Float64,HEX,1)
-  Gridap.Adaptivity.RefinementRule(reffe,(1,2,2))
+  # reffe  = LagrangianRefFE(Float64,HEX,1)
+  # Gridap.Adaptivity.RefinementRule(reffe,(1,2,2))
+
+  # Alternative version to the two lines above with AffineMaps
+  ref_grid   = _grid_to_unstructured_grid_with_affine_map(Gridap.Geometry.compute_reference_grid(HEX,(1,2,2)))
+  RefinementRule(Gridap.Adaptivity.GenericRefinement(),HEX,ref_grid)
 end 
 
 function pXest_update_flags!(pXest_type::P4P8estType, ptr_pXest_old, ptr_pXest_new)
@@ -1243,14 +1258,9 @@ function _compute_fine_to_coarse_model_glue(
     if (!(GridapDistributed.i_am_in(cparts)))
       nothing
     else
-      ## The following lines are a replacement for WhiteRefinementRule()
-      ## to have the types of rrule_nothing_flag and rrule_refinement_flag
-      ## to be 100% equivalent for all type parameters
       polytope  = (Dc==2 ? QUAD : HEX)
       partition = Gridap.ReferenceFEs.tfill(1,Val{Dc}())
-      ref_grid  = UnstructuredGrid(compute_reference_grid(polytope,partition))
-      rrule_nothing_flag = 
-         Gridap.Adaptivity.RefinementRule(Gridap.Adaptivity.WithoutRefinement(),polytope,ref_grid)
+      rrule_nothing_flag = Gridap.Adaptivity.WhiteRefinementRule(polytope)
       rrule_refinement_flag = get_refinement_rule(pXest_type,pXest_refinement_rule_type)
       coarse_cell_to_rrule  = map(x -> (x==nothing_flag) ? 1 : 2,flags)
       rrules = Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
