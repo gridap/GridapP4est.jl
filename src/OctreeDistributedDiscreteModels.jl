@@ -1259,7 +1259,6 @@ function _compute_fine_to_coarse_model_glue(
       nothing
     else
       polytope  = (Dc==2 ? QUAD : HEX)
-      partition = Gridap.ReferenceFEs.tfill(1,Val{Dc}())
       rrule_nothing_flag = Gridap.Adaptivity.WhiteRefinementRule(polytope)
       rrule_refinement_flag = get_refinement_rule(pXest_type,pXest_refinement_rule_type)
       coarse_cell_to_rrule  = map(x -> (x==nothing_flag) ? 1 : 2,flags)
