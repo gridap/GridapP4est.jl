@@ -507,38 +507,23 @@ function get_num_children(::Type{Val{Dc}}) where Dc
 end
 
 function get_refinement_rule(::P4estType,::PXestUniformRefinementRuleType)
-  Gridap.Adaptivity.RedRefinementRule(QUAD)
+  reffe  = LagrangianRefFE(Float64,QUAD,1)
+  Gridap.Adaptivity.RefinementRule(reffe,2)
 end 
 
 function get_refinement_rule(::P8estType,::PXestUniformRefinementRuleType)
-  Gridap.Adaptivity.RedRefinementRule(HEX)
+  reffe  = LagrangianRefFE(Float64,HEX,1)
+  Gridap.Adaptivity.RefinementRule(reffe,2)
 end 
 
-function _grid_to_unstructured_grid_with_affine_map(ref_grid)
-  coords     = Gridap.Geometry.get_node_coordinates(ref_grid) |> collect
-  coords     = reshape(coords,(length(coords),))
-  conn       = Gridap.Geometry.get_cell_node_ids(ref_grid) |> collect |> Gridap.Arrays.Table
-  reffes     = Gridap.Geometry.get_reffes(ref_grid) |> collect
-  cell_types = Gridap.Geometry.get_cell_type(ref_grid) |> collect
-  UnstructuredGrid(coords,conn,reffes,cell_types;has_affine_map=true)
-end  
-
 function get_refinement_rule(::P6estType,::PXestVerticalRefinementRuleType)
-  # reffe  = LagrangianRefFE(Float64,HEX,1)
-  # Gridap.Adaptivity.RefinementRule(reffe,(2,1,1))
-
-  # Alternative version to the two lines above with AffineMaps
-  ref_grid   = _grid_to_unstructured_grid_with_affine_map(Gridap.Geometry.compute_reference_grid(HEX,(2,1,1)))
-  RefinementRule(Gridap.Adaptivity.GenericRefinement(),HEX,ref_grid)
+  reffe  = LagrangianRefFE(Float64,HEX,1)
+  Gridap.Adaptivity.RefinementRule(reffe,(2,1,1))
 end 
 
 function get_refinement_rule(::P6estType,::PXestHorizontalRefinementRuleType)
-  # reffe  = LagrangianRefFE(Float64,HEX,1)
-  # Gridap.Adaptivity.RefinementRule(reffe,(1,2,2))
-
-  # Alternative version to the two lines above with AffineMaps
-  ref_grid   = _grid_to_unstructured_grid_with_affine_map(Gridap.Geometry.compute_reference_grid(HEX,(1,2,2)))
-  RefinementRule(Gridap.Adaptivity.GenericRefinement(),HEX,ref_grid)
+  reffe  = LagrangianRefFE(Float64,HEX,1)
+  Gridap.Adaptivity.RefinementRule(reffe,(1,2,2))
 end 
 
 function pXest_update_flags!(pXest_type::P4P8estType, ptr_pXest_old, ptr_pXest_new)
