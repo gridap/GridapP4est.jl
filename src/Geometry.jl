@@ -50,6 +50,14 @@ end
 
 
 function _generate_owner_face_to_subfaces(model,ncglue::GridapP4est.NonConformingGlue{D}) where D
+  cell_reffe = Gridap.Geometry.get_reffes(model)
+  @assert length(cell_reffe) == 1 
+  cell_reffe = cell_reffe[1]
+
+  num_cell_vertices = Gridap.ReferenceFEs.num_faces(cell_reffe,0)
+  num_cell_edges = D==3 ? Gridap.ReferenceFEs.num_faces(cell_reffe,1) : 0
+  num_cell_faces = Gridap.ReferenceFEs.Gridap.ReferenceFEs.num_faces(cell_reffe,D-1)
+
   num_children=GridapP4est.get_num_children(Val{D-1})
   
   # Generate owner_face_to_subfaces_ptrs
@@ -70,7 +78,10 @@ function _generate_owner_face_to_subfaces(model,ncglue::GridapP4est.NonConformin
   for i=1:num_hanging_faces
     (ocell,ocell_lface,subface)=ncglue.hanging_faces_glue[D][i]
     if (ocell!=-1)
-      ocell_lface_within_dim =GridapP4est.face_lid_within_dim(Val{D}, ocell_lface)
+      ocell_lface_within_dim =GridapP4est.face_lid_within_dim(num_cell_vertices,
+                                                              num_cell_edges,
+                                                              num_cell_faces,
+                                                              ocell_lface)
       owner_gface=cell_faces[ocell][ocell_lface_within_dim]
       (lowner,_,_)=ncglue.owner_faces_lids[D-1][owner_gface]
       spos=owner_face_to_subfaces_ptrs[lowner]

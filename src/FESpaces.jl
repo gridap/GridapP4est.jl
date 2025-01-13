@@ -389,23 +389,17 @@ function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
     Gridap.Arrays.Table(data_owner_face_dofs, ptrs)
 end
 
-function face_dim(::Type{Val{Dc}}, face_lid) where {Dc}
-    num_vertices = GridapP4est.num_cell_vertices(Val{Dc})
-    num_edges = GridapP4est.num_cell_edges(Val{Dc})
-    num_faces = GridapP4est.num_cell_faces(Val{Dc})
+function face_dim(num_vertices, num_edges, num_faces, face_lid)
     if (face_lid <= num_vertices)
         return 0
     elseif (face_lid <= num_vertices + num_edges)
         return 1
     elseif (face_lid <= num_vertices + num_edges + num_faces)
-        return Dc - 1
+        return (num_edges==0 ? 1 : 2)
     end
 end
 
-function face_lid_within_dim(::Type{Val{Dc}}, face_lid) where {Dc}
-    num_vertices = GridapP4est.num_cell_vertices(Val{Dc})
-    num_edges = GridapP4est.num_cell_edges(Val{Dc})
-    num_faces = GridapP4est.num_cell_faces(Val{Dc})
+function face_lid_within_dim(num_vertices, num_edges, num_faces, face_lid)
     if (face_lid <= num_vertices)
         return face_lid
     elseif (face_lid <= num_vertices + num_edges)
@@ -450,6 +444,9 @@ end
 
 function _generate_constraints!(Df,
     Dc,
+    num_vertices,
+    num_edges,
+    num_faces,
     cell_faces,
     num_hanging_faces,
     hanging_faces_to_cell,
@@ -472,10 +469,6 @@ function _generate_constraints!(Df,
     @assert Dc == 2 || Dc == 3
     @assert 0 ≤ Df < Dc
 
-    num_vertices = GridapP4est.num_cell_vertices(Val{Dc})
-    num_edges = GridapP4est.num_cell_edges(Val{Dc})
-    num_faces = GridapP4est.num_cell_faces(Val{Dc})
-
     offset = 0
     if (Df ≥ 1)
         offset += num_vertices
@@ -497,8 +490,8 @@ function _generate_constraints!(Df,
         lface = hanging_faces_to_lface[fid_hanging]
         ocell, ocell_lface, subface = hanging_faces_glue[fid_hanging]
         if (ocell!=-1)
-            ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
-            oface_dim = face_dim(Val{Dc}, ocell_lface)
+            ocell_lface_within_dim = face_lid_within_dim(num_vertices, num_edges, num_faces, ocell_lface)
+            oface_dim = face_dim(num_vertices, num_edges, num_faces, ocell_lface)
 
             if (Df == 0) # Am I a vertex?
                 hanging_lvertex_within_first_subface = 2^oface_dim
@@ -544,7 +537,7 @@ function _generate_constraints!(Df,
             oface = getindex!(cache_cell_faces[oface_dim+1], cell_faces[oface_dim+1], ocell)[ocell_lface_within_dim]
             oface_lid, _ = owner_faces_lids[oface_dim][oface]
             pindex = owner_faces_pindex[oface_dim][oface_lid]
-            @debug "Df=$(Df) Dc=$(Dc) fid_hanging=$(fid_hanging) cell=$(cell) oface=$(oface) oface_lid=$(oface_lid) pindex=$(pindex) ocell=$(ocell) ocell_lface=$(ocell_lface) ocell_lface_within_dim=$(ocell_lface_within_dim)  subface=$(subface) oface_dim=$(oface_dim) cur_subface_own_dofs=$(cur_subface_own_dofs) face_own_dofs=$(face_own_dofs[offset+lface])"
+            @debug "Df=$(Df) Dc=$(Dc) fid_hanging=$(fid_hanging) cell=$(cell) oface=$(oface) oface_lid=$(oface_lid) pindex=$(pindex) ocell=$(ocell) ocell_lface=$(ocell_lface) ocell_lface_within_dim=$(ocell_lface_within_dim)  subface=$(subface) oface_dim=$(oface_dim) cur_subface_own_dofs=$(cur_subface_own_dofs) offset=$(offset) lface=$(lface) face_own_dofs[offset+lface]=$(face_own_dofs[offset+lface])"
             for ((ldof, dof), ldof_subface) in zip(enumerate(face_own_dofs[offset+lface]), cur_subface_own_dofs)
                 push!(sDOF_to_dof, current_cell_dof_ids[dof])
                 push!(sDOF_to_dofs, hanging_faces_owner_face_dofs[fid_hanging])
@@ -643,9 +636,9 @@ function get_face_dofs_permutations(
     end
 end 
 
-function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
+function generate_constraints(dmodel::GridapDistributed.DistributedDiscreteModel{Dc},
     spaces_wo_constraints,
-    reffe,
+    cell_reffe,
     ref_constraints,
     face_subface_ldof_to_cell_ldof) where {Dc}
 
@@ -697,9 +690,6 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
                                   model,
                                   V
 
-        basis, reffe_args, reffe_kwargs = reffe
-        cell_reffe = ReferenceFE(Dc == 2 ? QUAD : HEX, basis, reffe_args...; reffe_kwargs...)
-
         cell_dof_ids = get_cell_dof_ids(V)
         face_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(cell_reffe)
         face_dofs = Gridap.ReferenceFEs.get_face_dofs(cell_reffe)
@@ -726,8 +716,6 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         sDOF_to_dof = Int[]
         sDOF_to_dofs = Vector{Int}[]
         sDOF_to_coeffs = Vector{Float64}[]
-
-        basis, reffe_args, reffe_kwargs = reffe
      
         face_dofs_permutations = Vector{Vector{Vector{Int}}}(undef, Dc-1)
         face_dofs_permutations[Dc-1] = 
@@ -742,9 +730,17 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         if (Dc == 3)
             subface_own_dofs[1] = _restrict_face_dofs_to_face_dim(cell_reffe,1)
         end
+    
+        num_vertices = Gridap.ReferenceFEs.num_faces(cell_reffe,0)
+        num_edges = Dc==3 ? Gridap.ReferenceFEs.num_faces(cell_reffe,1) : 0
+        num_faces = Gridap.ReferenceFEs.Gridap.ReferenceFEs.num_faces(cell_reffe,Dc-1)
+
         if (_num_face_own_dofs(cell_reffe,0)>0)
             _generate_constraints!(0,
                 Dc,
+                num_vertices,
+                num_edges,
+                num_faces,
                 [gridap_cell_faces[i] for i = 1:Dc],
                 num_hanging_faces[1],
                 hanging_faces_to_cell[1],
@@ -769,6 +765,9 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
             if (_num_face_own_dofs(cell_reffe,1)>0)
                 _generate_constraints!(1,
                     Dc,
+                    num_vertices,
+                    num_edges,
+                    num_faces,
                     [gridap_cell_faces[i] for i = 1:Dc],
                     num_hanging_faces[2],
                     hanging_faces_to_cell[2],
@@ -792,6 +791,9 @@ function generate_constraints(dmodel::OctreeDistributedDiscreteModel{Dc},
         if (_num_face_own_dofs(cell_reffe,Dc-1)>0)
             _generate_constraints!(Dc - 1,
                 Dc,
+                num_vertices,
+                num_edges,
+                num_faces,
                 [gridap_cell_faces[i] for i = 1:Dc],
                 num_hanging_faces[Dc],
                 hanging_faces_to_cell[Dc],
@@ -886,8 +888,15 @@ function _add_constraints(model::OctreeDistributedDiscreteModel{Dc},
             face_subface_ldof_to_cell_ldof[1] =
                 _generate_face_subface_ldof_to_cell_ldof(model.pXest_refinement_rule_type, 1, Dc, reffe)
         end
+        basis, reffe_args, reffe_kwargs = reffe
+        polytope = Dc==2 ? QUAD : HEX
+        cell_reffe = ReferenceFE(polytope, basis, reffe_args...; reffe_kwargs...)
         sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
-            generate_constraints(model, spaces_wo_constraints, reffe, ref_constraints, face_subface_ldof_to_cell_ldof)
+            generate_constraints(model, 
+                                 spaces_wo_constraints, 
+                                 cell_reffe, 
+                                 ref_constraints, 
+                                 face_subface_ldof_to_cell_ldof)
         spaces_w_constraints = map(spaces_wo_constraints,
             sDOF_to_dof,
             sDOF_to_dofs,
@@ -916,7 +925,7 @@ end
 # Generates a new DistributedSingleFieldFESpace composed 
 # by local FE spaces with linear multipoint constraints added
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
-                                 reffe::LagragianOrNedelec; 
+                                 reffe; 
                                  kwargs...) where {Dc}
     spaces_wo_constraints = map(local_views(model)) do m
         FESpace(m, reffe; kwargs...)
