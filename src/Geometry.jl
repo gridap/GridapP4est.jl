@@ -1,7 +1,7 @@
-struct FaceToCellGlueNonConforming{A,B,C,D} <: GridapType
+struct FaceToCellGlueNonConforming{A,B,C} <: GridapType
   face_is_owner    :: Vector{Bool}
   face_to_subface  :: Vector{Int8}
-  face_to_cell_glue:: Gridap.Geometry.FaceToCellGlue{A,B,C,D}
+  face_to_cell_glue:: Gridap.Geometry.FaceToCellGlue{A,B,C}
 end
 
 function _adjust_cell_to_lface_to_pindex!(f2cg_nc,Df,ncglue,cell_faces)
