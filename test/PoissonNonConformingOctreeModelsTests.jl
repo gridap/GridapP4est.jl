@@ -412,9 +412,9 @@ module PoissonNonConformingOctreeModelsTests
     @assert el2 < tol
   end
 
-  function test_2d(ranks,order,cg_or_dg,T::Type;num_amr_steps=5)
+  function test_2d(ranks,order,cg_or_dg,T::Type;num_amr_steps=5,num_ghost_layers=1)
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
-    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2;num_ghost_layers=num_ghost_layers)
     test_refine_and_coarsen_at_once(ranks,dmodel,order,cg_or_dg,T)
     rdmodel=dmodel
     for i=1:num_amr_steps
@@ -422,7 +422,7 @@ module PoissonNonConformingOctreeModelsTests
     end
   end 
 
-  function test_3d(ranks,order,cg_or_dg,T::Type;num_amr_steps=5)
+  function test_3d(ranks,order,cg_or_dg,T::Type;num_amr_steps=5,num_ghost_layers=1)
     coarse_model=CartesianDiscreteModel((0,1,0,1,0,1),(1,1,1))
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2)
     test_refine_and_coarsen_at_once(ranks,dmodel,order,cg_or_dg,T)
@@ -432,9 +432,9 @@ module PoissonNonConformingOctreeModelsTests
     end
   end 
 
-  function test(ranks,TVDc::Type{Val{Dc}}, perm, order,cg_or_dg,T::Type) where Dc
+  function test(ranks,TVDc::Type{Val{Dc}}, perm, order,cg_or_dg,T::Type,num_ghost_layers=1) where Dc
     coarse_model = setup_model(TVDc,perm)
-    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 1)
+    model = OctreeDistributedDiscreteModel(ranks, coarse_model, 1, num_ghost_layers=num_ghost_layers)
     test_transfer_ops_and_redistribute(ranks,model,order,cg_or_dg,T)
   end
   
@@ -457,13 +457,17 @@ module PoissonNonConformingOctreeModelsTests
     for Dc=2:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
      test(ranks,Val{Dc},perm,order,:cg,_field_type(Val{Dc}(),scalar_or_vector))
     end
-    for order=2:2, scalar_or_vector in (:scalar,)
-      test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5)
-      test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
+    for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,2)
+      test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
+              num_ghost_layers=num_ghost_layers)
+      test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
+              num_ghost_layers=num_ghost_layers)
     end
-    for order=2:2, scalar_or_vector in (:scalar,:vector)
-     test_2d(ranks,order,:cg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5)
-     test_3d(ranks,order,:cg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4)
+    for order=2:2, scalar_or_vector in (:scalar,:vector), num_ghost_layers in (1,2)
+      test_2d(ranks,order,:cg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
+               num_ghost_layers=num_ghost_layers)
+      test_3d(ranks,order,:cg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
+              num_ghost_layers=num_ghost_layers )
     end
   end
 end

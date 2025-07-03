@@ -102,6 +102,18 @@ function setup_pXest(pXest_type::P8estType, comm, connectivity, num_uniform_refi
                   C_NULL, C_NULL)
 end
 
+function expand_pXest_ghost(pXest_type::P4estType, ptr_pXest, ptr_pXest_ghost)
+  p4est_ghost_expand(ptr_pXest, ptr_pXest_ghost)
+end
+
+function expand_pXest_ghost(pXest_type::P6estType, ptr_pXest, ptr_pXest_ghost)
+  p6est_ghost_expand(ptr_pXest, ptr_pXest_ghost)
+end
+
+function expand_pXest_ghost(pXest_type::P8estType, ptr_pXest, ptr_pXest_ghost)
+  p8est_ghost_expand(ptr_pXest, ptr_pXest_ghost)
+end
+
 function setup_pXest_ghost(pXest_type::P4estType, ptr_pXest)
   p4est_ghost_new(ptr_pXest,P4est_wrapper.P4EST_CONNECT_FULL)
 end 
@@ -113,6 +125,14 @@ end
 function setup_pXest_ghost(pXest_type::P8estType, ptr_pXest)
   p8est_ghost_new(ptr_pXest,P4est_wrapper.P8EST_CONNECT_FULL)
 end 
+
+function setup_pXest_ghost(pXest_type::Union{P4estType,P6estType,P8estType}, ptr_pXest, num_ghost_layers::Int)
+  ptr_pXest_ghost=setup_pXest_ghost(pXest_type, ptr_pXest)
+  for i=1:num_ghost_layers-1
+    expand_pXest_ghost(pXest_type, ptr_pXest, ptr_pXest_ghost)
+  end
+  ptr_pXest_ghost
+end
 
 function setup_pXest_lnodes(pXest_type::P4estType, ptr_pXest, ptr_pXest_ghost)
   p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))

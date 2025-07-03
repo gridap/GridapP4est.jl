@@ -1041,12 +1041,13 @@ end
 function setup_ptr_pXest_objects(pXest_type::PXestType,
                                  comm,
                                  coarse_discrete_model,
-                                 num_uniform_refinements)
+                                 num_uniform_refinements;
+                                 num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS)
   ptr_pXest_connectivity=setup_pXest_connectivity(coarse_discrete_model)
   # Create a new forest
   ptr_pXest = setup_pXest(pXest_type,comm,ptr_pXest_connectivity,num_uniform_refinements)
   # Build the ghost layer
-  ptr_pXest_ghost=setup_pXest_ghost(pXest_type,ptr_pXest)
+  ptr_pXest_ghost=setup_pXest_ghost(pXest_type,ptr_pXest,num_ghost_layers)
   ptr_pXest_lnodes=setup_pXest_lnodes(pXest_type, ptr_pXest, ptr_pXest_ghost)
   ptr_pXest_connectivity, ptr_pXest, ptr_pXest_ghost, ptr_pXest_lnodes
 end
@@ -1092,7 +1093,8 @@ end
 function UniformlyRefinedForestOfOctreesDiscreteModel(
     parts::AbstractVector{<:Integer},
     coarse_discrete_model::DiscreteModel{Dc,Dp},
-    num_uniform_refinements::Int
+    num_uniform_refinements::Int;
+    num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS
 ) where {Dc,Dp}
 
   comm = parts.comm
@@ -1105,7 +1107,8 @@ function UniformlyRefinedForestOfOctreesDiscreteModel(
          ptr_pXest_lnodes = setup_ptr_pXest_objects(pXest_type,
                                                     comm,
                                                     coarse_discrete_model,
-                                                    num_uniform_refinements)
+                                                    num_uniform_refinements,
+                                                    num_ghost_layers=num_ghost_layers)
 
   # Write forest to VTK file
   # p4est_vtk_write_file(unitsquare_forest, C_NULL, "my_step")

@@ -13,8 +13,8 @@ module PoissonUniformlyRefinedOctreeModelsTests
   function parse_commandline()
     s = ArgParseSettings()
     @add_arg_table! s begin
-        "--subdomains", "-s"
-        help = "Tuple with the # of coarse subdomains per Cartesian direction"
+        "--coarse-cells", "-c"
+        help = "Tuple with the # of coarse cells per Cartesian direction"
         arg_type = Int64
         default=[1,1]
         nargs='+'
@@ -22,25 +22,29 @@ module PoissonUniformlyRefinedOctreeModelsTests
         help = "# of uniform refinements"
         arg_type = Int64
         default=1
+        "--num-ghost-layers", "-g"
+        help = "# of ghost layers"
+        arg_type = Int64
+        default=1
     end
     return parse_args(s)
   end
 
-  function run(distribute,subdomains,num_uniform_refinements)
-    ranks=distribute(LinearIndices((prod(subdomains),)))
+  function run(distribute,coarse_cells,num_uniform_refinements,num_ghost_layers)
+    ranks=distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     GridapP4est.with(ranks;p4est_verbosity_level=P4est_wrapper.SC_LP_STATISTICS) do 
       # Manufactured solution
       u(x) = x[1] + x[2]
       f(x) = -Δ(u)(x)
 
-      if length(subdomains)==2
+      if length(coarse_cells)==2
         domain=(0,1,0,1)
       else
-        @assert length(subdomains)==3
+        @assert length(coarse_cells)==3
         domain=(0,1,0,1,0,1)
       end
 
-      coarse_discrete_model=CartesianDiscreteModel(domain,subdomains)
+      coarse_discrete_model=CartesianDiscreteModel(domain,coarse_cells)
       model=UniformlyRefinedForestOfOctreesDiscreteModel(ranks,
                                                          coarse_discrete_model,
                                                          num_uniform_refinements)

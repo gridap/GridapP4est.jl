@@ -12,6 +12,8 @@ module GridapP4est
   using P4est_wrapper
   const PArrays = PartitionedArrays
 
+  const DEFAULT_NUM_GHOST_LAYERS = 1
+
   include("Environment.jl")
   include("PXestTypeMethods.jl")
   include("UniformlyRefinedForestOfOctreesDiscreteModels.jl")
