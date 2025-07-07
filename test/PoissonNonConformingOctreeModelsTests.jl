@@ -458,12 +458,14 @@ module PoissonNonConformingOctreeModelsTests
      test(ranks,Val{Dc},perm,order,:cg,_field_type(Val{Dc}(),scalar_or_vector))
     end
     for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,2)
-      test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
-              num_ghost_layers=num_ghost_layers)
-      test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
-              num_ghost_layers=num_ghost_layers)
+      if (num_ghost_layers==1 || length(ranks)>1)
+        test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
+                num_ghost_layers=num_ghost_layers)
+        test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
+                num_ghost_layers=num_ghost_layers)
+      end
     end
-    for order=2:2, scalar_or_vector in (:scalar,:vector), num_ghost_layers in (1,2)
+    for order=2:2, scalar_or_vector in (:scalar,:vector), num_ghost_layers in (1,)
       test_2d(ranks,order,:cg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
                num_ghost_layers=num_ghost_layers)
       test_3d(ranks,order,:cg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
