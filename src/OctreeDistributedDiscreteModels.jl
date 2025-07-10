@@ -299,6 +299,10 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
   # Might be optionally be used, e.g., to enforce that this
   # model is GCed after another existing model
   gc_ref                      :: Any
+
+  # Number of ghost layers 
+  num_ghost_layers             :: Int
+
   function OctreeDistributedDiscreteModel(
     Dc::Int,
     Dp::Int,
@@ -311,7 +315,10 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
     pXest_type::PXestType,
     pXest_refinement_rule_type::PXestRefinementRuleType,
     owns_ptr_pXest_connectivity::Bool,
-    gc_ref)
+    gc_ref;
+    num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS)
+
+    @assert num_ghost_layers >= 1
 
     if (isa(dmodel,GridapDistributed.DistributedDiscreteModel))
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
@@ -333,7 +340,8 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
                                    pXest_type,
                                    pXest_refinement_rule_type,
                                    owns_ptr_pXest_connectivity,
-                                   gc_ref)
+                                   gc_ref,
+                                   num_ghost_layers)
     Init(model)
     return model
   end
@@ -349,7 +357,8 @@ function OctreeDistributedDiscreteModel(
   pXest_type,
   pXest_refinement_rule_type,
   owns_ptr_pXest_connectivity,
-  gc_ref) where {Dc,Dp}
+  gc_ref;
+  num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS) where {Dc,Dp}
 
   return OctreeDistributedDiscreteModel(Dc,
                                         Dp,
@@ -362,7 +371,8 @@ function OctreeDistributedDiscreteModel(
                                         pXest_type,
                                         pXest_refinement_rule_type,
                                         owns_ptr_pXest_connectivity,
-                                        gc_ref)
+                                        gc_ref,
+                                        num_ghost_layers=num_ghost_layers)
 end
 
 function _dim_to_pXest_type(Dc)
@@ -372,7 +382,8 @@ end
 
 function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
-                                        num_uniform_refinements) where {Dc,Dp}
+                                        num_uniform_refinements;
+                                        num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS) where {Dc,Dp}
   comm = parts.comm
   if GridapDistributed.i_am_in(comm)
 
@@ -384,7 +395,8 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
           ptr_pXest_lnodes = setup_ptr_pXest_objects(pXest_type,
                                                      comm,
                                                      coarse_model,
-                                                     num_uniform_refinements)
+                                                     num_uniform_refinements,
+                                                     num_ghost_layers=num_ghost_layers)
     dmodel = setup_distributed_discrete_model(pXest_type,
                                             parts,
                                             coarse_model,
@@ -408,7 +420,8 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                           pXest_type,
                                           PXestUniformRefinementRuleType(),
                                           true,
-                                          nothing)
+                                          nothing;
+                                          num_ghost_layers=num_ghost_layers)
   else
     ## HUGE WARNING: Shouldn't we provide here the complementary of parts
     ##               instead of parts? Otherwise, when calling _free!(...)
@@ -1535,7 +1548,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
       end
 
       # Extract ghost and lnodes
-      ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_new_pXest)
+      ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_new_pXest, model.num_ghost_layers)
       ptr_pXest_lnodes = setup_pXest_lnodes(pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
       # Build fine-grid mesh
@@ -1619,7 +1632,7 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   ptr_new_pXest = _refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -1675,7 +1688,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
 
   if (GridapDistributed.i_am_in(comm))
      # Extract ghost and lnodes
-     ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+     ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
      ptr_pXest_lnodes = setup_pXest_lnodes(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
      # Build coarse-grid mesh
@@ -1912,7 +1925,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   glue = GridapDistributed.RedistributeGlue(parts,model.parts,parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_pXest_new)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_pXest_new, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_pXest_new, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -2006,7 +2019,7 @@ function _redistribute_parts_supset_parts_redistributed(
     pXest_type = _dim_to_pXest_type(Dc)
 
     # Extract ghost and lnodes
-    ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_pXest_new)
+    ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_pXest_new, model.num_ghost_layers)
     ptr_pXest_lnodes = setup_pXest_lnodes(pXest_type, ptr_pXest_new, ptr_pXest_ghost)
 
     # # Build fine-grid mesh
