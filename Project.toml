@@ -1,7 +1,7 @@
 name = "GridapP4est"
 uuid = "c2c8e14b-f5fd-423d-9666-1dd9ad120af9"
 authors = ["Alberto F. Martin <alberto.f.martin@anu.edu.au>"]
-version = "0.3.8"
+version = "0.3.11"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
@@ -9,6 +9,7 @@ FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
 Gridap = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
 GridapDistributed = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 P4est_wrapper = "3743d7c0-8adf-11ea-380b-7d33b0ecc1da"
 PartitionedArrays = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
@@ -17,8 +18,9 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 [compat]
 ArgParse = "1"
 FillArrays = "0.8.4, 0.9, 0.10, 0.11, 0.12, 1"
-Gridap = "0.18.2"
+Gridap = "0.19.2"
 GridapDistributed = "0.4"
+Logging = "1"
 MPI = "0.20"
 P4est_wrapper = "0.2.2"
 PartitionedArrays = "0.3.3"

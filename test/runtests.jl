@@ -35,7 +35,7 @@ function run_tests(testdir)
       MPI.mpiexec() do cmd
         if f in ["PoissonUniformlyRefinedOctreeModelsTests.jl"]
           np = [4]
-          extra_args = "-s 2 2 -r 2"
+          extra_args = "-c 2 2 -r 2 -g 2"
         elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl",
                      "AdaptivityFlagsMarkingStrategiesTests.jl"]

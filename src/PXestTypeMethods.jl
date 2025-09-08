@@ -102,6 +102,18 @@ function setup_pXest(pXest_type::P8estType, comm, connectivity, num_uniform_refi
                   C_NULL, C_NULL)
 end
 
+function expand_pXest_ghost(pXest_type::P4estType, ptr_pXest, ptr_pXest_ghost)
+  p4est_ghost_expand(ptr_pXest, ptr_pXest_ghost)
+end
+
+function expand_pXest_ghost(pXest_type::P6estType, ptr_pXest, ptr_pXest_ghost)
+  p6est_ghost_expand(ptr_pXest, ptr_pXest_ghost)
+end
+
+function expand_pXest_ghost(pXest_type::P8estType, ptr_pXest, ptr_pXest_ghost)
+  p8est_ghost_expand(ptr_pXest, ptr_pXest_ghost)
+end
+
 function setup_pXest_ghost(pXest_type::P4estType, ptr_pXest)
   p4est_ghost_new(ptr_pXest,P4est_wrapper.P4EST_CONNECT_FULL)
 end 
@@ -113,6 +125,14 @@ end
 function setup_pXest_ghost(pXest_type::P8estType, ptr_pXest)
   p8est_ghost_new(ptr_pXest,P4est_wrapper.P8EST_CONNECT_FULL)
 end 
+
+function setup_pXest_ghost(pXest_type::Union{P4estType,P6estType,P8estType}, ptr_pXest, num_ghost_layers::Int)
+  ptr_pXest_ghost=setup_pXest_ghost(pXest_type, ptr_pXest)
+  for i=1:num_ghost_layers-1
+    expand_pXest_ghost(pXest_type, ptr_pXest, ptr_pXest_ghost)
+  end
+  ptr_pXest_ghost
+end
 
 function setup_pXest_lnodes(pXest_type::P4estType, ptr_pXest, ptr_pXest_ghost)
   p4est_lnodes_new(ptr_pXest, ptr_pXest_ghost, Cint(1))
@@ -1899,6 +1919,9 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
 
     owner_faces_pindex[Dc-1], owner_faces_lids[Dc-1] = _compute_owner_faces_pindex_and_lids(Dc,
         pXest_refinement_rule,
+        n_cell_vertices,
+        n_cell_edges,
+        n_cell_faces,
         num_hanging_faces[Dc],
         hanging_faces_glue[Dc],
         hanging_faces_to_cell[Dc],
@@ -1911,6 +1934,9 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
     if (Dc == 3)
       owner_faces_pindex[1], owner_faces_lids[1]=
         _compute_owner_edges_pindex_and_lids(
+            n_cell_vertices,
+            n_cell_edges,
+            n_cell_faces,
             num_hanging_faces[2],
             hanging_faces_glue[2],
             hanging_faces_to_cell[2],

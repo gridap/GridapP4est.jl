@@ -38,15 +38,17 @@ struct NonConformingGlue{Dc,A,B,C,D,E,F,G}
   end
 end
 
-function _compute_owner_faces_lids(Df,Dc,num_hanging_faces,hanging_faces_glue,cell_faces)
+function _compute_owner_faces_lids(Df,Dc,
+                                   num_cell_vertices,num_cell_edges,num_cell_faces,
+                                   num_hanging_faces,hanging_faces_glue,cell_faces)
   num_owner_faces = 0
   owner_faces_lids = Dict{Int,Tuple{Int,Int,Int}}()
   for fid_hanging = 1:num_hanging_faces
       ocell, ocell_lface, _ = hanging_faces_glue[fid_hanging]
       if (ocell!=-1)
-          ocell_dim = face_dim(Val{Dc}, ocell_lface)
+          ocell_dim = face_dim(num_cell_vertices,num_cell_edges,num_cell_faces,ocell_lface)
           if (ocell_dim == Df)
-              ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+              ocell_lface_within_dim = face_lid_within_dim(num_cell_vertices,num_cell_edges,num_cell_faces,ocell_lface)
               owner_face = cell_faces[ocell][ocell_lface_within_dim]
               if !(haskey(owner_faces_lids, owner_face))
                   num_owner_faces += 1
@@ -88,6 +90,9 @@ end
 #    compute permutation id
 function _compute_owner_faces_pindex_and_lids(Dc,
                                             pXest_refinement_rule,
+                                            num_cell_vertices,
+                                            num_cell_edges,
+                                            num_cell_faces,
                                             num_hanging_faces,
                                             hanging_faces_glue,
                                             hanging_faces_to_cell,
@@ -98,6 +103,9 @@ function _compute_owner_faces_pindex_and_lids(Dc,
                                             pindex_to_cfvertex_to_fvertex)
 
   owner_faces_lids =_compute_owner_faces_lids(Dc-1,Dc,
+                                              num_cell_vertices,
+                                              num_cell_edges,
+                                              num_cell_faces,
                                               num_hanging_faces,
                                               hanging_faces_glue,
                                               cell_faces)                                       
@@ -114,11 +122,11 @@ function _compute_owner_faces_pindex_and_lids(Dc,
       @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fid_hanging=$(fid_hanging) ocell=$(ocell) ocell_lface=$(ocell_lface) subface=$(subface)"
 
       if (ocell!=-1)
-          oface_dim = face_dim(Val{Dc}, ocell_lface)
+          oface_dim = face_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_lface)
           if (oface_dim == Dc-1)
               cell = hanging_faces_to_cell[fid_hanging]
               lface = hanging_faces_to_lface[fid_hanging]
-              ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+              ocell_lface_within_dim = face_lid_within_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_lface)
               owner_face = cell_faces[ocell][ocell_lface_within_dim]
               owner_face_lid, _ = owner_faces_lids[owner_face]
               for fcorner in _subface_to_face_corners(pXest_refinement_rule, subface)
@@ -136,7 +144,7 @@ function _compute_owner_faces_pindex_and_lids(Dc,
   owner_faces_pindex = Vector{Int}(undef, num_owner_faces)
   for owner_face in keys(owner_faces_lids)
       (owner_face_lid, ocell, ocell_lface) = owner_faces_lids[owner_face]
-      ocell_lface_within_dim = face_lid_within_dim(Val{Dc}, ocell_lface)
+      ocell_lface_within_dim = face_lid_within_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_lface)
       # Compute permutation id by comparing 
       #  1. cell_vertices[ocell][ocell_lface]
       #  2. owner_face_vertex_ids 
@@ -172,6 +180,7 @@ end
 
 
 function _compute_owner_edges_pindex_and_lids(
+  num_cell_vertices, num_cell_edges, num_cell_faces,
   num_hanging_edges,
   hanging_edges_glue,
   hanging_edges_to_cell,
@@ -181,6 +190,9 @@ function _compute_owner_edges_pindex_and_lids(
   Dc=3
   owner_edges_lids =_compute_owner_faces_lids(1,
                                               Dc,
+                                              num_cell_vertices,
+                                              num_cell_edges,
+                                              num_cell_faces,
                                               num_hanging_edges,
                                               hanging_edges_glue,
                                               cell_edges)
@@ -194,9 +206,9 @@ function _compute_owner_edges_pindex_and_lids(
   # Find the owner hanging edge
   for fid_hanging = 1:num_hanging_edges
       ocell, ocell_ledge, subedge = hanging_edges_glue[fid_hanging]
-      ocell_dim = face_dim(Val{Dc}, ocell_ledge)
+      ocell_dim = face_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_ledge)
       if (ocell!=-1 && ocell_dim==1)
-        ocell_ledge_within_dim = face_lid_within_dim(Val{Dc}, ocell_ledge)
+        ocell_ledge_within_dim = face_lid_within_dim(num_cell_vertices, num_cell_edges, num_cell_faces, ocell_ledge)
         cell = hanging_edges_to_cell[fid_hanging]
         ledge = hanging_edges_to_ledge[fid_hanging]
         gvertex1 = cell_vertices[cell][ledge_to_cvertices[ledge][subedge]]
@@ -287,6 +299,10 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
   # Might be optionally be used, e.g., to enforce that this
   # model is GCed after another existing model
   gc_ref                      :: Any
+
+  # Number of ghost layers 
+  num_ghost_layers             :: Int
+
   function OctreeDistributedDiscreteModel(
     Dc::Int,
     Dp::Int,
@@ -297,9 +313,12 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
     ptr_pXest_connectivity,
     ptr_pXest,
     pXest_type::PXestType,
-    pXest_refinement_rule_type::Union{Nothing,PXestRefinementRuleType},
+    pXest_refinement_rule_type::PXestRefinementRuleType,
     owns_ptr_pXest_connectivity::Bool,
-    gc_ref)
+    gc_ref;
+    num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS)
+
+    @assert num_ghost_layers >= 1
 
     if (isa(dmodel,GridapDistributed.DistributedDiscreteModel))
       Gridap.Helpers.@check Dc == Gridap.Geometry.num_cell_dims(dmodel)
@@ -321,7 +340,8 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
                                    pXest_type,
                                    pXest_refinement_rule_type,
                                    owns_ptr_pXest_connectivity,
-                                   gc_ref)
+                                   gc_ref,
+                                   num_ghost_layers)
     Init(model)
     return model
   end
@@ -337,7 +357,8 @@ function OctreeDistributedDiscreteModel(
   pXest_type,
   pXest_refinement_rule_type,
   owns_ptr_pXest_connectivity,
-  gc_ref) where {Dc,Dp}
+  gc_ref;
+  num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS) where {Dc,Dp}
 
   return OctreeDistributedDiscreteModel(Dc,
                                         Dp,
@@ -350,7 +371,8 @@ function OctreeDistributedDiscreteModel(
                                         pXest_type,
                                         pXest_refinement_rule_type,
                                         owns_ptr_pXest_connectivity,
-                                        gc_ref)
+                                        gc_ref,
+                                        num_ghost_layers=num_ghost_layers)
 end
 
 function _dim_to_pXest_type(Dc)
@@ -360,7 +382,8 @@ end
 
 function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                         coarse_model::DiscreteModel{Dc,Dp},
-                                        num_uniform_refinements) where {Dc,Dp}
+                                        num_uniform_refinements;
+                                        num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS) where {Dc,Dp}
   comm = parts.comm
   if GridapDistributed.i_am_in(comm)
 
@@ -372,7 +395,8 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
           ptr_pXest_lnodes = setup_ptr_pXest_objects(pXest_type,
                                                      comm,
                                                      coarse_model,
-                                                     num_uniform_refinements)
+                                                     num_uniform_refinements,
+                                                     num_ghost_layers=num_ghost_layers)
     dmodel = setup_distributed_discrete_model(pXest_type,
                                             parts,
                                             coarse_model,
@@ -396,12 +420,13 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                           pXest_type,
                                           PXestUniformRefinementRuleType(),
                                           true,
-                                          nothing)
+                                          nothing;
+                                          num_ghost_layers=num_ghost_layers)
   else
     ## HUGE WARNING: Shouldn't we provide here the complementary of parts
     ##               instead of parts? Otherwise, when calling _free!(...)
     ##               we cannot trust on parts.
-    return VoidOctreeDistributedDiscreteModel(coarse_model,parts)
+    return VoidOctreeDistributedDiscreteModel(coarse_model,parts,PXestUniformRefinementRuleType())
   end
 end
 
@@ -415,7 +440,9 @@ end
 
 const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscreteModel{Dc,Dp,A,Nothing,C,D,Nothing}
 
-function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},parts) where {Dc,Dp}
+function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},
+                                            parts,
+                                            pXest_refinement_rule_type::PXestRefinementRuleType) where {Dc,Dp}
   ptr_pXest_connectivity = setup_pXest_connectivity(coarse_model)
   OctreeDistributedDiscreteModel(Dc,
                                  Dp,
@@ -426,7 +453,7 @@ function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},p
                                  ptr_pXest_connectivity,
                                  nothing,
                                  _dim_to_pXest_type(Dc),
-                                 nothing,
+                                 pXest_refinement_rule_type,
                                  true,
                                  nothing)
 end
@@ -441,7 +468,7 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
                                  model.ptr_pXest_connectivity,
                                  nothing,
                                  _dim_to_pXest_type(Dc),
-                                 nothing,
+                                 model.pXest_refinement_rule_type,
                                  false,
                                  model)
 end
@@ -1241,14 +1268,8 @@ function _compute_fine_to_coarse_model_glue(
     if (!(GridapDistributed.i_am_in(cparts)))
       nothing
     else
-      ## The following lines are a replacement for WhiteRefinementRule()
-      ## to have the types of rrule_nothing_flag and rrule_refinement_flag
-      ## to be 100% equivalent for all type parameters
       polytope  = (Dc==2 ? QUAD : HEX)
-      partition = Gridap.ReferenceFEs.tfill(1,Val{Dc}())
-      ref_grid  = UnstructuredGrid(compute_reference_grid(polytope,partition))
-      rrule_nothing_flag = 
-         Gridap.Adaptivity.RefinementRule(Gridap.Adaptivity.WithoutRefinement(),polytope,ref_grid)
+      rrule_nothing_flag = Gridap.Adaptivity.WhiteRefinementRule(polytope)
       rrule_refinement_flag = get_refinement_rule(pXest_type,pXest_refinement_rule_type)
       coarse_cell_to_rrule  = map(x -> (x==nothing_flag) ? 1 : 2,flags)
       rrules = Gridap.Arrays.CompressedArray([rrule_nothing_flag,rrule_refinement_flag],coarse_cell_to_rrule)
@@ -1527,7 +1548,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
       end
 
       # Extract ghost and lnodes
-      ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_new_pXest)
+      ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_new_pXest, model.num_ghost_layers)
       ptr_pXest_lnodes = setup_pXest_lnodes(pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
       # Build fine-grid mesh
@@ -1609,7 +1630,7 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   ptr_new_pXest = _refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -1665,7 +1686,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
 
   if (GridapDistributed.i_am_in(comm))
      # Extract ghost and lnodes
-     ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+     ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
      ptr_pXest_lnodes = setup_pXest_lnodes(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
      # Build coarse-grid mesh
@@ -1902,7 +1923,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
   glue = GridapDistributed.RedistributeGlue(parts,model.parts,parts_rcv,parts_snd,lids_rcv,lids_snd,old2new,new2old)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_pXest_new)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_pXest_new, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_pXest_new, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -1996,7 +2017,7 @@ function _redistribute_parts_supset_parts_redistributed(
     pXest_type = _dim_to_pXest_type(Dc)
 
     # Extract ghost and lnodes
-    ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_pXest_new)
+    ptr_pXest_ghost  = setup_pXest_ghost(pXest_type, ptr_pXest_new, model.num_ghost_layers)
     ptr_pXest_lnodes = setup_pXest_lnodes(pXest_type, ptr_pXest_new, ptr_pXest_ghost)
 
     # # Build fine-grid mesh
