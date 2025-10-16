@@ -2605,13 +2605,16 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
 
      hanging_faces_glue_new = Vector{Tuple{Int,Int,Int}}(undef,num_hanging_faces_new)
      for fid_hanging_old in 1:num_hanging_faces_old
-         fid_hanging_new = old2new[num_regular_faces_old+fid_hanging_old]
-         if fid_hanging_new<0
-            mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
-            tocell = mface_to_tface[mocell]
-            @assert tocell>0
-            hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
-         end
+		 fid_old = num_regular_faces_old+fid_hanging_old
+		 if fid_old in keys(old2new)
+	         fid_hanging_new = old2new[fid_old]
+	         if fid_hanging_new<0
+	            mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
+	            tocell = mface_to_tface[mocell]
+	            @assert tocell>0
+	            hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
+	         end
+		 end
     end
 
      cell_faces_new = 
