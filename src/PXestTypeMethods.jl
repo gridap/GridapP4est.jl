@@ -1911,18 +1911,18 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
               gridap_cell_faces[i])
     end
 
-	owner_faces_pindex = Vector{Vector{Int}}(undef, Dc - 1)
+    owner_faces_pindex = Vector{Vector{Int}}(undef, Dc - 1)
     owner_faces_lids = Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef, Dc - 1)
 
     _fill_owner_faces_pindex_and_lids!(Dc,
-	                                   pXest_refinement_rule,
-	                                   owner_faces_pindex,
-									   owner_faces_lids,
-									   num_hanging_faces,
-									   hanging_faces_glue,
-									   hanging_faces_to_cell,
-									   hanging_faces_to_lface,
-									   gridap_cell_faces)
+                                       pXest_refinement_rule,
+                                       owner_faces_pindex,
+                                       owner_faces_lids,
+                                       num_hanging_faces,
+                                       hanging_faces_glue,
+                                       hanging_faces_to_cell,
+                                       hanging_faces_to_lface,
+                                       gridap_cell_faces)
 
     return num_regular_faces, 
            num_hanging_faces,

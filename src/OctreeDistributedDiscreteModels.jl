@@ -2307,7 +2307,7 @@ end
 
 function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, trian, non_conforming_glue_old)
     non_conforming_glue_new, cell_faces_new = 
-	  map(local_views(trian), non_conforming_glue_old) do trian, non_conforming_glue_old
+      map(local_views(trian), non_conforming_glue_old) do trian, non_conforming_glue_old
         model = get_background_model(trian)
         Dcm = num_cell_dims(model)
         topology_old = get_grid_topology(model)
@@ -2373,25 +2373,25 @@ function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, tri
 end 
 
 function _generate_face_labeling_triangulation(trian,
-	                                           trian_cell_gids,
-	                                           cell_faces_new, 
-								               non_conforming_glue_old, 
-								               non_conforming_glue_new, 
-								               topology_new)
+                                               trian_cell_gids,
+                                               cell_faces_new, 
+                                               non_conforming_glue_old, 
+                                               non_conforming_glue_new, 
+                                               topology_new)
 
-	model = get_background_model(trian)
+    model = get_background_model(trian)
 
-	interior_boundary_entity_id = 
-	    reduce(max,map(_compute_max_entity_id,map(get_face_labeling, local_views(model.dmodel))),init=-1) + 1 
-	
-	face_labeling_new = map(local_views(trian), 
+    interior_boundary_entity_id = 
+        reduce(max,map(_compute_max_entity_id,map(get_face_labeling, local_views(model.dmodel))),init=-1) + 1 
+    
+    face_labeling_new = map(local_views(trian), 
                             cell_faces_new, 
                             non_conforming_glue_old, 
                             non_conforming_glue_new, 
                             topology_new) do trian,all_cell_faces_new, nc_glue_old, nc_glue_new, topology_new
         
         model = get_background_model(trian)
-		Dcm = num_cell_dims(model)
+        Dcm = num_cell_dims(model)
         glue = get_glue(trian, Val{Dcm}())
         topo_old = get_grid_topology(model)
         d_to_dface_to_parent_dface = Vector{Vector{Int}}(undef, Dcm+1)
@@ -2424,11 +2424,11 @@ function _generate_face_labeling_triangulation(trian,
         face_labeling_new = Gridap.Geometry.restrict(face_labeling_old,d_to_dface_to_parent_dface)
      
         
-		# From now on, we create a new entity id for all faces that belong to the internal boundary
-		# of the triangulation. This set includes hanging faces which are no longer hanging faces.
-	    # Apart from the new entity id, we also associate a tag to it, named "interior_boundary"
+        # From now on, we create a new entity id for all faces that belong to the internal boundary
+        # of the triangulation. This set includes hanging faces which are no longer hanging faces.
+        # Apart from the new entity id, we also associate a tag to it, named "interior_boundary"
 
-		# Hanging faces that are now regular faces
+        # Hanging faces that are now regular faces
         for d=0:Dcm-1
             for regular_face_id in d_to_face_ids_hanging_to_regular[d+1]
                 face_labeling_new.d_to_dface_to_entity[d+1][regular_face_id] = interior_boundary_entity_id
@@ -2443,39 +2443,39 @@ function _generate_face_labeling_triangulation(trian,
                 cells_around_old = topo_old.n_m_to_nface_to_mfaces[Dcm,Dcm+1][old_face_id]
                 if length(cells_around_new) == 1 && length(cells_around_old)>1
                     face_labeling_new.d_to_dface_to_entity[Dcm][new_face_id] = interior_boundary_entity_id
-					for d=0:Dcm-2
-						facet_faces = get_faces(topology_new, Dcm-1, d)[new_face_id]
-						for facet_face in facet_faces
-							face_labeling_new.d_to_dface_to_entity[d+1][facet_face] = interior_boundary_entity_id
-						end
-					end
+                    for d=0:Dcm-2
+                        facet_faces = get_faces(topology_new, Dcm-1, d)[new_face_id]
+                        for facet_face in facet_faces
+                            face_labeling_new.d_to_dface_to_entity[d+1][facet_face] = interior_boundary_entity_id
+                        end
+                    end
                 end
             end
         end
         add_tag!(face_labeling_new,"interior_boundary",[interior_boundary_entity_id])
-		for d=0:Dcm-1
-			@debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) cell_faces_new[d+1]=$(all_cell_faces_new[d+1])")
-			@debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) face_labeling_new.d_to_dface_to_entity[d+1]=$(face_labeling_new.d_to_dface_to_entity[d+1])")
-		end 
+        for d=0:Dcm-1
+            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) cell_faces_new[d+1]=$(all_cell_faces_new[d+1])")
+            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) face_labeling_new.d_to_dface_to_entity[d+1]=$(face_labeling_new.d_to_dface_to_entity[d+1])")
+        end 
         face_labeling_new
     end
 
     vertex_to_entity = map(face_labeling_new) do face_labeling_new
-		face_labeling_new.d_to_dface_to_entity[1]
-	end
+        face_labeling_new.d_to_dface_to_entity[1]
+    end
 
-	# Update the face_labeling of those faces which are only 
-	# on ghost cells by means of a nearest neighbour communication
-	Dcm = num_cell_dims(model)
-	polytope = Dcm==2 ? QUAD : HEX
+    # Update the face_labeling of those faces which are only 
+    # on ghost cells by means of a nearest neighbour communication
+    Dcm = num_cell_dims(model)
+    polytope = Dcm==2 ? QUAD : HEX
     update_face_to_entity_with_ghost_data!(vertex_to_entity,
                                            trian_cell_gids,
                                            num_faces(polytope,0),
                                            cell_to_faces(topology_new,Dcm,0))
     if Dcm==3
-	   edge_to_entity = map(face_labeling_new) do face_labeling_new
-		 face_labeling_new.d_to_dface_to_entity[1]
-	   end
+       edge_to_entity = map(face_labeling_new) do face_labeling_new
+         face_labeling_new.d_to_dface_to_entity[1]
+       end
        update_face_to_entity_with_ghost_data!(edge_to_entity,
                                               trian_cell_gids,
                                               num_faces(polytope,1),
@@ -2483,8 +2483,8 @@ function _generate_face_labeling_triangulation(trian,
     end
   
     facet_to_entity = map(face_labeling_new) do face_labeling_new
-		face_labeling_new.d_to_dface_to_entity[Dcm]
-	end
+        face_labeling_new.d_to_dface_to_entity[Dcm]
+    end
 
     update_face_to_entity_with_ghost_data!(facet_to_entity,
                                            trian_cell_gids,
@@ -2492,14 +2492,14 @@ function _generate_face_labeling_triangulation(trian,
                                            cell_to_faces(topology_new,Dcm,Dcm-1))
 
     cell_to_entity = map(face_labeling_new) do face_labeling_new
-		face_labeling_new.d_to_dface_to_entity[Dcm+1]
-	end
+        face_labeling_new.d_to_dface_to_entity[Dcm+1]
+    end
 
     update_face_to_entity_with_ghost_data!(cell_to_entity,
                                            trian_cell_gids,
                                            num_faces(polytope,Dcm),
                                            cell_to_faces(topology_new,Dcm,Dcm))
-	
+    
     return face_labeling_new
 end
 
@@ -2508,21 +2508,21 @@ function _generate_active_models_and_non_conforming_glue(
                                    pXest_type,
                                    pXest_refinement_rule,
                                    trian::GridapDistributed.DistributedTriangulation{Dct,Dpt},
-								   trian_cell_gids,
+                                   trian_cell_gids,
                                    non_conforming_glue_old::AbstractVector{<:NonConformingGlue}) where {Dct,Dpt}
     
     
-	model = get_background_model(trian)
+    model = get_background_model(trian)
 
-	# If the triangulation covers all faces of the background model,
-	# then we can simply reuse the existing local models and non_conforming_glue
-	covers_all_faces = GridapDistributed._covers_all_faces(model,trian)
-	covers_all_faces && return (local_views(model.dmodel), non_conforming_glue_old)
+    # If the triangulation covers all faces of the background model,
+    # then we can simply reuse the existing local models and non_conforming_glue
+    covers_all_faces = GridapDistributed._covers_all_faces(model,trian)
+    covers_all_faces && return (local_views(model.dmodel), non_conforming_glue_old)
     
-	Dcm = num_cell_dims(model)
+    Dcm = num_cell_dims(model)
        
     non_conforming_glue_new, cell_faces_new = 
-	      _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, trian, non_conforming_glue_old)
+          _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, trian, non_conforming_glue_old)
 
     cell_corner_lids = map(cell_faces_new) do cell_faces_new
        cell_faces_new[1]
@@ -2530,7 +2530,7 @@ function _generate_active_models_and_non_conforming_glue(
 
     cell_vertex_coordinates = map(local_views(trian)) do trian 
         model = get_background_model(trian)
-		Dcm = num_cell_dims(model)
+        Dcm = num_cell_dims(model)
         grid = get_grid(model)
         tglue=get_glue(trian, Val{Dcm}())
         tface_to_mface = tglue.tface_to_mface
@@ -2551,12 +2551,12 @@ function _generate_active_models_and_non_conforming_glue(
         end
     end
 
-	face_labeling_new = _generate_face_labeling_triangulation(trian,
-			                                                  trian_cell_gids, 
-	                                                          cell_faces_new, 
-												              non_conforming_glue_old, 
-												              non_conforming_glue_new, 
-												              topology_new)
+    face_labeling_new = _generate_face_labeling_triangulation(trian,
+                                                              trian_cell_gids, 
+                                                              cell_faces_new, 
+                                                              non_conforming_glue_old, 
+                                                              non_conforming_glue_new, 
+                                                              topology_new)
 
     active_models = map(grid_new,topology_new,face_labeling_new) do grid, topology, face_labeling
         Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
