@@ -968,7 +968,14 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
        cell_fe = CellFE(m,cell_reffe,conf,sign_flip)
        FESpace(m, cell_fe; kwargs...)
     end
-    _add_constraints(model,reffe,spaces_wo_constraints;conformity=conformity,kwargs...)
+    _add_constraints(model.pXest_refinement_rule_type,
+                    model.dmodel.models,
+                    get_cell_gids(model),
+                    model.non_conforming_glue,
+                    GridapDistributed.DistributedTriangulation(map(get_triangulation,spaces_wo_constraints),model),
+                    reffe,
+                    spaces_wo_constraints;
+                    kwargs...)
 end
 
 function Gridap.FESpaces.FESpace(
