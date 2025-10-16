@@ -975,15 +975,16 @@ function Gridap.FESpaces.FESpace(
 	        _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
             reffe; 
             kwargs...) where {Dc, Dp, A}
-
-    model = get_background_model(_dtrian)
 	
 	dtrian = GridapDistributed.add_ghost_cells(_dtrian)
+	dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
 
     # TO-THINK: I find awkward that the ad-hoc non_conforming_glue that
 	#           we build here is used below in _add_constraints() but 
 	#           discarded after this call finishes. Is this really how
 	#           we want it to be?
+
+    model = get_background_model(_dtrian)
 
 	# REMARK: this call below ressembles the rationale behind get_active_model(trian)
 	#         in Gridap. We cannot use get_active_model(trian) here because
@@ -991,6 +992,7 @@ function Gridap.FESpaces.FESpace(
 	models, non_conforming_glue = _generate_active_models_and_non_conforming_glue(model.pXest_type,
 		                                                    model.pXest_refinement_rule_type,
 	                                                        dtrian,
+															dtrian_cell_gids,
 													        model.non_conforming_glue)
 
     # REMARK: we have to build the local FE spaces out of the local portions 
@@ -1000,6 +1002,11 @@ function Gridap.FESpaces.FESpace(
 	#         in the call to the FESpace constructor. If we do not do this, then 
 	#         we get errors when evaluating cell integrals because mistmatching 
 	#         background discrete models
+
+    # TO-THINK: I also find awkward that the ad-hoc active_model that
+	#           we built here is discarded after this call finishes. Is this really how
+	#           we want it to be? If am not wrong, we also do the same in Gridap, so from
+	#           this point of view, it is consistent.
 	spaces_wo_constraints = map(models, local_views(dtrian)) do m, t
         FESpace(m, reffe; trian=t, kwargs...)
     end
@@ -1007,7 +1014,7 @@ function Gridap.FESpaces.FESpace(
 
 	_add_constraints(model.pXest_refinement_rule_type,
 	                 models,
-					 GridapDistributed.generate_cell_gids(dtrian),
+					 dtrian_cell_gids,
 					 non_conforming_glue,
 					 dtrian,
 	                 reffe,

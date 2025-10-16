@@ -1620,7 +1620,7 @@ function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp},
 end 
 
 function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-		                             refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+                                     refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                                  parts=nothing) where {Dc,Dp}
 
   Gridap.Helpers.@notimplementedif parts!=nothing
@@ -2177,7 +2177,7 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::PXestType,
 
   gridap_cell_faces,
   non_conforming_glue=
-    generate_cell_faces_and_non_conforming_glue(pXest_type,pXest_refinement_rule_type,ptr_pXest_lnodes, cell_prange)
+    generate_cell_faces_and_non_conforming_glue(pXest_type, pXest_refinement_rule_type, ptr_pXest_lnodes, cell_prange)
 
   cell_corner_lids = map(gridap_cell_faces[1]) do cell_lids
     Gridap.Arrays.Table(cell_lids.data,cell_lids.ptrs) # JaggedArray -> Table
@@ -2232,15 +2232,7 @@ function _compute_max_entity_id(face_labeling)
     max_entity_id=max(maximum(face_labeling.d_to_dface_to_entity[i]),max_entity_id)
   end
   max_entity_id
-end 
-
-function _compute_min_entity_id(face_labeling)
-  min_entity_id = typemin(eltype(first(face_labeling.d_to_dface_to_entity))) 
-  for i=1:length(face_labeling.d_to_dface_to_entity)
-    min_entity_id=min(minimum(face_labeling.d_to_dface_to_entity[i]),min_entity_id)
-  end
-  min_entity_id
-end 
+end
 
 function _set_hanging_labels!(face_labeling,non_conforming_glue,coarse_face_labeling)
   max_entity_id = _compute_max_entity_id(coarse_face_labeling)
@@ -2265,20 +2257,20 @@ end
 
 
 function _fill_owner_faces_pindex_and_lids!(Dc,
-	                                        pXest_refinement_rule,
-	                                        owner_faces_pindex,
-											owner_faces_lids,
-											num_hanging_faces,
-											hanging_faces_glue,
-											hanging_faces_to_cell,
-											hanging_faces_to_lface,
-											cell_faces)
+                                            pXest_refinement_rule,
+                                            owner_faces_pindex,
+                                            owner_faces_lids,
+                                            num_hanging_faces,
+                                            hanging_faces_glue,
+                                            hanging_faces_to_cell,
+                                            hanging_faces_to_lface,
+                                            cell_faces)
 
-	n_cell_vertices = num_cell_vertices(Val{Dc})
+    n_cell_vertices = num_cell_vertices(Val{Dc})
     n_cell_edges    = num_cell_edges(Val{Dc})
-    n_cell_faces    = num_cell_faces(Val{Dc})										
+    n_cell_faces    = num_cell_faces(Val{Dc})                                        
 
-	lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc == 2 ? QUAD : HEX, Dc - 1, 0)
+    lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc == 2 ? QUAD : HEX, Dc - 1, 0)
     pindex_to_cfvertex_to_fvertex = Gridap.ReferenceFEs.get_vertex_permutations(Dc == 2 ? SEGMENT : QUAD)
 
     owner_faces_pindex[Dc-1], owner_faces_lids[Dc-1] = _compute_owner_faces_pindex_and_lids(Dc,
@@ -2311,236 +2303,335 @@ function _fill_owner_faces_pindex_and_lids!(Dc,
 end
 
 
-
 ### Machinery required to build a FESpace out of a triangulation ###
-function _generate_active_models_and_non_conforming_glue(
-	                               pXest_type,
-	                               pXest_refinement_rule,
-	                               trian::GridapDistributed.DistributedTriangulation{Dct,Dpt},
-	                               non_conforming_glue_old::AbstractVector{<:NonConformingGlue}) where {Dct,Dpt}
 
-    model = get_background_model(trian)
+function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, trian, non_conforming_glue_old)
+    non_conforming_glue_new, cell_faces_new = 
+	  map(local_views(trian), non_conforming_glue_old) do trian, non_conforming_glue_old
+        model = get_background_model(trian)
+        Dcm = num_cell_dims(model)
+        topology_old = get_grid_topology(model)
+        tglue=get_glue(trian, Val{Dcm}())
+        tface_to_mface = tglue.tface_to_mface
+        mface_to_tface = tglue.mface_to_tface
+
+        num_regular_faces=Vector{Int}(undef,Dcm)
+        num_hanging_faces=Vector{Int}(undef,Dcm)
+        hanging_faces_glue=Vector{Vector{Tuple{Int,Int,Int}}}(undef,Dcm)
+        hanging_faces_to_cell=Vector{Vector{Int}}(undef,Dcm)
+        hanging_faces_to_lface=Vector{Vector{Int}}(undef,Dcm)
+        owner_faces_pindex=Vector{Vector{Int}}(undef,Dcm-1)
+        owner_faces_lids=Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef,Dcm-1)
+        cell_faces_new=Vector{Gridap.Arrays.Table}(undef,Dcm)
+
+        for d=0:Dcm-1 
+            cell_faces_old = get_faces(topology_old, Dcm, d)
+            num_regular_faces_old  = non_conforming_glue_old.num_regular_faces[d+1]
+            num_hanging_faces_old  = non_conforming_glue_old.num_hanging_faces[d+1]
+            hanging_faces_glue_old = non_conforming_glue_old.hanging_faces_glue[d+1]
+
+            num_regular_faces[d+1],
+            num_hanging_faces[d+1],
+            cell_faces_new[d+1],
+            hanging_faces_glue[d+1] =
+            _generate_new_cell_faces_and_glue(cell_faces_old,
+                                              num_regular_faces_old,
+                                              num_hanging_faces_old,
+                                              hanging_faces_glue_old,
+                                              tface_to_mface,
+                                              mface_to_tface)
+
+            # Locate for each hanging facet a cell to which it belongs 
+            # and local position within that cell 
+            hanging_faces_to_cell[d+1],
+            hanging_faces_to_lface[d+1] =
+                _generate_hanging_faces_to_cell_and_lface(num_regular_faces[d+1],
+                                                          num_hanging_faces[d+1],
+                                                          cell_faces_new[d+1])
+        end
+
+        _fill_owner_faces_pindex_and_lids!(Dcm,
+                                    pXest_refinement_rule,
+                                    owner_faces_pindex,
+                                    owner_faces_lids,
+                                    num_hanging_faces,
+                                    hanging_faces_glue,
+                                    hanging_faces_to_cell,
+                                    hanging_faces_to_lface,
+                                    cell_faces_new)
+
+        non_conforming_glue_new = NonConformingGlue(num_regular_faces, 
+                        num_hanging_faces, 
+                        hanging_faces_glue, 
+                        hanging_faces_to_cell, 
+                        hanging_faces_to_lface, 
+                        owner_faces_pindex, 
+                        owner_faces_lids)
+
+        non_conforming_glue_new, cell_faces_new
+    end |> tuple_of_arrays
+end 
+
+function _generate_face_labeling_triangulation(trian,
+	                                           trian_cell_gids,
+	                                           cell_faces_new, 
+								               non_conforming_glue_old, 
+								               non_conforming_glue_new, 
+								               topology_new)
+
+	model = get_background_model(trian)
+
+	interior_boundary_entity_id = 
+	    reduce(max,map(_compute_max_entity_id,map(get_face_labeling, local_views(model.dmodel))),init=-1) + 1 
+	
+	face_labeling_new = map(local_views(trian), 
+                            cell_faces_new, 
+                            non_conforming_glue_old, 
+                            non_conforming_glue_new, 
+                            topology_new) do trian,all_cell_faces_new, nc_glue_old, nc_glue_new, topology_new
+        
+        model = get_background_model(trian)
+		Dcm = num_cell_dims(model)
+        glue = get_glue(trian, Val{Dcm}())
+        topo_old = get_grid_topology(model)
+        d_to_dface_to_parent_dface = Vector{Vector{Int}}(undef, Dcm+1)
+        d_to_face_ids_hanging_to_regular = Vector{Set{Int}}(undef, Dcm+1)
+        for d=1:Dcm
+            face_ids_hanging_to_regular = Set{Int}()
+            dface_to_parent_dface = 
+                Vector{Int}(undef, nc_glue_new.num_regular_faces[d]+nc_glue_new.num_hanging_faces[d])
+            cell_faces_old = get_faces(topo_old, Dcm, d-1)
+            cell_faces_new = all_cell_faces_new[d]
+            for (tface,mface) in enumerate(glue.tface_to_mface)
+                current_cell_faces_old = cell_faces_old[mface]
+                current_cell_faces_new = cell_faces_new[tface]
+                for (lface_id_in_mface, face_id_in_mface_old) in enumerate(current_cell_faces_old)
+                    face_id_in_mface_new = current_cell_faces_new[lface_id_in_mface]
+                    if face_id_in_mface_old > nc_glue_old.num_regular_faces[d] && 
+                           face_id_in_mface_new <= nc_glue_new.num_regular_faces[d]
+                        push!(face_ids_hanging_to_regular, face_id_in_mface_new)
+                    end
+                    dface_to_parent_dface[face_id_in_mface_new] = face_id_in_mface_old
+                end
+            end
+            d_to_dface_to_parent_dface[d] = dface_to_parent_dface
+            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) d_to_dface_to_parent_dface=$(d_to_dface_to_parent_dface[d])")
+            d_to_face_ids_hanging_to_regular[d] = face_ids_hanging_to_regular
+            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) d_to_face_ids_hanging_to_regular=$(d_to_face_ids_hanging_to_regular[d])")
+        end
+        d_to_dface_to_parent_dface[Dcm+1] = glue.tface_to_mface
+        face_labeling_old = get_face_labeling(model)
+        face_labeling_new = Gridap.Geometry.restrict(face_labeling_old,d_to_dface_to_parent_dface)
+     
+        
+		# From now on, we create a new entity id for all faces that belong to the internal boundary
+		# of the triangulation. This set includes hanging faces which are no longer hanging faces.
+	    # Apart from the new entity id, we also associate a tag to it, named "interior_boundary"
+
+		# Hanging faces that are now regular faces
+        for d=0:Dcm-1
+            for regular_face_id in d_to_face_ids_hanging_to_regular[d+1]
+                face_labeling_new.d_to_dface_to_entity[d+1][regular_face_id] = interior_boundary_entity_id
+            end
+        end
+
+        # Regular facets that only belong to one cell but previously did not
+        for (new_face_id, old_face_id) in enumerate(d_to_dface_to_parent_dface[Dcm])
+            if (new_face_id <= nc_glue_new.num_regular_faces[Dcm] &&
+                old_face_id <= nc_glue_old.num_regular_faces[Dcm])
+                cells_around_new = topology_new.n_m_to_nface_to_mfaces[Dcm,Dcm+1][new_face_id]
+                cells_around_old = topo_old.n_m_to_nface_to_mfaces[Dcm,Dcm+1][old_face_id]
+                if length(cells_around_new) == 1 && length(cells_around_old)>1
+                    face_labeling_new.d_to_dface_to_entity[Dcm][new_face_id] = interior_boundary_entity_id
+					for d=0:Dcm-2
+						facet_faces = get_faces(topology_new, Dcm-1, d)[new_face_id]
+						for facet_face in facet_faces
+							face_labeling_new.d_to_dface_to_entity[d+1][facet_face] = interior_boundary_entity_id
+						end
+					end
+                end
+            end
+        end
+        add_tag!(face_labeling_new,"interior_boundary",[interior_boundary_entity_id])
+		for d=0:Dcm-1
+			@debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) cell_faces_new[d+1]=$(all_cell_faces_new[d+1])")
+			@debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) face_labeling_new.d_to_dface_to_entity[d+1]=$(face_labeling_new.d_to_dface_to_entity[d+1])")
+		end 
+        face_labeling_new
+    end
+
+    vertex_to_entity = map(face_labeling_new) do face_labeling_new
+		face_labeling_new.d_to_dface_to_entity[1]
+	end
+
+	# Update the face_labeling of those faces which are only 
+	# on ghost cells by means of a nearest neighbour communication
 	Dcm = num_cell_dims(model)
+	polytope = Dcm==2 ? QUAD : HEX
+    update_face_to_entity_with_ghost_data!(vertex_to_entity,
+                                           trian_cell_gids,
+                                           num_faces(polytope,0),
+                                           cell_to_faces(topology_new,Dcm,0))
+    if Dcm==3
+	   edge_to_entity = map(face_labeling_new) do face_labeling_new
+		 face_labeling_new.d_to_dface_to_entity[1]
+	   end
+       update_face_to_entity_with_ghost_data!(edge_to_entity,
+                                              trian_cell_gids,
+                                              num_faces(polytope,1),
+                                              cell_to_faces(topology_new,Dcm,1))   
+    end
+  
+    facet_to_entity = map(face_labeling_new) do face_labeling_new
+		face_labeling_new.d_to_dface_to_entity[Dcm]
+	end
 
-	non_conforming_glue_new, cell_faces_new = map(local_views(trian), non_conforming_glue_old) do trian,
-		                                                                                non_conforming_glue_old
-		model = get_background_model(trian)
-		
-		topo = get_grid_topology(model)
-		tglue=get_glue(trian, Val{Dcm}())
-		tface_to_mface = tglue.tface_to_mface
-		mface_to_tface = tglue.mface_to_tface
+    update_face_to_entity_with_ghost_data!(facet_to_entity,
+                                           trian_cell_gids,
+                                           num_faces(polytope,Dcm-1),
+                                           cell_to_faces(topology_new,Dcm,Dcm-1))
 
-		num_regular_faces=Vector{Int}(undef,Dcm)
-		num_hanging_faces=Vector{Int}(undef,Dcm)
-		hanging_faces_glue=Vector{Vector{Tuple{Int,Int,Int}}}(undef,Dcm)
-		hanging_faces_to_cell=Vector{Vector{Int}}(undef,Dcm)
-		hanging_faces_to_lface=Vector{Vector{Int}}(undef,Dcm)
-		owner_faces_pindex=Vector{Vector{Int}}(undef,Dcm-1)
-		owner_faces_lids=Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef,Dcm-1)
-		cell_faces_new=Vector{Gridap.Arrays.Table}(undef,Dcm)
+    cell_to_entity = map(face_labeling_new) do face_labeling_new
+		face_labeling_new.d_to_dface_to_entity[Dcm+1]
+	end
+
+    update_face_to_entity_with_ghost_data!(cell_to_entity,
+                                           trian_cell_gids,
+                                           num_faces(polytope,Dcm),
+                                           cell_to_faces(topology_new,Dcm,Dcm))
+	
+    return face_labeling_new
+end
 
 
-		for d=0:Dcm-1 
-			cell_faces_old = get_faces(topo, Dcm, d)
-			num_regular_faces_old  = non_conforming_glue_old.num_regular_faces[d+1]
-			num_hanging_faces_old  = non_conforming_glue_old.num_hanging_faces[d+1]
-			hanging_faces_glue_old = non_conforming_glue_old.hanging_faces_glue[d+1]
+function _generate_active_models_and_non_conforming_glue(
+                                   pXest_type,
+                                   pXest_refinement_rule,
+                                   trian::GridapDistributed.DistributedTriangulation{Dct,Dpt},
+								   trian_cell_gids,
+                                   non_conforming_glue_old::AbstractVector{<:NonConformingGlue}) where {Dct,Dpt}
+    
+    
+	model = get_background_model(trian)
 
-			num_regular_faces[d+1],
-			num_hanging_faces[d+1],
-			cell_faces_new[d+1],
-			hanging_faces_glue[d+1] =
-			_generate_new_cell_faces_and_glue(cell_faces_old,
-												num_regular_faces_old,
-												num_hanging_faces_old,
-												hanging_faces_glue_old,
-												tface_to_mface,
-												mface_to_tface)
-
-			# Locate for each hanging facet a cell to which it belongs 
-			# and local position within that cell 
-			hanging_faces_to_cell[d+1],
-			hanging_faces_to_lface[d+1] =
-				_generate_hanging_faces_to_cell_and_lface(num_regular_faces[d+1],
-															num_hanging_faces[d+1],
-															cell_faces_new[d+1])
-		end
-
-		_fill_owner_faces_pindex_and_lids!(Dcm,
-									pXest_refinement_rule,
-									owner_faces_pindex,
-									owner_faces_lids,
-									num_hanging_faces,
-									hanging_faces_glue,
-									hanging_faces_to_cell,
-									hanging_faces_to_lface,
-									cell_faces_new)
-
-		non_conforming_glue_new = NonConformingGlue(num_regular_faces, 
-						num_hanging_faces, 
-						hanging_faces_glue, 
-						hanging_faces_to_cell, 
-						hanging_faces_to_lface, 
-						owner_faces_pindex, 
-						owner_faces_lids)
-
-		non_conforming_glue_new, cell_faces_new
-	end |> tuple_of_arrays
-
+	# If the triangulation covers all faces of the background model,
+	# then we can simply reuse the existing local models and non_conforming_glue
+	covers_all_faces = GridapDistributed._covers_all_faces(model,trian)
+	covers_all_faces && return (local_views(model.dmodel), non_conforming_glue_old)
+    
+	Dcm = num_cell_dims(model)
+       
+    non_conforming_glue_new, cell_faces_new = 
+	      _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, trian, non_conforming_glue_old)
 
     cell_corner_lids = map(cell_faces_new) do cell_faces_new
        cell_faces_new[1]
     end
 
-	cell_vertex_coordinates = map(local_views(trian)) do trian 
-		model = get_background_model(trian)
- 		grid = get_grid(model)
-		tglue=get_glue(trian, Val{Dcm}())
-		tface_to_mface = tglue.tface_to_mface
+    cell_vertex_coordinates = map(local_views(trian)) do trian 
+        model = get_background_model(trian)
+		Dcm = num_cell_dims(model)
+        grid = get_grid(model)
+        tglue=get_glue(trian, Val{Dcm}())
+        tface_to_mface = tglue.tface_to_mface
         Gridap.Arrays.Table(collect(Gridap.Geometry.restrict(get_cell_coordinates(grid), tface_to_mface)))
-	end 
+    end 
 
-	grid_new, topology_new = generate_grid_and_topology(pXest_type,cell_corner_lids,cell_vertex_coordinates)
+    grid_new, topology_new = generate_grid_and_topology(pXest_type,cell_corner_lids,cell_vertex_coordinates)
 
-	map(topology_new,cell_faces_new) do topology,cell_faces
-		topology.n_m_to_nface_to_mfaces[Dcm+1,Dcm] = cell_faces[Dcm]
-	 	topology.n_m_to_nface_to_mfaces[Dcm,Dcm+1] = Gridap.Geometry.generate_cells_around(cell_faces[Dcm])
-	end
+    map(topology_new,cell_faces_new) do topology,cell_faces
+        topology.n_m_to_nface_to_mfaces[Dcm+1,Dcm] = cell_faces[Dcm]
+        topology.n_m_to_nface_to_mfaces[Dcm,Dcm+1] = Gridap.Geometry.generate_cells_around(cell_faces[Dcm])
+    end
 
-	if (Dcm==3)
-		map(topology_new,cell_faces_new) do topology,cell_edges
-		  topology.n_m_to_nface_to_mfaces[Dcm+1,Dcm-1] = cell_faces[Dcm-1]
-		  topology.n_m_to_nface_to_mfaces[Dcm-1,Dcm+1] = Gridap.Geometry.generate_cells_around(cell_faces[Dcm-1])
-		end
-	end
+    if (Dcm==3)
+        map(topology_new,cell_faces_new) do topology,cell_edges
+          topology.n_m_to_nface_to_mfaces[Dcm+1,Dcm-1] = cell_faces[Dcm-1]
+          topology.n_m_to_nface_to_mfaces[Dcm-1,Dcm+1] = Gridap.Geometry.generate_cells_around(cell_faces[Dcm-1])
+        end
+    end
 
-	face_labeling_new = map(local_views(trian), 
-	    cell_faces_new, 
-		non_conforming_glue_old, 
-		non_conforming_glue_new, 
-		topology_new) do trian,all_cell_faces_new, nc_glue_old, nc_glue_new, topology_new
-		
-		model = get_background_model(trian)
-        glue = get_glue(trian, Val{Dcm}())
-		topo = get_grid_topology(model)
-        d_to_dface_to_parent_dface = Vector{Vector{Int}}(undef, Dcm+1)
-		d_to_face_ids_hanging_to_regular = Vector{Set{Int}}(undef, Dcm+1)
-		for d=1:Dcm
-			face_ids_hanging_to_regular = Set{Int}()
-			dface_to_parent_dface = 
-			    Vector{Int}(undef, nc_glue_new.num_regular_faces[d]+nc_glue_new.num_hanging_faces[d])
-			cell_faces_old = get_faces(topo, Dcm, d-1)
-			cell_faces_new = all_cell_faces_new[d]
-			for (tface,mface) in enumerate(glue.tface_to_mface)
-				current_cell_faces_old = cell_faces_old[mface]
-				current_cell_faces_new = cell_faces_new[tface]
-				for (lface_id_in_mface, face_id_in_mface_old) in enumerate(current_cell_faces_old)
-					face_id_in_mface_new = current_cell_faces_new[lface_id_in_mface]
-					if face_id_in_mface_old > nc_glue_old.num_regular_faces[d] && 
-						   face_id_in_mface_new <= nc_glue_new.num_regular_faces[d]
-						push!(face_ids_hanging_to_regular, face_id_in_mface_new)
-					end
-					dface_to_parent_dface[face_id_in_mface_new] = face_id_in_mface_old
-				end
-			end
-			d_to_dface_to_parent_dface[d] = dface_to_parent_dface
-			println("d=$(d) d_to_dface_to_parent_dface=$(d_to_dface_to_parent_dface[d])")
-			d_to_face_ids_hanging_to_regular[d] = face_ids_hanging_to_regular
-			println("d=$(d) d_to_face_ids_hanging_to_regular=$(d_to_face_ids_hanging_to_regular[d])")
-		end
-		d_to_dface_to_parent_dface[Dcm+1] = glue.tface_to_mface
-		face_labeling_old = get_face_labeling(model)
-		face_labeling_new = Gridap.Geometry.restrict(face_labeling_old,d_to_dface_to_parent_dface)
-     
-        # We still need to fix the entity ids for hanging faces which are no longer hanging faces
-		# By now I am going to assign them the same entity id as the one in one of the cells that 
-		# share the face. I am not sure at the moment which is the best approach
-        for d=0:Dcm-1
-            faces_cell = get_faces(topo, d, Dcm)
-			for regular_face_id in d_to_face_ids_hanging_to_regular[d+1]
-				cell_around = first(faces_cell[regular_face_id])
-                face_labeling_new.d_to_dface_to_entity[d+1][regular_face_id] =
-					face_labeling_old.d_to_dface_to_entity[Dcm+1][cell_around]
-			end
-	    end
-		face_labeling_new
-	end
-	active_models = map(grid_new,topology_new,face_labeling_new) do grid, topology, face_labeling
-		Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
-	end
-	return active_models, non_conforming_glue_new
+	face_labeling_new = _generate_face_labeling_triangulation(trian,
+			                                                  trian_cell_gids, 
+	                                                          cell_faces_new, 
+												              non_conforming_glue_old, 
+												              non_conforming_glue_new, 
+												              topology_new)
+
+    active_models = map(grid_new,topology_new,face_labeling_new) do grid, topology, face_labeling
+        Gridap.Geometry.UnstructuredDiscreteModel(grid,topology,face_labeling)
+    end
+    return active_models, non_conforming_glue_new
 end
 
 function _generate_new_cell_faces_and_glue(cell_faces_old,
-	                                       num_regular_faces_old,
-										   num_hanging_faces_old,
-										   hanging_faces_glue_old,
-										   tface_to_mface,
-										   mface_to_tface)
+                                           num_regular_faces_old,
+                                           num_hanging_faces_old,
+                                           hanging_faces_glue_old,
+                                           tface_to_mface,
+                                           mface_to_tface)
      num_regular_faces_new = 0
-	 num_hanging_faces_new = 0
-	 old2new = Dict{Int,Int}()
-
-	 for mface in tface_to_mface
-		for face_id_in_mface in cell_faces_old[mface]
-			if face_id_in_mface <= num_regular_faces_old 
-			    if !(face_id_in_mface in keys(old2new))
-				   num_regular_faces_new += 1
-				   old2new[face_id_in_mface] = num_regular_faces_new
-				end
-			else
-               # It is a hanging face 
-			   # Owner cell is in the triangulation?
-			    fid_hanging = face_id_in_mface - num_regular_faces_old  
-			    ocell, _, _ = hanging_faces_glue_old[fid_hanging]
-				if mface_to_tface[ocell]>0
+     num_hanging_faces_new = 0
+     old2new = Dict{Int,Int}()
+     for mface in tface_to_mface
+        for face_id_in_mface in cell_faces_old[mface]
+            if face_id_in_mface <= num_regular_faces_old 
+                if !(face_id_in_mface in keys(old2new))
+                   num_regular_faces_new += 1
+                   old2new[face_id_in_mface] = num_regular_faces_new
+                end
+            else
+                # It is a hanging face 
+                # Owner cell is in the triangulation?
+                fid_hanging = face_id_in_mface - num_regular_faces_old  
+                ocell, _, _ = hanging_faces_glue_old[fid_hanging]
+                if mface_to_tface[ocell]>0
                   if !(face_id_in_mface in keys(old2new))
-				     num_hanging_faces_new += 1
-				     old2new[face_id_in_mface] = -num_hanging_faces_new
-				  end				
-				else
-				  if !(face_id_in_mface in keys(old2new))
-				     num_regular_faces_new += 1
-				     old2new[face_id_in_mface] = num_regular_faces_new
-				  end
-				end
-			end
-		end
-	 end
-	 println("num_regular_faces_new = $(num_regular_faces_new)")
-	 println("num_hanging_faces_new = $(num_hanging_faces_new)")
-	 println(old2new)
+                     num_hanging_faces_new += 1
+                     old2new[face_id_in_mface] = -num_hanging_faces_new
+                  end                
+                else
+                  if !(face_id_in_mface in keys(old2new))
+                     num_regular_faces_new += 1
+                     old2new[face_id_in_mface] = num_regular_faces_new
+                  end
+                end
+            end
+        end
+     end
+     @debug println("num_regular_faces_new = $(num_regular_faces_new)")
+     @debug println("num_hanging_faces_new = $(num_hanging_faces_new)")
+     @debug println(old2new)
 
-	 hanging_faces_glue_new = Vector{Tuple{Int,Int,Int}}(undef,num_hanging_faces_new)
-	 for fid_hanging_old in 1:num_hanging_faces_old
+     hanging_faces_glue_new = Vector{Tuple{Int,Int,Int}}(undef,num_hanging_faces_new)
+     for fid_hanging_old in 1:num_hanging_faces_old
          fid_hanging_new = old2new[num_regular_faces_old+fid_hanging_old]
-		 if fid_hanging_new<0
-			mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
+         if fid_hanging_new<0
+            mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
             tocell = mface_to_tface[mocell]
-			@assert tocell>0
-			hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
-		 end
-	end
+            @assert tocell>0
+            hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
+         end
+    end
 
      cell_faces_new = 
-	    Gridap.Arrays.Table(collect(Gridap.Geometry.restrict(cell_faces_old, tface_to_mface)))
+        Gridap.Arrays.Table(collect(Gridap.Geometry.restrict(cell_faces_old, tface_to_mface)))
 
-	 function f(face_id)
-		if (face_id <= num_regular_faces_old)
-		   # Old vertex is regular
+     function f(face_id)
+        if (face_id <= num_regular_faces_old)
+           # Old vertex is regular
            old2new[face_id]
-		else
-		   # Old vertex is hanging
-		   if (old2new[face_id]>0) 
-			  # Hanging vertex that has become regular
-			  old2new[face_id]
-		   else
-			  # Hanging vertex that is still hanging
-			  num_regular_faces_new-old2new[face_id]
-		   end
-		end
-	 end
-	 cell_faces_new.data .= map(f, cell_faces_new.data)
+        else
+           # Old vertex is hanging
+           if (old2new[face_id]>0) 
+              # Hanging vertex that has become regular
+              old2new[face_id]
+           else
+              # Hanging vertex that is still hanging
+              num_regular_faces_new-old2new[face_id]
+           end
+        end
+     end
+     cell_faces_new.data .= map(f, cell_faces_new.data)
      return num_regular_faces_new, num_hanging_faces_new, cell_faces_new, hanging_faces_glue_new
 end
