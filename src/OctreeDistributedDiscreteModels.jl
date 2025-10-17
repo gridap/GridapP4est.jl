@@ -110,7 +110,7 @@ function _compute_owner_faces_pindex_and_lids(Dc,
                                               hanging_faces_glue,
                                               cell_faces)                                       
   
-  @debug "owner_faces_lids [Df=$(Dc-1) Dc=$(Dc)]: $(owner_faces_lids)"
+  @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_faces_lids [Df=$(Dc-1) Dc=$(Dc)]: $(owner_faces_lids)"
 
   num_owner_faces   = length(keys(owner_faces_lids))
   num_face_vertices = length(first(lface_to_cvertices))
@@ -139,7 +139,7 @@ function _compute_owner_faces_pindex_and_lids(Dc,
           end
       end
   end
-  @debug "owner_face_vertex_ids [Dc=$(Dc)]: $(owner_face_vertex_ids)"
+  @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_face_vertex_ids [Dc=$(Dc)]: $(owner_face_vertex_ids)"
 
   owner_faces_pindex = Vector{Int}(undef, num_owner_faces)
   for owner_face in keys(owner_faces_lids)
@@ -172,7 +172,7 @@ function _compute_owner_faces_pindex_and_lids(Dc,
       end
       @assert pindexfound "Valid pindex not found"
   end
-  @debug "owner_faces_pindex: $(owner_faces_pindex)"
+  @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: owner_faces_pindex: $(owner_faces_pindex)"
 
   owner_faces_pindex, owner_faces_lids
 end
@@ -213,7 +213,7 @@ function _compute_owner_edges_pindex_and_lids(
         ledge = hanging_edges_to_ledge[fid_hanging]
         gvertex1 = cell_vertices[cell][ledge_to_cvertices[ledge][subedge]]
         gvertex2 = cell_vertices[ocell][ledge_to_cvertices[ocell_ledge_within_dim][subedge]]
-        @debug "fid_hanging=$(fid_hanging) cell=$(cell) ledge=$(ledge) ocell=$(ocell) ocell_ledge=$(ocell_ledge) subedge=$(subedge) gvertex1=$(gvertex1) gvertex2=$(gvertex2)"
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fid_hanging=$(fid_hanging) cell=$(cell) ledge=$(ledge) ocell=$(ocell) ocell_ledge=$(ocell_ledge) subedge=$(subedge) gvertex1=$(gvertex1) gvertex2=$(gvertex2)"
         pindex = gvertex1==gvertex2 ? 1 : 2
         owner_edge=cell_edges[ocell][ocell_ledge_within_dim]
         owner_edge_lid, _ = owner_edges_lids[owner_edge]
@@ -2244,7 +2244,7 @@ function _set_hanging_labels!(face_labeling,non_conforming_glue,coarse_face_labe
       num_hanging_faces_i = ncglue.num_hanging_faces[i]
       for j=num_regular_faces_i+1:num_regular_faces_i+num_hanging_faces_i
         hanging_entity_id = max_entity_id + face_labeling.d_to_dface_to_entity[i][j]
-        @debug "hanging $(i-1)-face: $(j) hanging_entity_id=$(hanging_entity_id) face_labeling.d_to_dface_to_entity[$(i)][$(j)]=$(face_labeling.d_to_dface_to_entity[i][j])"
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: hanging $(i-1)-face: $(j) hanging_entity_id=$(hanging_entity_id) face_labeling.d_to_dface_to_entity[$(i)][$(j)]=$(face_labeling.d_to_dface_to_entity[i][j])"
         face_labeling.d_to_dface_to_entity[i][j]=hanging_entity_id
         hanging_entitity_ids[hanging_entity_id]=true
       end      
@@ -2415,9 +2415,9 @@ function _generate_face_labeling_triangulation(trian,
                 end
             end
             d_to_dface_to_parent_dface[d] = dface_to_parent_dface
-            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) d_to_dface_to_parent_dface=$(d_to_dface_to_parent_dface[d])")
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) d_to_dface_to_parent_dface=$(d_to_dface_to_parent_dface[d])"
             d_to_face_ids_hanging_to_regular[d] = face_ids_hanging_to_regular
-            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) d_to_face_ids_hanging_to_regular=$(d_to_face_ids_hanging_to_regular[d])")
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) d_to_face_ids_hanging_to_regular=$(d_to_face_ids_hanging_to_regular[d])"
         end
         d_to_dface_to_parent_dface[Dcm+1] = glue.tface_to_mface
         face_labeling_old = get_face_labeling(model)
@@ -2441,12 +2441,20 @@ function _generate_face_labeling_triangulation(trian,
                 old_face_id <= nc_glue_old.num_regular_faces[Dcm])
                 cells_around_new = topology_new.n_m_to_nface_to_mfaces[Dcm,Dcm+1][new_face_id]
                 cells_around_old = topo_old.n_m_to_nface_to_mfaces[Dcm,Dcm+1][old_face_id]
+                @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: XXX: new_face_id=$(new_face_id) cells_around_new=$(cells_around_new) old_face_id=$(old_face_id) cells_around_old=$(cells_around_old)"
                 if length(cells_around_new) == 1 && length(cells_around_old)>1
+                    # Go over all faces of lower dimension of this facet and 
+                    # only modify the identity id of those which are regular faces.
+                    # There are cases in which some of the lower dimensional faces
+                    # are still hanging faces and we do not want to modify their
+                    # identity id (otherwise we won't be putting the proper constraints on them)
                     face_labeling_new.d_to_dface_to_entity[Dcm][new_face_id] = interior_boundary_entity_id
                     for d=0:Dcm-2
                         facet_faces = get_faces(topology_new, Dcm-1, d)[new_face_id]
                         for facet_face in facet_faces
-                            face_labeling_new.d_to_dface_to_entity[d+1][facet_face] = interior_boundary_entity_id
+                            if facet_face <= nc_glue_new.num_regular_faces[d+1]
+                               face_labeling_new.d_to_dface_to_entity[d+1][facet_face] = interior_boundary_entity_id
+                            end
                         end
                     end
                 end
@@ -2454,8 +2462,7 @@ function _generate_face_labeling_triangulation(trian,
         end
         add_tag!(face_labeling_new,"interior_boundary",[interior_boundary_entity_id])
         for d=0:Dcm-1
-            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) cell_faces_new[d+1]=$(all_cell_faces_new[d+1])")
-            @debug println("[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) face_labeling_new.d_to_dface_to_entity[d+1]=$(face_labeling_new.d_to_dface_to_entity[d+1])")
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) cell_faces_new[d+1]=$(all_cell_faces_new[d+1])"
         end 
         face_labeling_new
     end
@@ -2499,6 +2506,12 @@ function _generate_face_labeling_triangulation(trian,
                                            trian_cell_gids,
                                            num_faces(polytope,Dcm),
                                            cell_to_faces(topology_new,Dcm,Dcm))
+
+    map(face_labeling_new) do face_labeling_new
+       for d=0:Dcm-1
+            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) face_labeling_new.d_to_dface_to_entity[d+1]=$(face_labeling_new.d_to_dface_to_entity[d+1])"
+        end
+    end                                       
     
     return face_labeling_new
 end
@@ -2599,22 +2612,22 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
             end
         end
      end
-     @debug println("num_regular_faces_new = $(num_regular_faces_new)")
-     @debug println("num_hanging_faces_new = $(num_hanging_faces_new)")
-     @debug println(old2new)
+     @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: num_regular_faces_new = $(num_regular_faces_new)"
+     @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: num_hanging_faces_new = $(num_hanging_faces_new)"
+     @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: old2new=$(old2new)"
 
      hanging_faces_glue_new = Vector{Tuple{Int,Int,Int}}(undef,num_hanging_faces_new)
      for fid_hanging_old in 1:num_hanging_faces_old
-		 fid_old = num_regular_faces_old+fid_hanging_old
-		 if fid_old in keys(old2new)
-	         fid_hanging_new = old2new[fid_old]
-	         if fid_hanging_new<0
-	            mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
-	            tocell = mface_to_tface[mocell]
-	            @assert tocell>0
-	            hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
-	         end
-		 end
+         fid_old = num_regular_faces_old+fid_hanging_old
+         if fid_old in keys(old2new)
+             fid_hanging_new = old2new[fid_old]
+             if fid_hanging_new<0
+                mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
+                tocell = mface_to_tface[mocell]
+                @assert tocell>0
+                hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
+             end
+         end
     end
 
      cell_faces_new = 
