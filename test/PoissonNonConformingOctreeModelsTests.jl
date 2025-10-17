@@ -11,6 +11,61 @@ module PoissonNonConformingOctreeModelsTests
 
   include("CoarseDiscreteModelsTools.jl")
 
+  function generate_triangulation_portion(ranks,model)
+    if (length(ranks)==1)
+       return Triangulation(model)
+    else 
+        trians = map(ranks,local_views(model.dmodel), partition(get_cell_gids(model))) do rank, lmodel, indices
+            mask = Vector{Bool}(undef,num_cells(lmodel))
+            mask .= false
+            cell_to_part = local_to_owner(indices)
+            graph = GridapDistributed.compute_cell_graph(lmodel)
+            ncells = num_cells(lmodel)
+            icell_to_jcells_ptrs = graph.colptr
+            icell_to_jcells_data = graph.rowval
+            for icell in 1:ncells
+               if cell_to_part[icell] == rank
+                  pini = icell_to_jcells_ptrs[icell]
+                  pend = icell_to_jcells_ptrs[icell+1]-1
+                  for p in pini:pend
+                     jcell = icell_to_jcells_data[p]
+                     if cell_to_part[jcell] != rank
+                        mask[icell] = true
+                     end                 
+                  end
+               end
+            end
+            Triangulation(lmodel, mask)
+        end
+        GridapDistributed.DistributedTriangulation(trians,model)
+    end 
+  end
+
+  function generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
+      ΛH = Skeleton(dmodel)
+      ΓH = Boundary(dmodel,tags="boundary")
+      
+      dΛH = Measure(ΛH,2*order)
+      dΓH = Measure(ΓH,2*order)
+      
+      n_ΓH = get_normal_vector(ΓH)
+      n_ΛH = get_normal_vector(ΛH)
+
+      aHdg(u,v) =
+         ∫( ∇(v)⋅∇(u) )*dΩH +
+         ∫( (γ/h)*v*u  - v*(n_ΓH⋅∇(u)) - (n_ΓH⋅∇(v))*u )*dΓH +
+         ∫( (γ/h)*jump(v*n_ΛH)⋅jump(u*n_ΛH) -
+         jump(v*n_ΛH)⋅mean(∇(u)) -
+         mean(∇(v))⋅jump(u*n_ΛH) )*dΛH
+
+      bHdg(v) =
+        ∫( v*f )*dΩH +
+        ∫( (γ/h)*v*u - (n_ΓH⋅∇(v))*u )*dΓH
+        
+      op = AffineFEOperator(aHdg,bHdg,UH,VH)
+  end 
+
+
   function generate_analytical_problem_functions(T::Type{Float64},order)
     # Define manufactured functions
     u(x) = x[1]+x[2]^order
@@ -86,27 +141,7 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-
-      ΛH = Skeleton(dmodel)
-      ΓH = Boundary(dmodel,tags="boundary")
-      
-      dΛH = Measure(ΛH,2*order)
-      dΓH = Measure(ΓH,2*order)
-      
-      n_ΓH = get_normal_vector(ΓH)
-      n_ΛH = get_normal_vector(ΛH)
-
-      aHdg(u,v) =
-          ∫( ∇(v)⋅∇(u) )*dΩH +
-          ∫( (γ/h)*v*u  - v*(n_ΓH⋅∇(u)) - (n_ΓH⋅∇(v))*u )*dΓH +
-          ∫( (γ/h)*jump(v*n_ΛH)⋅jump(u*n_ΛH) -
-          jump(v*n_ΛH)⋅mean(∇(u)) -
-          mean(∇(v))⋅jump(u*n_ΛH) )*dΛH
-
-      bHdg(v) =
-          ∫( v*f )*dΩH +
-          ∫( (γ/h)*v*u - (n_ΓH⋅∇(v))*u )*dΓH
-      op = AffineFEOperator(aHdg,bHdg,UH,VH)
+      op = generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
     end 
 
     uH = solve(op)
@@ -133,27 +168,7 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-
-      Λh = Skeleton(fmodel)
-      Γh = Boundary(fmodel,tags="boundary")
-      
-      dΛh = Measure(Λh,2*order)
-      dΓh = Measure(Γh,2*order)
-      
-      n_Γh = get_normal_vector(Γh)
-      n_Λh = get_normal_vector(Λh)
-
-      ahdg(u,v) =
-          ∫( ∇(v)⋅∇(u) )*dΩh +
-          ∫( (γ/h)*v*u  - v*(n_Γh⋅∇(u)) - (n_Γh⋅∇(v))*u )*dΓh +
-          ∫( (γ/h)*jump(v*n_Λh)⋅jump(u*n_Λh) -
-          jump(v*n_Λh)⋅mean(∇(u)) -
-          mean(∇(v))⋅jump(u*n_Λh) )*dΛh
-
-      bhdg(v) =
-          ∫( v*f )*dΩh +
-          ∫( (γ/h)*v*u - (n_Γh⋅∇(v))*u )*dΓh
-      op = AffineFEOperator(ahdg,bhdg,Uh,Vh)
+      op = generate_dg_operator(h, γ, fmodel, order, Ωh, dΩh, Uh, Vh, u, f)
     end 
 
     uh = solve(op)
@@ -232,27 +247,7 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-
-      Λhred = Skeleton(fmodel_red)
-      Γhred = Boundary(fmodel_red,tags="boundary")
-      
-      dΛhred = Measure(Λhred,2*order)
-      dΓhred = Measure(Γhred,2*order)
-      
-      n_Γhred = get_normal_vector(Γhred)
-      n_Λhred = get_normal_vector(Λhred)
-
-      ahdgred(u,v) =
-          ∫( ∇(v)⋅∇(u) )*dΩhred +
-          ∫( (γ/h)*v*u  - v*(n_Γhred⋅∇(u)) - (n_Γhred⋅∇(v))*u )*dΓhred +
-          ∫( (γ/h)*jump(v*n_Λhred)⋅jump(u*n_Λhred) -
-          jump(v*n_Λhred)⋅mean(∇(u)) -
-          mean(∇(v))⋅jump(u*n_Λhred) )*dΛhred
-
-      bhdgred(v) =
-          ∫( v*f )*dΩhred +
-          ∫( (γ/h)*v*u - (n_Γhred⋅∇(v))*u )*dΓhred
-      op = AffineFEOperator(ahdgred,bhdgred,Uhred,Vhred)
+      op = generate_dg_operator(h, γ, fmodel_red, order, Ωhred, dΩhred, Uhred, Vhred, u, f)
     end
 
     
@@ -325,27 +320,7 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-
-      ΛH = Skeleton(dmodel)
-      ΓH = Boundary(dmodel,tags="boundary")
-      
-      dΛH = Measure(ΛH,2*order)
-      dΓH = Measure(ΓH,2*order)
-      
-      n_ΓH = get_normal_vector(ΓH)
-      n_ΛH = get_normal_vector(ΛH)
-
-      aHdg(u,v) =
-         ∫( ∇(v)⋅∇(u) )*dΩH +
-         ∫( (γ/h)*v*u  - v*(n_ΓH⋅∇(u)) - (n_ΓH⋅∇(v))*u )*dΓH +
-         ∫( (γ/h)*jump(v*n_ΛH)⋅jump(u*n_ΛH) -
-         jump(v*n_ΛH)⋅mean(∇(u)) -
-         mean(∇(v))⋅jump(u*n_ΛH) )*dΛH
-
-      bHdg(v) =
-        ∫( v*f )*dΩH +
-        ∫( (γ/h)*v*u - (n_ΓH⋅∇(v))*u )*dΓH
-        op = AffineFEOperator(aHdg,bHdg,UH,VH)
+      op = generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
     end 
 
     uH = solve(op)
@@ -369,30 +344,7 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-
-      Λh = Skeleton(fmodel)
-      Γh = Boundary(fmodel,tags="boundary")
-      
-      dΛh = Measure(Λh,2*order)
-      dΓh = Measure(Γh,2*order)
-      
-      n_Γh = get_normal_vector(Γh)
-      n_Λh = get_normal_vector(Λh)
-
-      ahdg(u,v) =
-          ∫( ∇(v)⋅∇(u) )*dΩh +
-          ∫( (γ/h)*v*u  - v*(n_Γh⋅∇(u)) - (n_Γh⋅∇(v))*u )*dΓh +
-          # with p=4 MPI tasks, (γ/h)*jump(v*n_Λh)⋅jump(u*n_Λh) fails!
-          # did not have time you to understand the cause, workaround 
-          # is the line below
-          ∫( (γ/h)*(jump(v*n_Λh)⋅jump(u*n_Λh)) -
-             jump(v*n_Λh)⋅mean(∇(u)) -
-             mean(∇(v))⋅jump(u*n_Λh) )*dΛh
-
-      bhdg(v) =
-          ∫( v*f )*dΩh +
-          ∫( (γ/h)*v*u - (n_Γh⋅∇(v))*u )*dΓh
-      op = AffineFEOperator(ahdg,bhdg,Uh,Vh)
+      op = generate_dg_operator(h, γ, fmodel, order, Ωh, dΩh, Uh, Vh, u, f)
     end 
 
     uh = solve(op)
@@ -410,6 +362,163 @@ module PoissonNonConformingOctreeModelsTests
     e = uh - uHh
     el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
     @assert el2 < tol
+
+    return fmodel
+  end
+
+  function test_fe_space_on_triangulation(ranks,dmodel,order,cg_or_dg,T::Type, amr_step)
+    @assert cg_or_dg == :cg || cg_or_dg == :dg
+    if (cg_or_dg==:dg)
+      @assert T==Float64
+    end 
+
+    conformity=cg_or_dg==:cg ? :H1 : :L2
+    
+    # Define manufactured functions
+    u,f = generate_analytical_problem_functions(T,order)
+    degree = 2*order+1
+    reffe=ReferenceFE(lagrangian,T,order)
+    dtrian = generate_triangulation_portion(ranks,dmodel)
+    if (cg_or_dg == :cg)
+      VH=FESpace(dtrian,reffe,conformity=conformity;dirichlet_tags=["boundary","interior_boundary"])
+    else 
+      VH=FESpace(dtrian,reffe,conformity=conformity)
+    end 
+    UH=TrialFESpace(VH,u)
+    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
+        flags=zeros(Cint,length(indices))
+        flags.=nothing_flag
+        
+        #if rank==1 
+        #    flags[own_length(indices)]=refine_flag
+        #else 
+        #    flags[1]=refine_flag
+        #end
+		
+        # To create some unbalance
+        # if (rank%2==0 && own_length(indices)>1)
+        #      flags[div(own_length(indices),2)]=refine_flag
+        # end
+        flags
+    end
+    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
+	writevtk(fmodel,"fmodel")
+	# map(ranks,glue) do rank, glue
+    ftrian = generate_triangulation_portion(ranks,fmodel)
+    if (cg_or_dg == :cg)
+      Vh=FESpace(ftrian,reffe,conformity=conformity;dirichlet_tags=["boundary","interior_boundary"])
+    else
+      Vh=FESpace(ftrian,reffe,conformity=conformity)
+    end 
+    Uh=TrialFESpace(Vh,u)
+
+    ΩH  = dtrian
+    dΩH = Measure(ΩH,degree)
+
+    if (cg_or_dg==:cg)
+      aHcg(u,v) = ∫( ∇(v)⊙∇(u) )*dΩH
+      bHcg(v) = ∫(v⋅f)*dΩH
+      op = AffineFEOperator(aHcg,bHcg,UH,VH)
+    else
+      h = 2
+      γ = 10
+      op = generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
+    end 
+
+    uH = solve(op)
+    e = u - uH
+
+    # # Compute errors
+    el2 = sqrt(sum( ∫( e⋅e )*dΩH ))
+    eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩH ))
+
+    tol=1e-5
+    println("[SOLVE COARSE] el2 < tol: $(el2) < $(tol)")
+    println("[SOLVE COARSE] eh1 < tol: $(eh1) < $(tol)")
+    @assert el2 < tol
+    @assert eh1 < tol
+
+
+    Ωh  = ftrian
+    dΩh = Measure(Ωh,degree)
+
+    if (cg_or_dg==:cg)
+      ahcg(u,v) = ∫( ∇(v)⊙∇(u) )*dΩh
+      bhcg(v) = ∫(v⋅f)*dΩh
+      op = AffineFEOperator(ahcg,bhcg,Uh,Vh)
+    else
+      h = 2
+      γ = 10
+      op = generate_dg_operator(h, γ, fmodel, order, Ωh, dΩh, Uh, Vh, u, f)
+    end 
+
+    uh = interpolate(u,Uh)
+    e = u - uh 
+    println("XXX: interpolation error on fine triangulation: ", sqrt(sum( ∫( e⋅e )*Measure(ftrian,degree) )))
+
+    map(ranks, partition(get_free_dof_values(uh))) do rank, vals
+      print("Rank $(rank): uh values = $(vals)"); print("\n")
+    end
+
+    uh = solve(op)
+    e = u - uh
+
+    map(ranks, partition(get_free_dof_values(uh))) do rank, vals
+      print("Rank $(rank): uh values = $(vals)"); print("\n")
+    end
+
+    writevtk(ΩH, "ctrian", cellfields=["uH"=>uH])
+    writevtk(Ωh, "ftrian", cellfields=["uh"=>uh, "eh"=>e])
+
+    # # Compute errors
+
+    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+    eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩh ))
+ 
+    println("[SOLVE FINE] el2 < tol: $(el2) < $(tol)")
+    println("[SOLVE FINE] eh1 < tol: $(eh1) < $(tol)")
+    @assert el2 < tol
+    @assert eh1 < tol
+
+    xxx
+
+   
+    weights=map(ranks,fmodel.dmodel.models) do rank,lmodel
+      if (rank%2==0)
+        zeros(Cint,num_cells(lmodel))
+      else
+        ones(Cint,num_cells(lmodel))
+      end
+    end 
+    fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
+    if (cg_or_dg==:cg)
+      Vhred=FESpace(fmodel_red,reffe,conformity=conformity;dirichlet_tags="boundary")
+      Uhred=TrialFESpace(Vhred,u)
+    else
+      Vhred=FESpace(fmodel_red,reffe,conformity=conformity)
+      Uhred=TrialFESpace(Vhred,u)
+    end 
+
+    Ωhred  = Triangulation(fmodel_red)
+    dΩhred = Measure(Ωhred,degree)
+
+    if (cg_or_dg==:cg)
+      ahcgred(u,v) = ∫( ∇(v)⊙∇(u) )*dΩhred
+      bhcgred(v)   = ∫(v⋅f)*dΩhred
+      op = AffineFEOperator(ahcgred,bhcgred,Uhred,Vhred)
+    else
+      h = 2
+      γ = 10
+      op = generate_dg_operator(h, γ, fmodel_red, order, Ωhred, dΩhred, Uhred, Vhred, u, f)
+    end
+
+    uhred = solve(op)
+    e = u - uhred
+    el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
+    println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
+    @assert el2 < tol
+
+    fmodel_red
   end
 
   function test_2d(ranks,order,cg_or_dg,T::Type;num_amr_steps=5,num_ghost_layers=1)
@@ -430,6 +539,16 @@ module PoissonNonConformingOctreeModelsTests
     for i=1:num_amr_steps
       rdmodel=test_transfer_ops_and_redistribute(ranks,rdmodel,order,cg_or_dg,T)
     end
+  end
+  
+  function test_2d_fe_space_on_triangulation(ranks,order,cg_or_dg,T::Type;num_amr_steps=5,num_ghost_layers=1)
+    coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2;num_ghost_layers=num_ghost_layers)
+    # dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order,cg_or_dg,T)
+    rdmodel=dmodel
+    for i=1:num_amr_steps
+     rdmodel=test_fe_space_on_triangulation(ranks,rdmodel,order,cg_or_dg,T,i)
+    end
   end 
 
   function test(ranks,TVDc::Type{Val{Dc}}, perm, order,cg_or_dg,T::Type,num_ghost_layers=1) where Dc
@@ -448,28 +567,38 @@ module PoissonNonConformingOctreeModelsTests
   end 
 
   function run(distribute)
-    #debug_logger = ConsoleLogger(stderr, Logging.Debug)
-    #global_logger(debug_logger); # Enable the debug logger globally
+    debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    for Dc=2:3, perm in (1,2,4), order=(1,2), scalar_or_vector in (:scalar,)
-      test(ranks,Val{Dc},perm,order,:dg,_field_type(Val{Dc}(),scalar_or_vector))
+    # for Dc=2:3, perm in (1,2,4), order=(1,2), scalar_or_vector in (:scalar,)
+    #   test(ranks,Val{Dc},perm,order,:dg,_field_type(Val{Dc}(),scalar_or_vector))
+    # end
+    # for Dc=2:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
+    #  test(ranks,Val{Dc},perm,order,:cg,_field_type(Val{Dc}(),scalar_or_vector))
+    # end
+    # for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,2)
+    #   if (num_ghost_layers==1 || length(ranks)>1)
+    #     test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
+    #             num_ghost_layers=num_ghost_layers)
+    #     test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
+    #             num_ghost_layers=num_ghost_layers)
+    #   end
+    # end
+
+    for order=1:1, scalar_or_vector in (:scalar,), num_ghost_layers in (1,)
+       test_2d_fe_space_on_triangulation(ranks,
+                                         order,
+                                         :cg,
+                                         _field_type(Val{2}(),scalar_or_vector),
+                                         num_amr_steps=5,
+                                         num_ghost_layers=num_ghost_layers)
     end
-    for Dc=2:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
-     test(ranks,Val{Dc},perm,order,:cg,_field_type(Val{Dc}(),scalar_or_vector))
-    end
-    for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,2)
-      if (num_ghost_layers==1 || length(ranks)>1)
-        test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
-                num_ghost_layers=num_ghost_layers)
-        test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
-                num_ghost_layers=num_ghost_layers)
-      end
-    end
-    for order=2:2, scalar_or_vector in (:scalar,:vector), num_ghost_layers in (1,)
-      test_2d(ranks,order,:cg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
-               num_ghost_layers=num_ghost_layers)
-      test_3d(ranks,order,:cg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
-              num_ghost_layers=num_ghost_layers )
-    end
+
+    # for order=2:2, scalar_or_vector in (:scalar,:vector), num_ghost_layers in (1,)
+    #   test_2d(ranks,order,:cg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
+    #            num_ghost_layers=num_ghost_layers)
+    #   test_3d(ranks,order,:cg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
+    #           num_ghost_layers=num_ghost_layers )
+    # end
   end
 end
