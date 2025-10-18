@@ -379,8 +379,9 @@ module PoissonNonConformingOctreeModelsTests
     degree = 2*order+1
     reffe=ReferenceFE(lagrangian,T,order)
     dtrian = generate_triangulation_portion(ranks,dmodel)
+
     if (cg_or_dg == :cg)
-      VH=FESpace(dtrian,reffe,conformity=conformity;dirichlet_tags=["boundary","interior_boundary"])
+      VH=FESpace(dtrian,reffe,conformity=conformity;dirichlet_tags=["boundary"]) #,"interior_boundary"])
     else 
       VH=FESpace(dtrian,reffe,conformity=conformity)
     end 
@@ -388,13 +389,13 @@ module PoissonNonConformingOctreeModelsTests
     ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag
-        
+		flags[9]=refine_flag       
         #if rank==1 
         #    flags[own_length(indices)]=refine_flag
         #else 
         #    flags[1]=refine_flag
         #end
-		
+
         # To create some unbalance
         # if (rank%2==0 && own_length(indices)>1)
         #      flags[div(own_length(indices),2)]=refine_flag
@@ -404,7 +405,19 @@ module PoissonNonConformingOctreeModelsTests
     fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
 	writevtk(fmodel,"fmodel")
 	# map(ranks,glue) do rank, glue
-    ftrian = generate_triangulation_portion(ranks,fmodel)
+    # ftrian = generate_triangulation_portion(ranks,fmodel)
+	
+	if amr_step == 1
+		ftrians = map(ranks,local_views(fmodel.dmodel)) do rank, lmodel
+			Triangulation(lmodel, [3,4,7,8,9,10,13,16,17])
+		end
+	else amr_step == 2
+		ftrians = map(ranks,local_views(fmodel.dmodel)) do rank, lmodel
+			Triangulation(lmodel, [6,7,16,18,19])
+		end
+	end 
+	ftrian = GridapDistributed.DistributedTriangulation(ftrians,fmodel)
+
     if (cg_or_dg == :cg)
       Vh=FESpace(ftrian,reffe,conformity=conformity;dirichlet_tags=["boundary","interior_boundary"])
     else
@@ -445,6 +458,21 @@ module PoissonNonConformingOctreeModelsTests
     if (cg_or_dg==:cg)
       ahcg(u,v) = ∫( ∇(v)⊙∇(u) )*dΩh
       bhcg(v) = ∫(v⋅f)*dΩh
+
+      uh = get_trial_fe_basis(Uh)
+	  vh = get_fe_basis(Vh)
+    
+	  dcmat = ahcg(uh,vh)
+	  dcrhs = bhcg(vh)
+
+	  map(collect_cell_matrix_and_vector(Uh, Vh, dcmat, dcrhs, zero(Uh))) do kk
+		println(kk)
+	  end
+
+	  map(local_views(Vh)) do Vh
+	    println("Vh.cell_to_lmdof_to_mdof: ", Vh.cell_to_lmdof_to_mdof)
+	  end
+
       op = AffineFEOperator(ahcg,bhcg,Uh,Vh)
     else
       h = 2
@@ -480,8 +508,9 @@ module PoissonNonConformingOctreeModelsTests
     @assert el2 < tol
     @assert eh1 < tol
 
-    xxx
-
+	if amr_step == 2
+		XXX
+	end
    
     weights=map(ranks,fmodel.dmodel.models) do rank,lmodel
       if (rank%2==0)
