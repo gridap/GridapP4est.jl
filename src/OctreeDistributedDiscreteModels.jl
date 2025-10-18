@@ -2425,13 +2425,22 @@ function _generate_face_labeling_triangulation(trian,
      
         
         # From now on, we create a new entity id for all faces that belong to the internal boundary
-        # of the triangulation. This set includes hanging faces which are no longer hanging faces.
+        # of the triangulation. This set includes hanging faces which are no longer hanging faces,
+        # and regular faces on their boundary.
         # Apart from the new entity id, we also associate a tag to it, named "interior_boundary"
 
         # Hanging faces that are now regular faces
         for d=0:Dcm-1
             for regular_face_id in d_to_face_ids_hanging_to_regular[d+1]
                 face_labeling_new.d_to_dface_to_entity[d+1][regular_face_id] = interior_boundary_entity_id
+                for d2=0:d-1
+                        facet_faces = get_faces(topology_new, d, d2)[regular_face_id]
+                        for facet_face in facet_faces
+                            if facet_face <= nc_glue_new.num_regular_faces[d2+1]
+                               face_labeling_new.d_to_dface_to_entity[d2+1][facet_face] = interior_boundary_entity_id
+                            end
+                        end
+                end
             end
         end
 
