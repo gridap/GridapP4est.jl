@@ -2469,6 +2469,28 @@ function _generate_face_labeling_triangulation(trian,
                 end
             end
         end
+
+        # Look for regular faces that were owner but no longer owner
+        # Dcm == 2 or Dcm == 3 
+        for d=1:Dcm-1
+            # Go over all regular faces of dimension d 
+            for regular_face_id_new in 1:nc_glue_new.num_regular_faces[d]
+                old_face_id = d_to_dface_to_parent_dface[d][regular_face_id_new]
+                if (old_face_id in keys(nc_glue_old.owner_faces_lids[d]) && 
+                    !(regular_face_id_new in keys(nc_glue_new.owner_faces_lids[d])))
+                    face_labeling_new.d_to_dface_to_entity[d+1][regular_face_id_new] = interior_boundary_entity_id
+                    for d2=0:d-1
+                        facet_faces = get_faces(topology_new, d, d2)[regular_face_id_new]
+                        for facet_face in facet_faces
+                            if facet_face <= nc_glue_new.num_regular_faces[d2+1]
+                               face_labeling_new.d_to_dface_to_entity[d2+1][facet_face] = interior_boundary_entity_id
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
         add_tag!(face_labeling_new,"interior_boundary",[interior_boundary_entity_id])
         for d=0:Dcm-1
             @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) cell_faces_new[d+1]=$(all_cell_faces_new[d+1])"
