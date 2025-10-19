@@ -11,11 +11,10 @@ module PoissonNonConformingOctreeModelsTests
 
   include("CoarseDiscreteModelsTools.jl")
 
-  function generate_triangulation_portion(ranks,model)
-    if (length(ranks)==1)
-       return Triangulation(model)
-    else 
-        trians = map(ranks,local_views(model.dmodel), partition(get_cell_gids(model))) do rank, lmodel, indices
+  function _generate_triangulation_portion(ranks, fmodel)
+        trians = map(ranks, 
+             local_views(fmodel.dmodel), 
+                         partition(get_cell_gids(fmodel))) do rank, lmodel, indices
             mask = Vector{Bool}(undef,num_cells(lmodel))
             mask .= false
             cell_to_part = local_to_owner(indices)
@@ -37,8 +36,51 @@ module PoissonNonConformingOctreeModelsTests
             end
             Triangulation(lmodel, mask)
         end
-        GridapDistributed.DistributedTriangulation(trians,model)
-    end 
+        GridapDistributed.DistributedTriangulation(trians,fmodel)
+  end
+
+  function _generate_triangulation_portion(ranks, fmodel, ctrian, glue)
+        trians = map(ranks,
+                 local_views(fmodel.dmodel),
+                 local_views(ctrian),
+                 glue) do rank, fmodel, ctrian, glue
+            mask = Vector{Bool}(undef,num_cells(fmodel))
+            mask .= false
+
+            cglue = get_glue(ctrian, Val{num_cell_dims(ctrian)}())
+            for ccell in cglue.tface_to_mface
+                fcells = glue.o2n_faces_map[ccell]
+                for fcell in fcells
+                    mask[fcell] = true
+                end
+            end
+            Triangulation(fmodel, mask)
+        end
+        GridapDistributed.DistributedTriangulation(trians,fmodel)
+  end
+
+  function generate_triangulation_portion(ranks,fmodel; ctrian=nothing, glue=nothing)
+    if (length(ranks)==1 && ctrian==nothing)
+       trians = map(ranks, local_views(fmodel.dmodel)) do rank, fmodel
+            mask = Vector{Bool}(undef,num_cells(fmodel))
+            mask .= false
+            for cell=1:Int(round(num_cells(fmodel)*0.25))
+               mask[cell] = true
+            end
+            for cell=Int(round(num_cells(fmodel)*0.75)):num_cells(fmodel)
+               mask[cell] = true
+            end
+            Triangulation(fmodel, mask)
+        end
+        return GridapDistributed.DistributedTriangulation(trians,fmodel)
+    else 
+        if ctrian==nothing
+            @assert glue==nothing
+            return _generate_triangulation_portion(ranks, fmodel)
+        else
+            return _generate_triangulation_portion(ranks, fmodel, ctrian, glue)
+        end
+    end
   end
 
   function generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
@@ -366,7 +408,7 @@ module PoissonNonConformingOctreeModelsTests
     return fmodel
   end
 
-  function test_fe_space_on_triangulation(ranks,dmodel,order,cg_or_dg,T::Type, amr_step)
+  function test_fe_space_on_triangulation(ranks,cmodel,ctrian,order,cg_or_dg,T::Type, amr_step)
     @assert cg_or_dg == :cg || cg_or_dg == :dg
     if (cg_or_dg==:dg)
       @assert T==Float64
@@ -378,79 +420,31 @@ module PoissonNonConformingOctreeModelsTests
     u,f = generate_analytical_problem_functions(T,order)
     degree = 2*order+1
     reffe=ReferenceFE(lagrangian,T,order)
-    dtrian = generate_triangulation_portion(ranks,dmodel)
-
-    if (cg_or_dg == :cg)
-      VH=FESpace(dtrian,reffe,conformity=conformity;dirichlet_tags=["boundary"]) #,"interior_boundary"])
-    else 
-      VH=FESpace(dtrian,reffe,conformity=conformity)
-    end 
-    UH=TrialFESpace(VH,u)
-    ref_coarse_flags=map(ranks,partition(get_cell_gids(dmodel.dmodel))) do rank,indices
+    ref_coarse_flags=map(ranks,partition(get_cell_gids(cmodel.dmodel))) do rank,indices
         flags=zeros(Cint,length(indices))
         flags.=nothing_flag
-		flags[9]=refine_flag       
-        #if rank==1 
-        #    flags[own_length(indices)]=refine_flag
-        #else 
-        #    flags[1]=refine_flag
-        #end
-
+        
+        flags[1]=refine_flag
+        flags[own_length(indices)]=refine_flag
+        
         # To create some unbalance
-        # if (rank%2==0 && own_length(indices)>1)
-        #      flags[div(own_length(indices),2)]=refine_flag
-        # end
+        if (rank%2==0 && own_length(indices)>1)
+              flags[div(own_length(indices),2)]=refine_flag
+        end
         flags
     end
-    fmodel,glue=Gridap.Adaptivity.adapt(dmodel,ref_coarse_flags);
-	writevtk(fmodel,"fmodel")
-	# map(ranks,glue) do rank, glue
-    # ftrian = generate_triangulation_portion(ranks,fmodel)
-	
-	if amr_step == 1
-		ftrians = map(ranks,local_views(fmodel.dmodel)) do rank, lmodel
-			Triangulation(lmodel, [3,4,7,8,9,10,13,16,17])
-		end
-	else amr_step == 2
-		ftrians = map(ranks,local_views(fmodel.dmodel)) do rank, lmodel
-			Triangulation(lmodel, [6,7,16,18,19])
-		end
-	end 
-	ftrian = GridapDistributed.DistributedTriangulation(ftrians,fmodel)
+    fmodel,glue=Gridap.Adaptivity.adapt(cmodel,ref_coarse_flags)
+    ftrian = generate_triangulation_portion(ranks,fmodel,ctrian=ctrian,glue=glue)
 
-    if (cg_or_dg == :cg)
+    writevtk(fmodel, "fmodel_amr_level_$(amr_step)")
+    writevtk(ftrian, "ftrian_amr_level_$(amr_step)")
+
+    if (cg_or_dg == :cg)    
       Vh=FESpace(ftrian,reffe,conformity=conformity;dirichlet_tags=["boundary","interior_boundary"])
     else
       Vh=FESpace(ftrian,reffe,conformity=conformity)
     end 
     Uh=TrialFESpace(Vh,u)
-
-    ΩH  = dtrian
-    dΩH = Measure(ΩH,degree)
-
-    if (cg_or_dg==:cg)
-      aHcg(u,v) = ∫( ∇(v)⊙∇(u) )*dΩH
-      bHcg(v) = ∫(v⋅f)*dΩH
-      op = AffineFEOperator(aHcg,bHcg,UH,VH)
-    else
-      h = 2
-      γ = 10
-      op = generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
-    end 
-
-    uH = solve(op)
-    e = u - uH
-
-    # # Compute errors
-    el2 = sqrt(sum( ∫( e⋅e )*dΩH ))
-    eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩH ))
-
-    tol=1e-5
-    println("[SOLVE COARSE] el2 < tol: $(el2) < $(tol)")
-    println("[SOLVE COARSE] eh1 < tol: $(eh1) < $(tol)")
-    @assert el2 < tol
-    @assert eh1 < tol
-
 
     Ωh  = ftrian
     dΩh = Measure(Ωh,degree)
@@ -458,21 +452,6 @@ module PoissonNonConformingOctreeModelsTests
     if (cg_or_dg==:cg)
       ahcg(u,v) = ∫( ∇(v)⊙∇(u) )*dΩh
       bhcg(v) = ∫(v⋅f)*dΩh
-
-      uh = get_trial_fe_basis(Uh)
-	  vh = get_fe_basis(Vh)
-    
-	  dcmat = ahcg(uh,vh)
-	  dcrhs = bhcg(vh)
-
-	  map(collect_cell_matrix_and_vector(Uh, Vh, dcmat, dcrhs, zero(Uh))) do kk
-		println(kk)
-	  end
-
-	  map(local_views(Vh)) do Vh
-	    println("Vh.cell_to_lmdof_to_mdof: ", Vh.cell_to_lmdof_to_mdof)
-	  end
-
       op = AffineFEOperator(ahcg,bhcg,Uh,Vh)
     else
       h = 2
@@ -481,73 +460,23 @@ module PoissonNonConformingOctreeModelsTests
     end 
 
     uh = interpolate(u,Uh)
-    e = u - uh 
-    println("XXX: interpolation error on fine triangulation: ", sqrt(sum( ∫( e⋅e )*Measure(ftrian,degree) )))
-
-    map(ranks, partition(get_free_dof_values(uh))) do rank, vals
-      print("Rank $(rank): uh values = $(vals)"); print("\n")
-    end
-
     uh = solve(op)
     e = u - uh
 
-    map(ranks, partition(get_free_dof_values(uh))) do rank, vals
-      print("Rank $(rank): uh values = $(vals)"); print("\n")
-    end
-
-    writevtk(ΩH, "ctrian", cellfields=["uH"=>uH])
-    writevtk(Ωh, "ftrian", cellfields=["uh"=>uh, "eh"=>e])
+    writevtk(Ωh, "ftrian_amr_level_$(amr_step)", cellfields=["uh"=>uh, "eh"=>e])
 
     # # Compute errors
 
     el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
     eh1 = sqrt(sum( ∫( e⋅e + ∇(e)⊙∇(e) )*dΩh ))
  
+    tol=1e-5
     println("[SOLVE FINE] el2 < tol: $(el2) < $(tol)")
     println("[SOLVE FINE] eh1 < tol: $(eh1) < $(tol)")
     @assert el2 < tol
     @assert eh1 < tol
-
-	if amr_step == 2
-		XXX
-	end
    
-    weights=map(ranks,fmodel.dmodel.models) do rank,lmodel
-      if (rank%2==0)
-        zeros(Cint,num_cells(lmodel))
-      else
-        ones(Cint,num_cells(lmodel))
-      end
-    end 
-    fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
-    if (cg_or_dg==:cg)
-      Vhred=FESpace(fmodel_red,reffe,conformity=conformity;dirichlet_tags="boundary")
-      Uhred=TrialFESpace(Vhred,u)
-    else
-      Vhred=FESpace(fmodel_red,reffe,conformity=conformity)
-      Uhred=TrialFESpace(Vhred,u)
-    end 
-
-    Ωhred  = Triangulation(fmodel_red)
-    dΩhred = Measure(Ωhred,degree)
-
-    if (cg_or_dg==:cg)
-      ahcgred(u,v) = ∫( ∇(v)⊙∇(u) )*dΩhred
-      bhcgred(v)   = ∫(v⋅f)*dΩhred
-      op = AffineFEOperator(ahcgred,bhcgred,Uhred,Vhred)
-    else
-      h = 2
-      γ = 10
-      op = generate_dg_operator(h, γ, fmodel_red, order, Ωhred, dΩhred, Uhred, Vhred, u, f)
-    end
-
-    uhred = solve(op)
-    e = u - uhred
-    el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
-    println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
-    @assert el2 < tol
-
-    fmodel_red
+    fmodel, ftrian
   end
 
   function test_2d(ranks,order,cg_or_dg,T::Type;num_amr_steps=5,num_ghost_layers=1)
@@ -573,10 +502,9 @@ module PoissonNonConformingOctreeModelsTests
   function test_2d_fe_space_on_triangulation(ranks,order,cg_or_dg,T::Type;num_amr_steps=5,num_ghost_layers=1)
     coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
     dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2;num_ghost_layers=num_ghost_layers)
-    # dmodel=test_refine_and_coarsen_at_once(ranks,dmodel,order,cg_or_dg,T)
-    rdmodel=dmodel
+    dtrian=generate_triangulation_portion(ranks,dmodel)
     for i=1:num_amr_steps
-     rdmodel=test_fe_space_on_triangulation(ranks,rdmodel,order,cg_or_dg,T,i)
+     dmodel,dtrian=test_fe_space_on_triangulation(ranks,dmodel,dtrian,order,cg_or_dg,T,i)
     end
   end 
 
@@ -614,7 +542,7 @@ module PoissonNonConformingOctreeModelsTests
     #   end
     # end
 
-    for order=1:1, scalar_or_vector in (:scalar,), num_ghost_layers in (1,)
+    for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,)
        test_2d_fe_space_on_triangulation(ranks,
                                          order,
                                          :cg,

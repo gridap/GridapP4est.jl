@@ -560,9 +560,9 @@ function _generate_constraints!(Df,
             end
         end 
     end
-    @debug "sDOF_to_dof [$(Df)]= $(sDOF_to_dof)"
-    @debug "sDOF_to_dofs [$(Df)]= $(sDOF_to_dofs)"
-    @debug "sDOF_to_coeffs [$(Df)]= $(sDOF_to_coeffs)"
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: sDOF_to_dof [$(Df)]= $(sDOF_to_dof)"
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: sDOF_to_dofs [$(Df)]= $(sDOF_to_dofs)"
+    @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: sDOF_to_coeffs [$(Df)]= $(sDOF_to_coeffs)"
 end
 
 using Gridap.ReferenceFEs
