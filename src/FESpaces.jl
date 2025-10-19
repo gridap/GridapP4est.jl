@@ -971,7 +971,7 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
     sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
                 generate_constraints(model.pXest_refinement_rule_type,
                              reffe,
-                             models,
+                             model.dmodel.models,
                              non_conforming_glue,
                              spaces_wo_constraints)
 
