@@ -636,12 +636,22 @@ function get_face_dofs_permutations(
     end
 end 
 
-function generate_constraints(models::AbstractVector{<:DiscreteModel{Dc}},
+function generate_constraints(pXest_refinement_rule_type,
+	                          reffe,
+	                          models::AbstractVector{<:DiscreteModel{Dc}},
                               non_conforming_glue::AbstractVector{<:NonConformingGlue},
-                              spaces_wo_constraints,
-                              cell_reffe,
-                              ref_constraints,
-                              face_subface_ldof_to_cell_ldof) where {Dc}
+                              spaces_wo_constraints) where {Dc}
+
+    ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(pXest_refinement_rule_type,
+                                                                         Dc, 
+                                                                         reffe)
+    face_subface_ldof_to_cell_ldof = _generate_face_subface_ldof_to_cell_ldof(pXest_refinement_rule_type,
+                                                                              Dc, 
+                                                                              reffe)
+    basis, reffe_args, reffe_kwargs = reffe
+    polytope = Dc==2 ? QUAD : HEX
+    cell_reffe = ReferenceFE(polytope, basis, reffe_args...; reffe_kwargs...)
+
 
     gridap_cell_faces = map(models) do model
         topo = Gridap.Geometry.get_grid_topology(model)
@@ -894,24 +904,15 @@ function _add_constraints(pXest_refinement_rule_type,
         local_cell_dof_ids=map(get_cell_dof_ids,spaces_w_constraints)
     else 
         @assert conformity==nothing || conformity!=:L2
-        ref_constraints = _build_constraint_coefficients_matrix_in_ref_space(pXest_refinement_rule_type,
-                                                                             Dc, 
-                                                                             reffe)
-        face_subface_ldof_to_cell_ldof = _generate_face_subface_ldof_to_cell_ldof(pXest_refinement_rule_type,
-                                                                                  Dc, 
-                                                                                  reffe)
-        basis, reffe_args, reffe_kwargs = reffe
-        polytope = Dc==2 ? QUAD : HEX
-        cell_reffe = ReferenceFE(polytope, basis, reffe_args...; reffe_kwargs...)
+        
         
         sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
-            generate_constraints(models,
-                                 non_conforming_glue, 
-                                 spaces_wo_constraints, 
-                                 cell_reffe, 
-                                 ref_constraints, 
-                                 face_subface_ldof_to_cell_ldof)
-        
+            generate_constraints(pXest_refinement_rule_type,
+                                 reffe,
+                                 models,
+                                 non_conforming_glue,
+                                 spaces_wo_constraints)
+								 
         spaces_w_constraints = map(spaces_wo_constraints,
             sDOF_to_dof,
             sDOF_to_dofs,
