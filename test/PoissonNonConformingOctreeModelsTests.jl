@@ -542,7 +542,7 @@ module PoissonNonConformingOctreeModelsTests
     #   end
     # end
 
-    for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,)
+    for order=1:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,)
        test_2d_fe_space_on_triangulation(ranks,
                                          order,
                                          :cg,

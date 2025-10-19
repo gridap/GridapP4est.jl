@@ -637,8 +637,8 @@ function get_face_dofs_permutations(
 end 
 
 function generate_constraints(pXest_refinement_rule_type,
-	                          reffe,
-	                          models::AbstractVector{<:DiscreteModel{Dc}},
+                              reffe,
+                              models::AbstractVector{<:DiscreteModel{Dc}},
                               non_conforming_glue::AbstractVector{<:NonConformingGlue},
                               spaces_wo_constraints) where {Dc}
 
@@ -889,50 +889,31 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
 end
 
 
-function _add_constraints(pXest_refinement_rule_type,
-                          models::AbstractVector{<:DiscreteModel{Dc}},
-                          cell_gids,
-                          non_conforming_glue,
-                          dtrian,
-                          reffe,
-                          spaces_wo_constraints;
-                          conformity=nothing,
-                          kwargs...) where {Dc}
-
-    if (_is_conforming(non_conforming_glue) || conformity==:L2 )
-        spaces_w_constraints=spaces_wo_constraints
-        local_cell_dof_ids=map(get_cell_dof_ids,spaces_w_constraints)
-    else 
-        @assert conformity==nothing || conformity!=:L2
-        
-        
-        sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
-            generate_constraints(pXest_refinement_rule_type,
-                                 reffe,
-                                 models,
-                                 non_conforming_glue,
-                                 spaces_wo_constraints)
-								 
-        spaces_w_constraints = map(spaces_wo_constraints,
-            sDOF_to_dof,
-            sDOF_to_dofs,
-            sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
-            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
-            Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
-        end
-        local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
-            result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
-            @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_with_linear_constraints_cell_dof_ids=$(result)"
-            result
-        end
+function _add_constraints(dtrian,
+                          dtrian_cell_gids,
+                          spaces_wo_constraints,
+                          sDOF_to_dof,
+                          sDOF_to_dofs,
+                          sDOF_to_coeffs)
+                             
+    spaces_w_constraints = map(spaces_wo_constraints,
+        sDOF_to_dof,
+        sDOF_to_dofs,
+        sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
+        Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
+    end
+    local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
+        result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
+        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_with_linear_constraints_cell_dof_ids=$(result)"
+        result
     end
     nldofs = map(num_free_dofs,spaces_w_constraints)
-    gids = GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
+    gids = GridapDistributed.generate_gids(dtrian_cell_gids,local_cell_dof_ids,nldofs)
     map(partition(gids)) do indices 
         @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
         @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
     end
-    # trian = GridapDistributed.DistributedTriangulation(map(get_triangulation,spaces_w_constraints),model)
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids)
     GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,dtrian,vector_type)
 end
@@ -940,24 +921,41 @@ end
 # Generates a new DistributedSingleFieldFESpace composed 
 # by local FE spaces with linear multipoint constraints added
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
-                                 reffe; 
+                                 reffe;
+                                 conformity=nothing, 
                                  kwargs...) where {Dc}
+
+
+    if (_is_conforming(model.non_conforming_glue) || conformity==:L2)
+        return Gridap.FESpaces.FESpace(model.dmodel, reffe; conformity=conformity, kwargs...)
+    end
+
     spaces_wo_constraints = map(local_views(model)) do m
         FESpace(m, reffe; kwargs...)
     end
-    _add_constraints(model.pXest_refinement_rule_type,
-                     model.dmodel.models,
-                     get_cell_gids(model),
-                     model.non_conforming_glue,
-                     GridapDistributed.DistributedTriangulation(map(get_triangulation,spaces_wo_constraints),model),
-                     reffe,
-                     spaces_wo_constraints;
-                     kwargs...)
+
+    sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
+                generate_constraints(model.pXest_refinement_rule_type,
+                             reffe,
+                             model.dmodel.models,
+                             model.non_conforming_glue,
+                             spaces_wo_constraints)
+
+    _add_constraints(Triangulation(model.dmodel),
+                     get_cell_gids(model.dmodel),
+                     spaces_wo_constraints,
+                     sDOF_to_dof, 
+                     sDOF_to_dofs, 
+                     sDOF_to_coeffs)
 end
 
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
                                  reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any}; 
                                  conformity=nothing,kwargs...) where {Dc}
+
+    if (_is_conforming(model.non_conforming_glue) || conformity==:L2)
+        return Gridap.FESpaces.FESpace(model.dmodel, reffe; conformity=conformity, kwargs...)
+    end                             
 
     cell_reffes = map(local_views(model.dmodel)) do m
         basis,reffe_args,reffe_kwargs = reffe
@@ -969,39 +967,79 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
        cell_fe = CellFE(m,cell_reffe,conf,sign_flip)
        FESpace(m, cell_fe; kwargs...)
     end
-    _add_constraints(model.pXest_refinement_rule_type,
-                    model.dmodel.models,
-                    get_cell_gids(model),
-                    model.non_conforming_glue,
-                    GridapDistributed.DistributedTriangulation(map(get_triangulation,spaces_wo_constraints),model),
-                    reffe,
-                    spaces_wo_constraints;
-                    kwargs...)
+
+    sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
+                generate_constraints(model.pXest_refinement_rule_type,
+                             reffe,
+                             models,
+                             non_conforming_glue,
+                             spaces_wo_constraints)
+
+    _add_constraints(Triangulation(model.dmodel),
+                     get_cell_gids(model.dmodel),
+                     spaces_wo_constraints,
+                     sDOF_to_dof, 
+                     sDOF_to_dofs, 
+                     sDOF_to_coeffs)
+
 end
 
 function Gridap.FESpaces.FESpace(
             _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
-            reffe; 
+            reffe;
+            conformity=nothing,
             kwargs...) where {Dc, Dp, A}
-    
-    dtrian = GridapDistributed.add_ghost_cells(_dtrian)
-    dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
-
-    # TO-THINK: I find awkward that the ad-hoc non_conforming_glue that
-    #           we build here is used below in _add_constraints() but 
-    #           discarded after this call finishes. Is this really how
-    #           we want it to be?
 
     model = get_background_model(_dtrian)
+
+    # If the triangulation covers all faces of the background model,
+    # then we can simply reuse the existing local models and non_conforming_glue
+    # We should still preserve the post-condition that the returned model has 
+    # the INTERIOR_BOUNDARY_TAG tag on its face_labeling
+    covers_all_faces = GridapDistributed._covers_all_faces(model,_dtrian)
+    if covers_all_faces
+        return Gridap.FESpaces.FESpace(model, reffe; conformity=conformity, kwargs...)
+    else 
+        if (_is_conforming(model.non_conforming_glue) || conformity==:L2)
+            return Gridap.FESpaces.FESpace(dtrian, reffe; conformity=conformity, kwargs...)
+        else 
+
+        spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, dtrian, dtrian_cell_gids, _, _ =
+            generate_local_fe_spaces_and_constraints(
+                   _dtrian, 
+                   reffe; 
+                   conformity=conformity, kwargs...)
+
+         _add_constraints(dtrian,
+                          dtrian_cell_gids,
+                          spaces_wo_constraints,
+                          sDOF_to_dof, 
+                          sDOF_to_dofs, 
+                          sDOF_to_coeffs)
+
+    end
+  end
+end
+
+function generate_local_fe_spaces_and_constraints(
+            _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
+            reffe;
+            conformity=nothing,
+            kwargs...) where {Dc, Dp,A}
+
+    model = get_background_model(_dtrian)
+
+    dtrian = GridapDistributed.add_ghost_cells(_dtrian)
+    dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
 
     # REMARK: this call below ressembles the rationale behind get_active_model(trian)
     #         in Gridap. We cannot use get_active_model(trian) here because
     #         it does not know how to handle non_conforming_glue
     models, non_conforming_glue = _generate_active_models_and_non_conforming_glue(model.pXest_type,
-                                                            model.pXest_refinement_rule_type,
-                                                            dtrian,
-                                                            dtrian_cell_gids,
-                                                            model.non_conforming_glue)
+                                                                                  model.pXest_refinement_rule_type,
+                                                                                  dtrian,
+                                                                                  dtrian_cell_gids,
+                                                                                  model.non_conforming_glue)
 
     # REMARK: we have to build the local FE spaces out of the local portions 
     #         of the DistributedTriangulation (i.e., dtrian) instead of the result
@@ -1010,25 +1048,20 @@ function Gridap.FESpaces.FESpace(
     #         in the call to the FESpace constructor. If we do not do this, then 
     #         we get errors when evaluating cell integrals because mistmatching 
     #         background discrete models
-
-    # TO-THINK: I also find awkward that the ad-hoc active_model that
-    #           we built here is discarded after this call finishes. Is this really how
-    #           we want it to be? If am not wrong, we also do the same in Gridap, so from
-    #           this point of view, it is consistent.
     spaces_wo_constraints = map(models, local_views(dtrian)) do m, t
-        FESpace(m, reffe; trian=t, kwargs...)
+      FESpace(m, reffe; trian=t, kwargs...)
     end
 
-
-    _add_constraints(model.pXest_refinement_rule_type,
-                     models,
-                     dtrian_cell_gids,
-                     non_conforming_glue,
-                     dtrian,
+    sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
+        generate_constraints(model.pXest_refinement_rule_type,
                      reffe,
-                     spaces_wo_constraints;
-                     kwargs...)
-end
+                     models,
+                     non_conforming_glue,
+                     spaces_wo_constraints)
+    
+    spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, 
+         dtrian, dtrian_cell_gids, models, non_conforming_glue
+end 
 
 
 
