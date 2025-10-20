@@ -972,7 +972,7 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
                 generate_constraints(model.pXest_refinement_rule_type,
                              reffe,
                              model.dmodel.models,
-                             non_conforming_glue,
+                             model.non_conforming_glue,
                              spaces_wo_constraints)
 
     _add_constraints(Triangulation(model.dmodel),
