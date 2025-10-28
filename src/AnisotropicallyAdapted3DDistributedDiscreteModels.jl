@@ -325,36 +325,16 @@ function transfer_entity_ids!(target_entity_ids,
   end 
 end
 
-function generate_face_labeling(pXest_type::P6estType,
-                                parts,
-                                cell_prange,
-                                coarse_discrete_model::DiscreteModel{2,2},
-                                topology,
-                                ptr_pXest,
-                                ptr_pXest_ghost)
+function _generate_extruded_face_labeling_from_bottom_boundary_model(cell_prange,
+                                                                     coarse_discrete_model,
+                                                                     topology,
+                                                                     ptr_pXest,
+                                                                     bottom_boundary_model)
 
-  Dc=3                              
 
-  pXest       = ptr_pXest[]
-  pXest_ghost = ptr_pXest_ghost[]
-
-  p4est_type=P4estType()
-  ptr_p4est_connectivity = pXest.connectivity[].conn4
-  ptr_p4est = pXest.columns
-  ptr_p4est_ghost = setup_pXest_ghost(p4est_type,ptr_p4est)
-  ptr_p4est_lnodes = setup_pXest_lnodes_nonconforming(p4est_type, ptr_p4est, ptr_p4est_ghost)
-
-  bottom_boundary_model,_=setup_non_conforming_distributed_discrete_model(p4est_type,
-                                                                        PXestUniformRefinementRuleType(),
-                                                                        parts,
-                                                                        coarse_discrete_model,
-                                                                        ptr_p4est_connectivity,
-                                                                        ptr_p4est,
-                                                                        ptr_p4est_ghost,
-                                                                        ptr_p4est_lnodes)
-
-  pXest_ghost_destroy(p4est_type, ptr_p4est_ghost)
-  pXest_lnodes_destroy(p4est_type, ptr_p4est_lnodes)
+  Dc=3          
+  pXest = ptr_pXest[]
+  pXest_type = P6estType()
 
   bottom_boundary_model_topology = map(local_views(bottom_boundary_model)) do model 
     Gridap.Geometry.get_grid_topology(model)
@@ -366,6 +346,8 @@ function generate_face_labeling(pXest_type::P6estType,
 
   coarse_face_labeling = get_face_labeling(coarse_discrete_model)
   max_entity_id = _compute_max_entity_id(coarse_face_labeling)
+  @assert max_entity_id>0 "Max entity id in the coarse model should be positive"
+
 
   offset_intermediate_entities = max_entity_id
   offset_top_entities = 2*max_entity_id
@@ -558,12 +540,48 @@ face_labeling =
                                                tag_to_entities,
                                                tag_to_name)
 
-    add_tag_from_tags!(face_labeling, 
-        "boundary", 
+    add_tag_from_tags!(face_labeling,
+        "boundary",
         ["bottom_boundary", "intermediate_boundary", "top_boundary"])
     
     face_labeling
   end
+end
+
+function generate_face_labeling(pXest_type::P6estType,
+                                parts,
+                                cell_prange,
+                                coarse_discrete_model::DiscreteModel{2,2},
+                                topology,
+                                ptr_pXest,
+                                ptr_pXest_ghost)
+
+  pXest       = ptr_pXest[]
+  pXest_ghost = ptr_pXest_ghost[]
+
+  p4est_type=P4estType()
+  ptr_p4est_connectivity = pXest.connectivity[].conn4
+  ptr_p4est = pXest.columns
+  ptr_p4est_ghost = setup_pXest_ghost(p4est_type,ptr_p4est)
+  ptr_p4est_lnodes = setup_pXest_lnodes_nonconforming(p4est_type, ptr_p4est, ptr_p4est_ghost)
+
+  bottom_boundary_model,_=setup_non_conforming_distributed_discrete_model(p4est_type,
+                                                                          PXestUniformRefinementRuleType(),
+                                                                          parts,
+                                                                          coarse_discrete_model,
+                                                                          ptr_p4est_connectivity,
+                                                                          ptr_p4est,
+                                                                          ptr_p4est_ghost,
+                                                                          ptr_p4est_lnodes)
+
+  pXest_ghost_destroy(p4est_type, ptr_p4est_ghost)
+  pXest_lnodes_destroy(p4est_type, ptr_p4est_lnodes)
+
+  face_labeling = _generate_extruded_face_labeling_from_bottom_boundary_model(cell_prange,
+                                                                              coarse_discrete_model,
+                                                                              topology,
+                                                                              ptr_pXest,
+                                                                              bottom_boundary_model)
 
   # map(partition(cell_prange)) do indices 
   #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] l2g=$(local_to_global(indices))")
