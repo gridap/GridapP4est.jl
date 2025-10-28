@@ -57,7 +57,12 @@ module PoissonAnisotropicOctreeModelsTests
     bH(v) = ∫(v⋅f)*dΩH
 
     op = AffineFEOperator(aH,bH,UH,VH)
-    uH = solve(op)
+    if (num_free_dofs(UH)>0)
+      uH = solve(op)
+    else
+      uH=interpolate(u,UH)
+    end
+    
     e = u - uH
 
     # # Compute errors
@@ -77,7 +82,11 @@ module PoissonAnisotropicOctreeModelsTests
     bh(v) = ∫(v⋅f)*dΩh
 
     op  = AffineFEOperator(ah,bh,Uh,Vh)
-    uh = solve(op)
+    if(num_free_dofs(Uh)>0)
+      uh = solve(op)
+    else
+      uh=interpolate(u,Uh)
+    end
 
     uh2dofs=get_free_dof_values(interpolate(u, Uh))
 
@@ -104,14 +113,16 @@ module PoissonAnisotropicOctreeModelsTests
 
     # prolongation via L2-projection 
     # Coarse FEFunction -> Fine FEFunction, by projection
-    ahp(u,v)  = ∫(v⋅u)*dΩh
-    lhp(v)    = ∫(v⋅uH)*dΩh
-    oph      = AffineFEOperator(ahp,lhp,Uh,Vh)
-    uHh      = solve(oph)
-    e = uh - uHh
-    el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
-    println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
-    @assert el2 < tol
+    if (num_free_dofs(Uh)>0)
+        ahp(u,v)  = ∫(v⋅u)*dΩh
+        lhp(v)    = ∫(v⋅uH)*dΩh
+        oph      = AffineFEOperator(ahp,lhp,Uh,Vh)
+        uHh      = solve(oph)
+        e = uh - uHh
+        el2 = sqrt(sum( ∫( e⋅e )*dΩh ))
+        println("[L2 PROJECTION] el2 < tol: $(el2) < $(tol)")
+        @assert el2 < tol
+    end
 
     # restriction via interpolation
     uhH=interpolate(uh,UH) 
@@ -121,13 +132,15 @@ module PoissonAnisotropicOctreeModelsTests
     @assert el2 < tol
 
     # restriction via L2-projection
-    dΩhH = Measure(ΩH,Ωh,2*order)
-    aHp(u,v) = ∫(v⋅u)*dΩH
-    lHp(v)   = ∫(v⋅uh)*dΩhH
-    oph     = AffineFEOperator(aHp,lHp,UH,VH)
-    uhH     = solve(oph)
-    e       = uH - uhH
-    el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
+    if (num_free_dofs(UH)>0)
+        dΩhH = Measure(ΩH,Ωh,2*order)
+        aHp(u,v) = ∫(v⋅u)*dΩH
+        lHp(v)   = ∫(v⋅uh)*dΩhH
+        oph     = AffineFEOperator(aHp,lHp,UH,VH)
+        uhH     = solve(oph)
+        e       = uH - uhH
+        el2     = sqrt(sum( ∫( e⋅e )*dΩH ))
+    end
 
     fmodel_red, red_glue=GridapDistributed.redistribute(fmodel);
     Vhred=FESpace(fmodel_red,reffe,conformity=:H1;dirichlet_tags="boundary")
@@ -140,7 +153,11 @@ module PoissonAnisotropicOctreeModelsTests
     bhred(v)   = ∫(v⋅f)*dΩhred
 
     op    = AffineFEOperator(ahred,bhred,Uhred,Vhred)
-    uhred = solve(op)
+    if (num_free_dofs(Uhred)>0)
+      uhred = solve(op)
+    else
+      uhred=interpolate(u,Uhred)
+    end
     e = u - uhred
     el2 = sqrt(sum( ∫( e⋅e )*dΩhred ))
     println("[SOLVE FINE REDISTRIBUTED] el2 < tol: $(el2) < $(tol)")
@@ -153,7 +170,7 @@ module PoissonAnisotropicOctreeModelsTests
     println("[REDISTRIBUTE SOLUTION] el2 < tol: $(el2) < $(tol)")
     @assert el2 < tol
 
-     fmodel_red
+    fmodel_red
   end
 
   function test_refine_and_coarsen_at_once(ranks,
@@ -249,6 +266,13 @@ module PoissonAnisotropicOctreeModelsTests
     model = AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 1, 1)
     test_transfer_ops_and_redistribute(ranks,model,order,T)
   end
+
+  function test_no_interior(ranks, perm, order, T::Type)
+    coarse_model = setup_model(Val{2},perm; all_entities_on_boundary=true)
+    model = AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 1, 1)
+    test_transfer_ops_and_redistribute(ranks,model,order,T)
+  end
+
   
   function _field_type(::Val{Dc}, scalar_or_vector::Symbol) where Dc
     if scalar_or_vector==:scalar
@@ -262,6 +286,8 @@ module PoissonAnisotropicOctreeModelsTests
     # debug_logger = ConsoleLogger(stderr, Logging.Debug)
     # global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
+    test_no_interior(ranks,2,2,Float64)
+    test_no_interior(ranks,3,3,VectorValue{3,Float64})
     for perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))
     end

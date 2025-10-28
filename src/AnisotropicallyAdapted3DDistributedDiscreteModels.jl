@@ -71,7 +71,7 @@ function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteMod
 end 
 
 function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3}, 
-		                      refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+                          refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                           parts=nothing)
 
   Gridap.Helpers.@notimplementedif parts!=nothing
@@ -524,10 +524,12 @@ face_labeling =
     d_to_dface_to_entity[Dc+1] = faces_to_entity[Dc+1]
 
     bottom_interior_tag=findfirst(x->x=="interior",coarse_discrete_model.face_labeling.tag_to_name)
-    @assert bottom_interior_tag != nothing
-    bottom_interior_entities = coarse_discrete_model.face_labeling.tag_to_entities[bottom_interior_tag]
-
-    intermediate_interior_entities = [e+offset_intermediate_entities for e in bottom_interior_entities]
+    if bottom_interior_tag != nothing
+       bottom_interior_entities = coarse_discrete_model.face_labeling.tag_to_entities[bottom_interior_tag]
+       intermediate_interior_entities = [e+offset_intermediate_entities for e in bottom_interior_entities]
+    else
+       intermediate_interior_entities = Int[]
+    end
     
     boundary_intermediate_entities_set=setdiff(
                                         Set(collect(Int32(offset_intermediate_entities+1):Int32(offset_top_entities))),
@@ -535,7 +537,8 @@ face_labeling =
 
     boundary_intermediate_entities=[e for e in boundary_intermediate_entities_set]
 
-    intermediate_interior_entities_set=setdiff(Set(collect(offset_intermediate_entities+1:offset_top_entities)),
+    intermediate_interior_entities_set=setdiff(
+                                        Set(collect(offset_intermediate_entities+1:offset_top_entities)),
                                         boundary_intermediate_entities_set)
 
     # Tags: bottom-boundary (1), intermediate boundary (2), top boundary (3), interior (4)  
@@ -623,7 +626,7 @@ end
 
 
 function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-		                        refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+                            refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                             parts=nothing) where {Dc,Dp}
 
   Gridap.Helpers.@notimplementedif parts!=nothing
