@@ -202,6 +202,30 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
 end
 
 
+function default_grid_and_topology_function(pXest_type::P6estType,
+                                            non_conforming_glue,
+                                            cell_vertices,
+                                            ptr_pXest_connectivity,
+                                            ptr_pXest,
+                                            ptr_pXest_ghost)
+
+   nlvertices = map(non_conforming_glue) do ncglue
+    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
+  end
+
+  node_coordinates=generate_node_coordinates(pXest_type,
+                                             cell_vertices,
+                                             nlvertices,
+                                             ptr_pXest_connectivity,
+                                             ptr_pXest,
+                                             ptr_pXest_ghost)
+
+  grid,topology=generate_grid_and_topology(pXest_type,
+                                           cell_vertices,
+                                           nlvertices,
+                                           node_coordinates)
+end
+
 
 function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                                          pXest_refinement_rule_type::PXestRefinementRuleType,
@@ -210,7 +234,10 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                                          ptr_pXest_connectivity,
                                                          ptr_pXest,
                                                          ptr_pXest_ghost,
-                                                         ptr_pXest_lnodes)
+                                                         ptr_pXest_lnodes;
+                                                         grid_and_topology_function=default_grid_and_topology_function,
+                                                         grid_and_topology_bottom_function=
+                                                                default_grid_and_topology_function)
 
   Dc=num_cell_dims(pXest_type)                                                       
 
@@ -220,22 +247,12 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(pXest_type,pXest_refinement_rule_type,ptr_pXest_lnodes, cell_prange)
 
-
-  nlvertices = map(non_conforming_glue) do ncglue
-    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
-  end
-
-  node_coordinates=generate_node_coordinates(pXest_type,
-                                             gridap_cell_faces[1],
-                                             nlvertices,
-                                             ptr_pXest_connectivity,
-                                             ptr_pXest,
-                                             ptr_pXest_ghost)
-
-  grid,topology=generate_grid_and_topology(pXest_type,
+  grid,topology=grid_and_topology_function(pXest_type,
+                                           non_conforming_glue,
                                            gridap_cell_faces[1],
-                                           nlvertices,
-                                           node_coordinates)
+                                           ptr_pXest_connectivity,
+                                           ptr_pXest,
+                                           ptr_pXest_ghost)
 
   map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
     cell_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
@@ -257,7 +274,8 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                        coarse_discrete_model,
                                        topology,
                                        ptr_pXest,
-                                       ptr_pXest_ghost)
+                                       ptr_pXest_ghost;
+                                       grid_and_topology_bottom_function=grid_and_topology_bottom_function)
 
   # _set_hanging_labels!(face_labeling,non_conforming_glue)
 
@@ -554,7 +572,8 @@ function generate_face_labeling(pXest_type::P6estType,
                                 coarse_discrete_model::DiscreteModel{2,2},
                                 topology,
                                 ptr_pXest,
-                                ptr_pXest_ghost)
+                                ptr_pXest_ghost;
+                                grid_and_topology_bottom_function=default_grid_and_topology_function)
 
   pXest       = ptr_pXest[]
   pXest_ghost = ptr_pXest_ghost[]
@@ -566,13 +585,14 @@ function generate_face_labeling(pXest_type::P6estType,
   ptr_p4est_lnodes = setup_pXest_lnodes_nonconforming(p4est_type, ptr_p4est, ptr_p4est_ghost)
 
   bottom_boundary_model,_=setup_non_conforming_distributed_discrete_model(p4est_type,
-                                                                          PXestUniformRefinementRuleType(),
-                                                                          parts,
-                                                                          coarse_discrete_model,
-                                                                          ptr_p4est_connectivity,
-                                                                          ptr_p4est,
-                                                                          ptr_p4est_ghost,
-                                                                          ptr_p4est_lnodes)
+                                                           PXestUniformRefinementRuleType(),
+                                                           parts,
+                                                           coarse_discrete_model,
+                                                           ptr_p4est_connectivity,
+                                                           ptr_p4est,
+                                                           ptr_p4est_ghost,
+                                                           ptr_p4est_lnodes;
+                                                           grid_and_topology_function=grid_and_topology_bottom_function)
 
   pXest_ghost_destroy(p4est_type, ptr_p4est_ghost)
   pXest_lnodes_destroy(p4est_type, ptr_p4est_lnodes)

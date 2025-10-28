@@ -1620,7 +1620,7 @@ function _refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp},
 end 
 
 function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-		                             refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+		                         refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                                  parts=nothing) where {Dc,Dp}
 
   Gridap.Helpers.@notimplementedif parts!=nothing
@@ -2162,6 +2162,24 @@ function num_cell_faces(::Type{Val{Dc}}) where Dc
   2*Dc
 end 
 
+function default_grid_and_topology_function(pXest_type::P4P8estType, 
+                                            cell_corner_lids, 
+                                            ptr_pXest_connectivity,
+                                            ptr_pXest, 
+                                            ptr_pXest_ghost)
+  cell_vertex_coordinates = generate_cell_vertex_coordinates(
+    pXest_type,
+    cell_corner_lids,
+    ptr_pXest_connectivity,
+    ptr_pXest,
+    ptr_pXest_ghost
+  )
+  grid, topology = generate_grid_and_topology(
+    pXest_type,cell_corner_lids,cell_vertex_coordinates
+  )  
+end
+
+
 function setup_non_conforming_distributed_discrete_model(pXest_type::PXestType,
                                                          pXest_refinement_rule_type::PXestRefinementRuleType,
                                                          parts,
@@ -2169,7 +2187,8 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::PXestType,
                                                          ptr_pXest_connectivity,
                                                          ptr_pXest,
                                                          ptr_pXest_ghost,
-                                                         ptr_pXest_lnodes)
+                                                         ptr_pXest_lnodes;
+                                                         grid_and_topology_function=default_grid_and_topology_function)
 
   Dc=num_cell_dims(pXest_type)                                                       
 
@@ -2183,15 +2202,12 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::PXestType,
     Gridap.Arrays.Table(cell_lids.data,cell_lids.ptrs) # JaggedArray -> Table
   end
 
-  cell_vertex_coordinates = generate_cell_vertex_coordinates(
+  grid, topology = grid_and_topology_function(
     pXest_type,
     cell_corner_lids,
     ptr_pXest_connectivity,
     ptr_pXest,
     ptr_pXest_ghost
-  )
-  grid, topology = generate_grid_and_topology(
-    pXest_type,cell_corner_lids,cell_vertex_coordinates
   )
 
   map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
