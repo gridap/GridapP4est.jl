@@ -243,6 +243,71 @@ function Gridap.Geometry.SkeletonTriangulation(
   GridapDistributed.DistributedTriangulation(trians,model)
 end
 
+function Gridap.Geometry.SkeletonTriangulation(
+    portion,
+    _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}};
+    kwargs...) where {Dc,Dp,A}
+    
+    model = get_background_model(_dtrian)
+    covers_all_faces = GridapDistributed._covers_all_faces(model,_dtrian)
+    if covers_all_faces
+      return SkeletonTriangulation(portion,model;kwargs...);
+    else
+      dtrian = GridapDistributed.add_ghost_cells(_dtrian)
+      dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
+      models, ncglues = _generate_active_models_and_non_conforming_glue(model.pXest_type,
+                                                                        model.pXest_refinement_rule_type,
+                                                                        dtrian,
+                                                                        dtrian_cell_gids,
+                                                                        model.non_conforming_glue)
+      trians = map(models,
+                  local_views(dtrian),
+                  partition(get_cell_gids(model)),
+                  ncglues) do model, rtrian, gids, ncglue
+           # Using notation (dtrian,rtrian) from Gridap's CompositeTriangulation
+           # We need to use CompositeTriangulation to properly glue the SkeletonTriangulation 
+           # with the background model
+           dtrian=SkeletonTriangulation(model,ncglue)
+           trian=Gridap.Geometry.CompositeTriangulation(rtrian,dtrian)
+           GridapDistributed.filter_cells_when_needed(portion,gids,trian)
+      end
+      GridapDistributed.DistributedTriangulation(trians,model)                                                               
+    end    
+end
+
+function Gridap.Geometry.BoundaryTriangulation(
+    portion,
+    _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}};
+    kwargs...) where {Dc,Dp,A}
+    
+    model = get_background_model(_dtrian)
+    covers_all_faces = GridapDistributed._covers_all_faces(model,_dtrian)
+    if covers_all_faces
+      return BoundaryTriangulation(portion,model;kwargs...);
+    else
+      dtrian = GridapDistributed.add_ghost_cells(_dtrian)
+      dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
+      # We need to generate the models corresponding to the active cells in _dtrian 
+      # in order to be able to access to the "interior_boundary" tag in the local models
+      models, _ = _generate_active_models_and_non_conforming_glue(model.pXest_type,
+                                                                        model.pXest_refinement_rule_type,
+                                                                        dtrian,
+                                                                        dtrian_cell_gids,
+                                                                        model.non_conforming_glue)
+      trians = map(models,
+                  local_views(dtrian),
+                  partition(get_cell_gids(model))) do model, rtrian, gids
+           # Using notation (dtrian,rtrian) from Gridap's CompositeTriangulation
+           # We need to use CompositeTriangulation to properly glue the BoundaryTriangulation 
+           # with the background model
+           dtrian=BoundaryTriangulation(model; kwargs...)
+           trian=Gridap.Geometry.CompositeTriangulation(rtrian,dtrian)
+           GridapDistributed.filter_cells_when_needed(portion,gids,trian)
+      end
+      GridapDistributed.DistributedTriangulation(trians,         model)                                                               
+    end    
+end
+
 struct SubfaceRefCoordsMap{A} <: Gridap.Arrays.Map
   face_is_owner    :: Vector{Bool}
   face_to_subface  :: Vector{Int8}

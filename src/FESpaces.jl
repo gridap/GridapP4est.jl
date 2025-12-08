@@ -1001,7 +1001,25 @@ function Gridap.FESpaces.FESpace(
         return Gridap.FESpaces.FESpace(model, reffe; conformity=conformity, kwargs...)
     else 
         if (_is_conforming(model.non_conforming_glue) || conformity==:L2)
-            return Gridap.FESpaces.FESpace(dtrian, reffe; conformity=conformity, kwargs...)
+            dtrian = GridapDistributed.add_ghost_cells(_dtrian)
+            dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
+            models, _ = _generate_active_models_and_non_conforming_glue(model.pXest_type,
+                                                                              model.pXest_refinement_rule_type,
+                                                                              dtrian,
+                                                                              dtrian_cell_gids,
+                                                                              model.non_conforming_glue)
+            spaces = map(models, local_views(dtrian)) do m, t
+                FESpace(m, reffe; trian=t, conformity=conformity, kwargs...)
+            end
+            local_cell_dof_ids = map(get_cell_dof_ids,spaces)
+            nldofs = map(num_free_dofs,spaces)
+            gids = GridapDistributed.generate_gids(dtrian_cell_gids,local_cell_dof_ids,nldofs)
+            map(partition(gids)) do indices 
+                @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
+                @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
+            end
+            vector_type = GridapDistributed._find_vector_type(spaces,gids)
+            GridapDistributed.DistributedSingleFieldFESpace(spaces,gids,dtrian,vector_type)
         else 
 
         spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, dtrian, dtrian_cell_gids, _, _ =

@@ -83,10 +83,7 @@ module PoissonNonConformingOctreeModelsTests
     end
   end
 
-  function generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
-      ΛH = Skeleton(dmodel)
-      ΓH = Boundary(dmodel,tags="boundary")
-      
+  function generate_dg_operator(h, γ, order, ΩH, dΩH, ΛH, ΓH, UH, VH, u, f)
       dΛH = Measure(ΛH,2*order)
       dΓH = Measure(ΓH,2*order)
       
@@ -183,7 +180,9 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-      op = generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
+      ΛH = Skeleton(dmodel)
+      ΓH = Boundary(dmodel,tags="boundary")
+      op = generate_dg_operator(h, γ, order, ΩH, dΩH, ΛH, ΓH, UH, VH, u, f)
     end 
 
     uH = solve(op)
@@ -210,7 +209,9 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-      op = generate_dg_operator(h, γ, fmodel, order, Ωh, dΩh, Uh, Vh, u, f)
+      Λh = Skeleton(fmodel)
+      Γh = Boundary(fmodel,tags=["boundary"])
+      op = generate_dg_operator(h, γ, order, Ωh, dΩh, Λh, Γh, Uh, Vh, u, f)
     end 
 
     uh = solve(op)
@@ -289,7 +290,9 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-      op = generate_dg_operator(h, γ, fmodel_red, order, Ωhred, dΩhred, Uhred, Vhred, u, f)
+      Λhred = Skeleton(fmodel_red)
+      Γhred = Boundary(fmodel_red,tags=["boundary"])
+      op = generate_dg_operator(h, γ, order, Ωhred, dΩhred, Λhred, Γhred, Uhred, Vhred, u, f)
     end
 
     
@@ -362,7 +365,9 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-      op = generate_dg_operator(h, γ, dmodel, order, ΩH, dΩH, UH, VH, u, f)
+      ΛH = Skeleton(dmodel)
+      ΓH = Boundary(dmodel,tags=["boundary"])
+      op = generate_dg_operator(h, γ, order, ΩH, dΩH, ΛH, ΓH, UH, VH, u, f)
     end 
 
     uH = solve(op)
@@ -386,7 +391,9 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-      op = generate_dg_operator(h, γ, fmodel, order, Ωh, dΩh, Uh, Vh, u, f)
+      Λh = Skeleton(fmodel)
+      Γh = Boundary(fmodel,tags=["boundary"])
+      op = generate_dg_operator(h, γ, order, Ωh, dΩh, Λh, Γh, Uh, Vh, u, f)
     end 
 
     uh = solve(op)
@@ -436,8 +443,8 @@ module PoissonNonConformingOctreeModelsTests
     fmodel,glue=Gridap.Adaptivity.adapt(cmodel,ref_coarse_flags)
     ftrian = generate_triangulation_portion(ranks,fmodel,ctrian=ctrian,glue=glue)
 
-    writevtk(fmodel, "fmodel_amr_level_$(amr_step)")
-    writevtk(ftrian, "ftrian_amr_level_$(amr_step)")
+    # writevtk(fmodel, "fmodel_amr_level_$(amr_step)")
+    # writevtk(ftrian, "ftrian_amr_level_$(amr_step)")
 
     if (cg_or_dg == :cg)    
       Vh=FESpace(ftrian,reffe,conformity=conformity;dirichlet_tags=["boundary","interior_boundary"])
@@ -456,7 +463,9 @@ module PoissonNonConformingOctreeModelsTests
     else
       h = 2
       γ = 10
-      op = generate_dg_operator(h, γ, fmodel, order, Ωh, dΩh, Uh, Vh, u, f)
+      Λh = Skeleton(Ωh)
+      Γh = Boundary(Ωh,tags=["boundary","interior_boundary"])
+      op = generate_dg_operator(h, γ, order, Ωh, dΩh, Λh, Γh, Uh, Vh, u, f)
     end 
 
     uh = interpolate(u,Uh)
@@ -524,8 +533,8 @@ module PoissonNonConformingOctreeModelsTests
   end 
 
   function run(distribute)
-    debug_logger = ConsoleLogger(stderr, Logging.Debug)
-    global_logger(debug_logger); # Enable the debug logger globally
+    # debug_logger = ConsoleLogger(stderr, Logging.Debug)
+    # global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     # for Dc=2:3, perm in (1,2,4), order=(1,2), scalar_or_vector in (:scalar,)
     #   test(ranks,Val{Dc},perm,order,:dg,_field_type(Val{Dc}(),scalar_or_vector))
@@ -542,10 +551,10 @@ module PoissonNonConformingOctreeModelsTests
     #   end
     # end
 
-    for order=1:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,)
+    for order=1:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,), cg_or_dg in (:dg,:cg)
        test_2d_fe_space_on_triangulation(ranks,
                                          order,
-                                         :cg,
+                                         cg_or_dg,
                                          _field_type(Val{2}(),scalar_or_vector),
                                          num_amr_steps=5,
                                          num_ghost_layers=num_ghost_layers)
