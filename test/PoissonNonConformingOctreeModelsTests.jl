@@ -536,20 +536,20 @@ module PoissonNonConformingOctreeModelsTests
     # debug_logger = ConsoleLogger(stderr, Logging.Debug)
     # global_logger(debug_logger); # Enable the debug logger globally
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
-    # for Dc=2:3, perm in (1,2,4), order=(1,2), scalar_or_vector in (:scalar,)
-    #   test(ranks,Val{Dc},perm,order,:dg,_field_type(Val{Dc}(),scalar_or_vector))
-    # end
+    for Dc=2:3, perm in (1,2,4), order=(1,2), scalar_or_vector in (:scalar,)
+      test(ranks,Val{Dc},perm,order,:dg,_field_type(Val{Dc}(),scalar_or_vector))
+    end
     # for Dc=2:3, perm in (1,2), order in (1,4), scalar_or_vector in (:vector,)
     #  test(ranks,Val{Dc},perm,order,:cg,_field_type(Val{Dc}(),scalar_or_vector))
     # end
-    # for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,2)
-    #   if (num_ghost_layers==1 || length(ranks)>1)
-    #     test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
-    #             num_ghost_layers=num_ghost_layers)
-    #     test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
-    #             num_ghost_layers=num_ghost_layers)
-    #   end
-    # end
+    for order=2:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,2)
+      if (num_ghost_layers==1 || length(ranks)>1)
+        test_2d(ranks,order,:dg,_field_type(Val{2}(),scalar_or_vector), num_amr_steps=5,
+                num_ghost_layers=num_ghost_layers)
+        test_3d(ranks,order,:dg,_field_type(Val{3}(),scalar_or_vector), num_amr_steps=4,
+                num_ghost_layers=num_ghost_layers)
+      end
+    end
 
     for order=1:2, scalar_or_vector in (:scalar,), num_ghost_layers in (1,), cg_or_dg in (:dg,:cg)
        test_2d_fe_space_on_triangulation(ranks,
