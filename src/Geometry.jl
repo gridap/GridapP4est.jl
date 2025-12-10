@@ -288,6 +288,7 @@ function Gridap.Geometry.SkeletonTriangulation(model::DiscreteModel{D},
 
     topo = Gridap.Geometry.get_grid_topology(model)
     is_boundary_face=Gridap.Geometry.get_isboundary_face(topo,D-1)
+    cell_faces = Gridap.Geometry.get_faces(topo,D,D-1)
 
     face_to_bgface_plus, face_to_bgface_minus=Int[], Int[]
     face_is_owner_plus, face_is_owner_minus=Bool[], Bool[]
@@ -299,6 +300,10 @@ function Gridap.Geometry.SkeletonTriangulation(model::DiscreteModel{D},
     # The proper values will be set below for some of the bgfaces
     bgface_to_lcell_plus  .= 1
     bgface_to_lcell_minus .= 1
+
+    n_cell_vertices = num_cell_vertices(Val{D})
+    n_cell_edges    = num_cell_edges(Val{D})
+    n_cell_faces    = num_cell_faces(Val{D})   
 
     num_children=GridapP4est.get_num_children(Val{D-1})
     for gface=1:length(face_to_mask)
@@ -342,20 +347,21 @@ function Gridap.Geometry.SkeletonTriangulation(model::DiscreteModel{D},
         # Hanging face
 
         # Minus side (owner side)
-        ocell, _, subface  =  ncglue.hanging_faces_glue[D][gface - num_regular_faces]
+        ocell, ocell_lface, subface  =  ncglue.hanging_faces_glue[D][gface - num_regular_faces]
         if (ocell != -1)
+          ocell_lface_within_dim = face_lid_within_dim(n_cell_vertices, n_cell_edges, n_cell_faces, ocell_lface)  
           bgface_to_lcell_minus[ocell]=1
-          push!(face_to_bgface_minus, ocell)    
+          push!(face_to_bgface_minus, cell_faces[ocell][ocell_lface_within_dim])    
           push!(face_is_owner_minus,true)
           push!(face_to_subface_minus,subface)   
         end
 
         # Plus side (non-owner side)
         if (ocell != -1)
-          bgface_to_lcell_plus[bgface]=1
-          push!(face_to_bgface_minus, bgface)    
-          push!(face_is_owner_minus,false)
-          push!(face_to_subface_minus,-1)   
+          bgface_to_lcell_plus[gface]=1
+          push!(face_to_bgface_plus, gface)    
+          push!(face_is_owner_plus,false)
+          push!(face_to_subface_plus,-1)   
         end
       end 
      end
