@@ -877,7 +877,7 @@ function _is_conforming(non_conforming_glue::AbstractVector{<:NonConformingGlue}
     reduction(&,is_local_conforming,init=true,destination=:all).item_ref[]
 end 
 
-function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefinementRuleType, Dc, reffe)
+function _generate_face_subface_ldof_to_cell_ldof(ref_rule, Dc, reffe)
     face_subface_ldof_to_cell_ldof = Vector{Vector{Vector{Vector{Int32}}}}(undef, Dc - 1)
     face_subface_ldof_to_cell_ldof[Dc - 1] =
         _generate_face_subface_ldof_to_cell_ldof(ref_rule, Dc - 1, Dc, reffe)
