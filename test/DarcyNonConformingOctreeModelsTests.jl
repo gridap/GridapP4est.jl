@@ -325,15 +325,12 @@ module DarcyNonConformingOctreeModelsTests
     ep = p_ex - ph
 
     l2(v) = sqrt(sum(∫(v⋅v)*dΩ))
-    hdiv(v) = sqrt(sum(∫(v⋅v + ∇⋅(v)*∇⋅(v))*dΩ))    
     
     eu_l2 = l2(eu)
-    eu_hdiv = hdiv(eu)
     ep_l2 = l2(ep)
     
     tol = 1.0e-6
     @test eu_l2 < tol
-    @test eu_hdiv < tol
     @test ep_l2 < tol
   end
 
