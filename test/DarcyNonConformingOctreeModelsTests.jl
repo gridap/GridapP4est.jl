@@ -10,6 +10,10 @@ module DarcyNonConformingOctreeModelsTests
   using Logging
   using Test
 
+  include("CoarseDiscreteModelsTools.jl")
+  include("GenerateTriangulationPortionTools.jl")
+
+
   function test_transfer_ops_and_redistribute(ranks,
                                               dmodel::GridapDistributed.DistributedDiscreteModel{Dc},
                                               order) where Dc
@@ -166,6 +170,87 @@ module DarcyNonConformingOctreeModelsTests
     end
   end
 
+  function test_2d_fe_space_on_triangulation(ranks,order;num_amr_steps=5,num_ghost_layers=1)
+    coarse_model=CartesianDiscreteModel((0,1,0,1),(1,1))
+    dmodel=OctreeDistributedDiscreteModel(ranks,coarse_model,2;num_ghost_layers=num_ghost_layers)
+    dtrian=generate_triangulation_portion(ranks,dmodel)
+    for i=1:num_amr_steps
+     dmodel,dtrian=test_fe_space_on_triangulation(ranks,dmodel,dtrian,order,i)
+    end
+  end
+
+  function test_fe_space_on_triangulation(ranks,cmodel,ctrian,order,amr_step)
+    ref_coarse_flags=map(ranks,partition(get_cell_gids(cmodel.dmodel))) do rank,indices
+        flags=zeros(Cint,length(indices))
+        flags.=nothing_flag
+        
+        flags[1]=refine_flag
+        flags[own_length(indices)]=refine_flag
+        
+        # To create some unbalance
+        if (rank%2==0 && own_length(indices)>1)
+           flags[div(own_length(indices),2)]=refine_flag
+        end
+        flags
+    end
+    fmodel,glue=Gridap.Adaptivity.adapt(cmodel,ref_coarse_flags)
+    ftrian = generate_triangulation_portion(ranks,fmodel,ctrian=ctrian,glue=glue)
+
+    u_ex, p_ex, f_ex=get_analytical_functions(2)
+
+    V = FESpace(ftrian,
+                ReferenceFE(raviart_thomas,Float64,order),
+                conformity=:Hdiv,
+                dirichlet_tags="boundary")
+    
+    Q = FESpace(ftrian,
+                ReferenceFE(lagrangian,Float64,order); 
+                conformity=:L2)
+    
+    U = TrialFESpace(V,u_ex)
+    P = TrialFESpace(Q)
+    
+    Y = MultiFieldFESpace([V, Q])
+    X = MultiFieldFESpace([U, P])
+    
+    degree = 2*(order+1)
+    dΩ = Measure(ftrian,degree)
+    
+    btrian = Boundary(ftrian,tags="interior_boundary")
+    degree = 2*(order+1)
+    dΓ = Measure(btrian,degree)
+    nb = get_normal_vector(btrian)
+    
+    a((u, p),(v, q)) = ∫(u⋅v)dΩ +∫(q*(∇⋅u))dΩ-∫((∇⋅v)*p)dΩ
+    b(( v, q)) = ∫( v⋅f_ex + q*(∇⋅u_ex))dΩ - ∫((v⋅nb)*p_ex )dΓ
+
+    op = AffineFEOperator(a,b,X,Y)
+    xh = solve(op)
+
+    uh, ph = xh
+    eu = u_ex - uh
+    ep = p_ex - ph
+
+    l2(v) = sqrt(sum(∫(v⋅v)*dΩ))
+    
+    eu_l2 = l2(eu)
+    ep_l2 = l2(ep)
+
+    # writevtk(fmodel, "fmodel_amr_level_$(amr_step)")
+    # writevtk(ftrian, "ftrian_amr_level_$(amr_step)")
+
+    tol=1e-5
+    println("[SOLVE FINE] eu_l2 < tol: $(eu_l2) < $(tol)")
+    println("[SOLVE FINE] ep_l2 < tol: $(ep_l2) < $(tol)")
+
+    tol = 1.0e-6
+    @assert eu_l2 < tol
+    @assert ep_l2 < tol
+   
+    fmodel, ftrian
+  end
+
+
   u_ex_2D(x) = VectorValue(2*x[1],x[1]+x[2])
   p_ex_2D(x) = x[1]-x[2]
   f_ex_2D(x) = u_ex_2D(x) + ∇(p_ex_2D)(x)
@@ -182,7 +267,6 @@ module DarcyNonConformingOctreeModelsTests
     end
   end
 
-  include("CoarseDiscreteModelsTools.jl")
 
   function solve_darcy(model::GridapDistributed.DistributedDiscreteModel{Dc},order) where {Dc}
     if (Dc==2)
@@ -241,16 +325,16 @@ module DarcyNonConformingOctreeModelsTests
     ep = p_ex - ph
 
     l2(v) = sqrt(sum(∫(v⋅v)*dΩ))
-    h1(v) = sqrt(sum(∫(v*v + ∇(v)⋅∇(v))*dΩ))
+    hdiv(v) = sqrt(sum(∫(v⋅v + ∇⋅(v)*∇⋅(v))*dΩ))    
     
     eu_l2 = l2(eu)
+    eu_hdiv = hdiv(eu)
     ep_l2 = l2(ep)
-    ep_h1 = h1(ep)
     
     tol = 1.0e-6
     @test eu_l2 < tol
+    @test eu_hdiv < tol
     @test ep_l2 < tol
-    @test ep_h1 < tol
   end
 
   function run(distribute)
@@ -264,5 +348,9 @@ module DarcyNonConformingOctreeModelsTests
 
     order=2
     test_3d(ranks,order)
+
+    order=1
+    test_2d_fe_space_on_triangulation(ranks,order;num_amr_steps=5)
+
   end
 end

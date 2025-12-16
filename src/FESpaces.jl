@@ -1039,6 +1039,74 @@ function Gridap.FESpaces.FESpace(
   end
 end
 
+
+function Gridap.FESpaces.FESpace(
+            _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
+            reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any};
+            conformity=nothing,
+            kwargs...) where {Dc, Dp, A}
+
+    model = get_background_model(_dtrian)
+
+    # If the triangulation covers all faces of the background model,
+    # then we can simply reuse the existing local models and non_conforming_glue
+    # We should still preserve the post-condition that the returned model has 
+    # the INTERIOR_BOUNDARY_TAG tag on its face_labeling
+    covers_all_faces = GridapDistributed._covers_all_faces(model,_dtrian)
+    if covers_all_faces
+        return Gridap.FESpaces.FESpace(model, reffe; conformity=conformity, kwargs...)
+    else 
+        dtrian = GridapDistributed.add_ghost_cells(_dtrian)
+        dtrian_cell_gids = GridapDistributed.generate_cell_gids(dtrian)
+        models, ncglue = _generate_active_models_and_non_conforming_glue(model.pXest_type,
+                                                                         model.pXest_refinement_rule_type,
+                                                                         dtrian,
+                                                                         dtrian_cell_gids,
+                                                                         model.non_conforming_glue)
+
+        if (_is_conforming(ncglue) || conformity==:L2)
+            spaces = map(models, local_views(dtrian)) do m, t
+                FESpace(m, reffe; trian=t, conformity=conformity, kwargs...)
+            end
+            local_cell_dof_ids = map(get_cell_dof_ids,spaces)
+            nldofs = map(num_free_dofs,spaces)
+            gids = GridapDistributed.generate_gids(dtrian_cell_gids,local_cell_dof_ids,nldofs)
+            map(partition(gids)) do indices 
+                @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
+                @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
+            end
+            vector_type = GridapDistributed._find_vector_type(spaces,gids)
+            GridapDistributed.DistributedSingleFieldFESpace(spaces,gids,dtrian,vector_type)
+        else 
+            cell_reffes = map(models) do m
+               basis,reffe_args,reffe_kwargs = reffe
+               cell_reffe = ReferenceFE(m,basis,reffe_args...;reffe_kwargs...)
+            end
+            dmodel = GridapDistributed.GenericDistributedDiscreteModel(models,dtrian_cell_gids)
+            sign_flips=GridapDistributed._generate_sign_flips(dmodel,cell_reffes)
+            spaces_wo_constraints = map(models,sign_flips,cell_reffes,local_views(dtrian)) do m,sign_flip,cell_reffe,t
+               conf = Conformity(Gridap.Fields.testitem(cell_reffe),conformity)
+               cell_fe = CellFE(m,cell_reffe,conf,sign_flip)
+               FESpace(m, cell_fe; trian=t, kwargs...)
+            end
+             sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs =
+                      generate_constraints(model.pXest_refinement_rule_type,
+                                           reffe,
+                                           models,
+                                           ncglue,
+                                           spaces_wo_constraints)
+
+             _add_constraints(dtrian,
+                              dtrian_cell_gids,
+                              spaces_wo_constraints,
+                              sDOF_to_dof, 
+                              sDOF_to_dofs, 
+                              sDOF_to_coeffs)
+    end
+  end
+end
+
+
 function generate_local_fe_spaces_and_constraints(
             _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
             reffe;
