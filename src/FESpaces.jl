@@ -923,6 +923,7 @@ end
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
                                  reffe;
                                  conformity=nothing, 
+                                 constraint=nothing,
                                  kwargs...) where {Dc}
 
 
@@ -941,12 +942,14 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
                              model.non_conforming_glue,
                              spaces_wo_constraints)
 
-    _add_constraints(Triangulation(model.dmodel),
+    V=_add_constraints(Triangulation(model.dmodel),
                      get_cell_gids(model.dmodel),
                      spaces_wo_constraints,
                      sDOF_to_dof, 
                      sDOF_to_dofs, 
                      sDOF_to_coeffs)
+
+    GridapDistributed._add_distributed_constraint(V,reffe,constraint)
 end
 
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
@@ -988,6 +991,7 @@ function Gridap.FESpaces.FESpace(
             _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
             reffe;
             conformity=nothing,
+            constraint=nothing,
             kwargs...) where {Dc, Dp, A}
 
     model = get_background_model(_dtrian)
@@ -1019,22 +1023,22 @@ function Gridap.FESpaces.FESpace(
                 @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
             end
             vector_type = GridapDistributed._find_vector_type(spaces,gids)
-            GridapDistributed.DistributedSingleFieldFESpace(spaces,gids,dtrian,vector_type)
+            V=GridapDistributed.DistributedSingleFieldFESpace(spaces,gids,dtrian,vector_type)
+            GridapDistributed._add_distributed_constraint(V,reffe,constraint)
         else 
+            spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, dtrian, dtrian_cell_gids, _, _ =
+                generate_local_fe_spaces_and_constraints(
+                       _dtrian, 
+                       reffe; 
+                       conformity=conformity, kwargs...)
 
-        spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, dtrian, dtrian_cell_gids, _, _ =
-            generate_local_fe_spaces_and_constraints(
-                   _dtrian, 
-                   reffe; 
-                   conformity=conformity, kwargs...)
-
-         _add_constraints(dtrian,
-                          dtrian_cell_gids,
-                          spaces_wo_constraints,
-                          sDOF_to_dof, 
-                          sDOF_to_dofs, 
-                          sDOF_to_coeffs)
-
+             V=_add_constraints(dtrian,
+                              dtrian_cell_gids,
+                              spaces_wo_constraints,
+                              sDOF_to_dof, 
+                              sDOF_to_dofs, 
+                              sDOF_to_coeffs)
+            GridapDistributed._add_distributed_constraint(V,reffe,constraint)
     end
   end
 end
