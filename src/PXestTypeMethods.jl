@@ -1914,36 +1914,15 @@ function generate_cell_faces_and_non_conforming_glue(pXest_type::PXestType,
     owner_faces_pindex = Vector{Vector{Int}}(undef, Dc - 1)
     owner_faces_lids = Vector{Dict{Int,Tuple{Int,Int,Int}}}(undef, Dc - 1)
 
-    lface_to_cvertices = Gridap.ReferenceFEs.get_faces(Dc == 2 ? QUAD : HEX, Dc - 1, 0)
-    pindex_to_cfvertex_to_fvertex = Gridap.ReferenceFEs.get_vertex_permutations(Dc == 2 ? SEGMENT : QUAD)
-
-    owner_faces_pindex[Dc-1], owner_faces_lids[Dc-1] = _compute_owner_faces_pindex_and_lids(Dc,
-        pXest_refinement_rule,
-        n_cell_vertices,
-        n_cell_edges,
-        n_cell_faces,
-        num_hanging_faces[Dc],
-        hanging_faces_glue[Dc],
-        hanging_faces_to_cell[Dc],
-        hanging_faces_to_lface[Dc],
-        gridap_cell_faces[1],
-        gridap_cell_faces[Dc],
-        lface_to_cvertices,
-        pindex_to_cfvertex_to_fvertex)
-
-    if (Dc == 3)
-      owner_faces_pindex[1], owner_faces_lids[1]=
-        _compute_owner_edges_pindex_and_lids(
-            n_cell_vertices,
-            n_cell_edges,
-            n_cell_faces,
-            num_hanging_faces[2],
-            hanging_faces_glue[2],
-            hanging_faces_to_cell[2],
-            hanging_faces_to_lface[2],
-            gridap_cell_faces[1],
-            gridap_cell_faces[2])
-    end
+    _fill_owner_faces_pindex_and_lids!(Dc,
+                                       pXest_refinement_rule,
+                                       owner_faces_pindex,
+                                       owner_faces_lids,
+                                       num_hanging_faces,
+                                       hanging_faces_glue,
+                                       hanging_faces_to_cell,
+                                       hanging_faces_to_lface,
+                                       gridap_cell_faces)
 
     return num_regular_faces, 
            num_hanging_faces,
