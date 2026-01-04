@@ -21,7 +21,7 @@ jobs:
         arch:
           - x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Cache p4est
         id: cache-p4est
         uses: actions/cache@v5
