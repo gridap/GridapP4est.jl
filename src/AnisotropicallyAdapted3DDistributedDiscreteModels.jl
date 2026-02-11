@@ -71,7 +71,7 @@ function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteMod
 end 
 
 function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3}, 
-		                      refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+                          refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                           parts=nothing)
 
   Gridap.Helpers.@notimplementedif parts!=nothing
@@ -202,6 +202,30 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
 end
 
 
+function default_grid_and_topology_function(pXest_type::P6estType,
+                                            non_conforming_glue,
+                                            cell_vertices,
+                                            ptr_pXest_connectivity,
+                                            ptr_pXest,
+                                            ptr_pXest_ghost)
+
+   nlvertices = map(non_conforming_glue) do ncglue
+    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
+  end
+
+  node_coordinates=generate_node_coordinates(pXest_type,
+                                             cell_vertices,
+                                             nlvertices,
+                                             ptr_pXest_connectivity,
+                                             ptr_pXest,
+                                             ptr_pXest_ghost)
+
+  grid,topology=generate_grid_and_topology(pXest_type,
+                                           cell_vertices,
+                                           nlvertices,
+                                           node_coordinates)
+end
+
 
 function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                                          pXest_refinement_rule_type::PXestRefinementRuleType,
@@ -210,7 +234,10 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                                          ptr_pXest_connectivity,
                                                          ptr_pXest,
                                                          ptr_pXest_ghost,
-                                                         ptr_pXest_lnodes)
+                                                         ptr_pXest_lnodes;
+                                                         grid_and_topology_function=default_grid_and_topology_function,
+                                                         grid_and_topology_bottom_function=
+                                                                default_grid_and_topology_function)
 
   Dc=num_cell_dims(pXest_type)                                                       
 
@@ -220,22 +247,12 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
   non_conforming_glue=
     generate_cell_faces_and_non_conforming_glue(pXest_type,pXest_refinement_rule_type,ptr_pXest_lnodes, cell_prange)
 
-
-  nlvertices = map(non_conforming_glue) do ncglue
-    ncglue.num_regular_faces[1]+ncglue.num_hanging_faces[1]
-  end
-
-  node_coordinates=generate_node_coordinates(pXest_type,
-                                             gridap_cell_faces[1],
-                                             nlvertices,
-                                             ptr_pXest_connectivity,
-                                             ptr_pXest,
-                                             ptr_pXest_ghost)
-
-  grid,topology=generate_grid_and_topology(pXest_type,
+  grid,topology=grid_and_topology_function(pXest_type,
+                                           non_conforming_glue,
                                            gridap_cell_faces[1],
-                                           nlvertices,
-                                           node_coordinates)
+                                           ptr_pXest_connectivity,
+                                           ptr_pXest,
+                                           ptr_pXest_ghost)
 
   map(topology,gridap_cell_faces[Dc]) do topology,cell_faces
     cell_faces_gridap = Gridap.Arrays.Table(cell_faces.data,cell_faces.ptrs)
@@ -257,7 +274,8 @@ function setup_non_conforming_distributed_discrete_model(pXest_type::P6estType,
                                        coarse_discrete_model,
                                        topology,
                                        ptr_pXest,
-                                       ptr_pXest_ghost)
+                                       ptr_pXest_ghost;
+                                       grid_and_topology_bottom_function=grid_and_topology_bottom_function)
 
   # _set_hanging_labels!(face_labeling,non_conforming_glue)
 
@@ -325,36 +343,16 @@ function transfer_entity_ids!(target_entity_ids,
   end 
 end
 
-function generate_face_labeling(pXest_type::P6estType,
-                                parts,
-                                cell_prange,
-                                coarse_discrete_model::DiscreteModel{2,2},
-                                topology,
-                                ptr_pXest,
-                                ptr_pXest_ghost)
+function _generate_extruded_face_labeling_from_bottom_boundary_model(cell_prange,
+                                                                     coarse_discrete_model,
+                                                                     topology,
+                                                                     ptr_pXest,
+                                                                     bottom_boundary_model)
 
-  Dc=3                              
 
-  pXest       = ptr_pXest[]
-  pXest_ghost = ptr_pXest_ghost[]
-
-  p4est_type=P4estType()
-  ptr_p4est_connectivity = pXest.connectivity[].conn4
-  ptr_p4est = pXest.columns
-  ptr_p4est_ghost = setup_pXest_ghost(p4est_type,ptr_p4est)
-  ptr_p4est_lnodes = setup_pXest_lnodes_nonconforming(p4est_type, ptr_p4est, ptr_p4est_ghost)
-
-  bottom_boundary_model,_=setup_non_conforming_distributed_discrete_model(p4est_type,
-                                                                        PXestUniformRefinementRuleType(),
-                                                                        parts,
-                                                                        coarse_discrete_model,
-                                                                        ptr_p4est_connectivity,
-                                                                        ptr_p4est,
-                                                                        ptr_p4est_ghost,
-                                                                        ptr_p4est_lnodes)
-
-  pXest_ghost_destroy(p4est_type, ptr_p4est_ghost)
-  pXest_lnodes_destroy(p4est_type, ptr_p4est_lnodes)
+  Dc=3          
+  pXest = ptr_pXest[]
+  pXest_type = P6estType()
 
   bottom_boundary_model_topology = map(local_views(bottom_boundary_model)) do model 
     Gridap.Geometry.get_grid_topology(model)
@@ -366,6 +364,8 @@ function generate_face_labeling(pXest_type::P6estType,
 
   coarse_face_labeling = get_face_labeling(coarse_discrete_model)
   max_entity_id = _compute_max_entity_id(coarse_face_labeling)
+  @assert max_entity_id>0 "Max entity id in the coarse model should be positive"
+
 
   offset_intermediate_entities = max_entity_id
   offset_top_entities = 2*max_entity_id
@@ -524,10 +524,12 @@ face_labeling =
     d_to_dface_to_entity[Dc+1] = faces_to_entity[Dc+1]
 
     bottom_interior_tag=findfirst(x->x=="interior",coarse_discrete_model.face_labeling.tag_to_name)
-    @assert bottom_interior_tag != nothing
-    bottom_interior_entities = coarse_discrete_model.face_labeling.tag_to_entities[bottom_interior_tag]
-
-    intermediate_interior_entities = [e+offset_intermediate_entities for e in bottom_interior_entities]
+    if bottom_interior_tag != nothing
+       bottom_interior_entities = coarse_discrete_model.face_labeling.tag_to_entities[bottom_interior_tag]
+       intermediate_interior_entities = [e+offset_intermediate_entities for e in bottom_interior_entities]
+    else
+       intermediate_interior_entities = Int[]
+    end
     
     boundary_intermediate_entities_set=setdiff(
                                         Set(collect(Int32(offset_intermediate_entities+1):Int32(offset_top_entities))),
@@ -535,7 +537,8 @@ face_labeling =
 
     boundary_intermediate_entities=[e for e in boundary_intermediate_entities_set]
 
-    intermediate_interior_entities_set=setdiff(Set(collect(offset_intermediate_entities+1:offset_top_entities)),
+    intermediate_interior_entities_set=setdiff(
+                                        Set(collect(offset_intermediate_entities+1:offset_top_entities)),
                                         boundary_intermediate_entities_set)
 
     # Tags: bottom-boundary (1), intermediate boundary (2), top boundary (3), interior (4)  
@@ -555,12 +558,50 @@ face_labeling =
                                                tag_to_entities,
                                                tag_to_name)
 
-    add_tag_from_tags!(face_labeling, 
-        "boundary", 
+    add_tag_from_tags!(face_labeling,
+        "boundary",
         ["bottom_boundary", "intermediate_boundary", "top_boundary"])
     
     face_labeling
   end
+end
+
+function generate_face_labeling(pXest_type::P6estType,
+                                parts,
+                                cell_prange,
+                                coarse_discrete_model::DiscreteModel{2,2},
+                                topology,
+                                ptr_pXest,
+                                ptr_pXest_ghost;
+                                grid_and_topology_bottom_function=default_grid_and_topology_function)
+
+  pXest       = ptr_pXest[]
+  pXest_ghost = ptr_pXest_ghost[]
+
+  p4est_type=P4estType()
+  ptr_p4est_connectivity = pXest.connectivity[].conn4
+  ptr_p4est = pXest.columns
+  ptr_p4est_ghost = setup_pXest_ghost(p4est_type,ptr_p4est)
+  ptr_p4est_lnodes = setup_pXest_lnodes_nonconforming(p4est_type, ptr_p4est, ptr_p4est_ghost)
+
+  bottom_boundary_model,_=setup_non_conforming_distributed_discrete_model(p4est_type,
+                                                           PXestUniformRefinementRuleType(),
+                                                           parts,
+                                                           coarse_discrete_model,
+                                                           ptr_p4est_connectivity,
+                                                           ptr_p4est,
+                                                           ptr_p4est_ghost,
+                                                           ptr_p4est_lnodes;
+                                                           grid_and_topology_function=grid_and_topology_bottom_function)
+
+  pXest_ghost_destroy(p4est_type, ptr_p4est_ghost)
+  pXest_lnodes_destroy(p4est_type, ptr_p4est_lnodes)
+
+  face_labeling = _generate_extruded_face_labeling_from_bottom_boundary_model(cell_prange,
+                                                                              coarse_discrete_model,
+                                                                              topology,
+                                                                              ptr_pXest,
+                                                                              bottom_boundary_model)
 
   # map(partition(cell_prange)) do indices 
   #   println("[$(MPI.Comm_rank(MPI.COMM_WORLD))] l2g=$(local_to_global(indices))")
@@ -623,7 +664,7 @@ end
 
 
 function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
-		                        refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
+                            refinement_and_coarsening_flags::MPIArray{<:Vector{<:Integer}};
                             parts=nothing) where {Dc,Dp}
 
   Gridap.Helpers.@notimplementedif parts!=nothing

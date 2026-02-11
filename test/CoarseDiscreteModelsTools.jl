@@ -68,7 +68,8 @@
     m
   end
 
-  function setup_model(::Type{Val{2}}, perm)
+  function setup_model(::Type{Val{2}}, perm; 
+                       all_entities_on_boundary=false)
     @assert perm ∈ (1,2,3,4)
     #
     #  3-------4-------6
@@ -107,14 +108,21 @@
                                                 Gridap.Geometry.NonOriented())
         m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
         labels = get_face_labeling(m)
-        labels.d_to_dface_to_entity[1].=2
-        if (perm==1 || perm==2)
-          labels.d_to_dface_to_entity[2].=[2,2,2,1,2,2,2]
-        elseif (perm==3 || perm==4)
-          labels.d_to_dface_to_entity[2].=[2,2,1,2,2,2,2] 
+        if !all_entities_on_boundary          
+            labels.d_to_dface_to_entity[1].=2
+            if (perm==1 || perm==2)
+              labels.d_to_dface_to_entity[2].=[2,2,2,1,2,2,2]
+            elseif (perm==3 || perm==4)
+              labels.d_to_dface_to_entity[2].=[2,2,1,2,2,2,2] 
+            end
+            labels.d_to_dface_to_entity[3].=1
+            add_tag!(labels,"boundary",[2])
+            add_tag!(labels,"interior",[1])
+        else
+            labels.d_to_dface_to_entity[1].=1
+            labels.d_to_dface_to_entity[2].=1
+            labels.d_to_dface_to_entity[3].=1
+            add_tag!(labels,"boundary",[1])
         end
-        labels.d_to_dface_to_entity[3].=1
-        add_tag!(labels,"boundary",[2])
-        add_tag!(labels,"interior",[1])
         m
   end
