@@ -2491,23 +2491,8 @@ function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, tri
     end |> tuple_of_arrays
 end 
 
-function cell_to_faces(topology_new, Dcm, d)
-    map(topology_new) do topology_new
-        topology_new.n_m_to_nface_to_mfaces[Dcm+1,d+1]
-    end
-end
-
 function update_face_to_entity_with_ghost_data!(face_to_entity,
-                                                trian_cell_gids,
-                                                nfaces_per_cell,
-                                                cell_to_face)
-    cell_to_face_data = map(cell_to_face) do cell_to_face
-        cell_to_face.data
-    end
-    cell_to_face_ptrs = map(cell_to_face) do cell_to_face
-        cell_to_face.ptrs
-    end
-
+                                                trian_cell_gids)
     face_to_entity_pvec = PVector(face_to_entity, trian_cell_gids) do face_to_entity, trian_cell_gids
         indices = partition(trian_cell_gids)
         values  = face_to_entity
@@ -2646,28 +2631,24 @@ function _generate_face_labeling_triangulation(trian,
         face_labeling_new.d_to_dface_to_entity[1]
     end
     _update_face_to_entity_with_ghost_data!(vertex_to_entity,
-                                            trian_cell_gids,
-                                            cell_to_faces(topology_new,Dcm,0))
+                                            trian_cell_gids)
     if Dcm==3
        edge_to_entity = map(face_labeling_new) do face_labeling_new
          face_labeling_new.d_to_dface_to_entity[2]
        end
        _update_face_to_entity_with_ghost_data!(edge_to_entity,
-                                               trian_cell_gids,
-                                               cell_to_faces(topology_new,Dcm,1))
+                                               trian_cell_gids)
     end
     facet_to_entity = map(face_labeling_new) do face_labeling_new
         face_labeling_new.d_to_dface_to_entity[Dcm]
     end
     _update_face_to_entity_with_ghost_data!(facet_to_entity,
-                                            trian_cell_gids,
-                                            cell_to_faces(topology_new,Dcm,Dcm-1))
+                                            trian_cell_gids)
     cell_to_entity = map(face_labeling_new) do face_labeling_new
         face_labeling_new.d_to_dface_to_entity[Dcm+1]
     end
     _update_face_to_entity_with_ghost_data!(cell_to_entity,
-                                            trian_cell_gids,
-                                            cell_to_faces(topology_new,Dcm,Dcm))
+                                            trian_cell_gids)
     map(face_labeling_new) do face_labeling_new
        for d=0:Dcm-1
             @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: d=$(d) face_labeling_new.d_to_dface_to_entity[d+1]=$(face_labeling_new.d_to_dface_to_entity[d+1])"
@@ -2676,16 +2657,8 @@ function _generate_face_labeling_triangulation(trian,
     return face_labeling_new
 end
 
-function _update_face_to_entity_with_ghost_data!(face_to_entity, trian_cell_gids, cell_to_face)
-    face_to_entity_pvec = PVector(face_to_entity, trian_cell_gids) do face_to_entity, trian_cell_gids
-        nfaces = length(face_to_entity)
-        collect(1:nfaces)
-    end
-    t = assemble!(max, face_to_entity_pvec)
-    wait(t)
-    map(face_to_entity, partition(fetch(consistent!(face_to_entity_pvec)))) do face_to_entity, assembled
-        copy!(face_to_entity, assembled)
-    end
+function _update_face_to_entity_with_ghost_data!(face_to_entity, trian_cell_gids)
+    update_face_to_entity_with_ghost_data!(face_to_entity, trian_cell_gids)
 end
 
 function _generate_active_models_and_non_conforming_glue(

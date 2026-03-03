@@ -1013,7 +1013,7 @@ function generate_local_fe_spaces_and_constraints(
                      spaces_wo_constraints)
     
     spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, 
-         dtrian, dtrian_cell_gids, models, non_conforming_glue
+         dtrian, dtrian_cell_gids
 end 
 
 function Gridap.FESpaces.FESpace(
@@ -1049,7 +1049,8 @@ function Gridap.FESpaces.FESpace(
             vector_type = GridapDistributed._find_vector_type(spaces,gids)
             return GridapDistributed.DistributedSingleFieldFESpace(spaces,gids,dtrian,vector_type)
         else 
-            spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, dtrian, dtrian_cell_gids, _, _ =
+            # models and non_conforming_glue are not needed here (only used internally)
+            spaces_wo_constraints, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, dtrian, dtrian_cell_gids =
                 generate_local_fe_spaces_and_constraints(
                        _dtrian, 
                        reffe; 

@@ -65,11 +65,11 @@ module TransferInPortionsTests
        trians = map(ranks, local_views(fmodel.dmodel)) do rank, fmodel
             mask = Vector{Bool}(undef,num_cells(fmodel))
             mask .= false
-            for cell=1:Int(round(num_cells(fmodel)*0.25))
-               mask[cell] = true
+            for icell=1:Int(round(num_cells(fmodel)*0.25))
+               mask[icell] = true
             end
-            for cell=Int(round(num_cells(fmodel)*0.75)):num_cells(fmodel)
-               mask[cell] = true
+            for icell=Int(round(num_cells(fmodel)*0.75)):num_cells(fmodel)
+               mask[icell] = true
             end
             Triangulation(fmodel, mask)
         end
@@ -89,11 +89,11 @@ module TransferInPortionsTests
         mask = Vector{Bool}(undef,num_cells(gmodel))
         mask .= false
         # Select first quarter and last quarter of cells
-        for cell=1:Int(round(num_cells(gmodel)*0.25))
-           mask[cell] = true
+        for icell=1:Int(round(num_cells(gmodel)*0.25))
+           mask[icell] = true
         end
-        for cell=Int(round(num_cells(gmodel)*0.75)):num_cells(gmodel)
-           mask[cell] = true
+        for icell=Int(round(num_cells(gmodel)*0.75)):num_cells(gmodel)
+           mask[icell] = true
         end
         Triangulation(gmodel, mask)
     end
