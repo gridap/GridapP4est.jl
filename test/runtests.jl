@@ -50,6 +50,9 @@ function run_tests(testdir)
         elseif f in ["PoissonNonConformingOctreeModelsTests.jl"]
           np = [1,2,4]
           extra_args = ""
+        elseif f in ["TransferInPortionsTests.jl"]
+          np = [1,2,4]
+          extra_args = ""
         elseif f in ["PoissonAnisotropicOctreeModelsTests.jl"] 
           np = [1,4]
           extra_args = ""
