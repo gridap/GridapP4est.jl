@@ -228,7 +228,7 @@ end
 function setup_pXest_connectivity(pXest_type::P8estType, coarse_discrete_model::DiscreteModel{3,3})
     trian=Triangulation(coarse_discrete_model)
     pconn=p8est_connectivity_new(
-        p4est_topidx_t(length(node_coordinates)),         # num_vertices
+        p4est_topidx_t(num_nodes(trian)),                 # num_vertices
         p4est_topidx_t(num_cells(coarse_discrete_model)), # num_trees
         p4est_topidx_t(0),
         p4est_topidx_t(0),
@@ -310,7 +310,7 @@ function pXest_balance!(::P4estType, ptr_pXest; k_2_1_balance=0)
 end
 
 function pXest_balance!(::P6estType, ptr_pXest; k_2_1_balance=0)
-  @assert k_2_1_balance==0 or k_2_1_balance==2
+  @assert k_2_1_balance==0 || k_2_1_balance==2
   if (k_2_1_balance==0)
     p6est_balance(ptr_pXest, P4est_wrapper.P8EST_CONNECT_FULL, C_NULL) 
   elseif (k_2_1_balance==2)
