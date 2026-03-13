@@ -466,8 +466,8 @@ version = "1.14.0"
 
 [[deps.Gridap]]
 deps = ["AbstractTrees", "BSON", "BlockArrays", "Combinatorics", "DataStructures", "DocStringExtensions", "FastGaussQuadrature", "FileIO", "FillArrays", "ForwardDiff", "Graphs", "JLD2", "JSON", "LineSearches", "LinearAlgebra", "NLsolve", "NearestNeighbors", "PolynomialBases", "Preferences", "QuadGK", "Random", "SparseArrays", "SparseMatricesCSR", "StaticArrays", "Statistics", "Test", "WriteVTK"]
-git-tree-sha1 = "95b4529b97311cc76f2f05900850ecc1737d4e9d"
-repo-rev = "fixing_change_domain_o2n_for_trian_portions"
+git-tree-sha1 = "64d453967a001ae3ec0421efdda7486ab09a5b42"
+repo-rev = "master"
 repo-url = "https://github.com/gridap/Gridap.jl"
 uuid = "56d4f2e9-7ea1-5844-9cf6-b9c51ca7ce8e"
 version = "0.19.8"
