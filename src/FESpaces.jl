@@ -953,7 +953,8 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
 end
 
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
-                                 reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any}; 
+                                 reffe::Tuple{<:Union{Gridap.ReferenceFEs.RaviartThomas,
+                                                      Gridap.ReferenceFEs.Nedelec},Any,Any}; 
                                  conformity=nothing,kwargs...) where {Dc}
 
     if (_is_conforming(model.non_conforming_glue) || conformity==:L2)
@@ -1046,7 +1047,7 @@ end
 
 function Gridap.FESpaces.FESpace(
             _dtrian::GridapDistributed.DistributedTriangulation{Dc,Dp,A,<:OctreeDistributedDiscreteModel{Dc,Dp}}, 
-            reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any};
+            reffe::Tuple{<:Union{Gridap.ReferenceFEs.RaviartThomas, Gridap.ReferenceFEs.Nedelec},Any,Any};
             conformity=nothing,
             kwargs...) where {Dc, Dp, A}
 
