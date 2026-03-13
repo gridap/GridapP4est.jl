@@ -934,7 +934,8 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
 end
 
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
-                                 reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any}; 
+                                 reffe::Tuple{<:Union{Gridap.ReferenceFEs.RaviartThomas,
+                                                      Gridap.ReferenceFEs.Nedelec},Any,Any}; 
                                  conformity=nothing,kwargs...) where {Dc}
 
     cell_reffes = map(local_views(model.dmodel)) do m
