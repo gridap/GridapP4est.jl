@@ -175,7 +175,7 @@ module MaxwellNonConformingOctreeModelsTests
     u_ex, f_ex=get_analytical_functions(Dc)
 
     V = FESpace(model,
-                ReferenceFE(nedelec,order),
+                ReferenceFE(nedelec,Float64, order),
                 conformity=:Hcurl,
                 dirichlet_tags="boundary")
     
