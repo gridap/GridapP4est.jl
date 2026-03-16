@@ -2,6 +2,52 @@
 const LagragianOrNedelec = 
     Union{Tuple{Gridap.ReferenceFEs.Lagrangian,Any,Any},Tuple{Gridap.ReferenceFEs.Nedelec,Any,Any}}
 
+function adjust_constraints!(ref_constraints, Vh, cell_reffe)
+end 
+
+function adjust_constraints!(ref_constraints, Vh, cell_reffe::GenericRefFE{<:Nedelec})
+    model = get_background_model(get_triangulation(Vh))
+    Dc = num_cell_dims(model)
+    if (Dc==3)
+        # We change the sign of the constraints coefficients here so that 
+        # the unit normal to hanging faces matches the unit normal 
+        # of the owner face. This is only required for Nedelec facet DoFs. 
+        # This way, we properly glue the global DoFs at 
+        # both sides of the interface of cells at different refinement level.
+        # We could have done this instead by adjusting the sign_flips for hanging
+        # faces in the FESpace constructor, although we decide it to do it here 
+        # because it is way simpler.
+        face_own_dofs   = get_face_own_dofs(cell_reffe)
+        offset          = get_offsets(get_polytope(cell_reffe))[Dc]
+        num_faces = Gridap.ReferenceFEs.num_faces(get_polytope(cell_reffe),Dc-1)
+        touched=Set{Int}()
+        cell_dof_ids = get_cell_dof_ids(Vh)
+        for cell=1:length(cell_dof_ids)
+            current_cell_dof_ids=cell_dof_ids[cell]  
+            for face=1:num_faces
+               for ldof in face_own_dofs[offset+face]
+                  dof = current_cell_dof_ids[ldof]
+                  if !(dof in touched)
+                     push!(touched, dof)
+                     ref_constraints[dof,:] = -ref_constraints[dof,:]
+                  end
+               end
+            end
+        end
+    end
+end 
+
+function adjust_constraints!(ref_constraints, Vh, cell_reffe::GenericRefFE{<:RaviartThomas})
+    # We change the sign of the constraints coefficients here so that 
+    # the unit normal to hanging faces matches the unit normal 
+    # of the owner face. This way, we properly glue the global DoFs at 
+    # both sides of the interface of cells at different refinement level.
+    # We could have done this instead by adjusting the sign_flips for hanging
+    # faces in the FESpace constructor, although we decide it to do it here 
+    # because it is way simpler.
+    @. ref_constraints = -ref_constraints
+end
+
 function _generate_ref_constraints(modelH,modelh,cell_reffe)
     VH=TestFESpace(modelH,cell_reffe)
     Vh=TestFESpace(modelh,cell_reffe)
@@ -20,6 +66,9 @@ function _generate_ref_constraints(modelH,modelh,cell_reffe)
         current_ref_constraints_contribs=getindex!(cache_ref_constraints_contribs,ref_constraints_contribs,cell)
         ref_constraints[current_cell_dof_ids,:]=current_ref_constraints_contribs
     end
+
+    adjust_constraints!(ref_constraints, Vh, cell_reffe)
+
     ref_constraints
 end
 
@@ -35,7 +84,7 @@ end
 
 function _build_constraint_coefficients_matrix_in_ref_space(::PXestUniformRefinementRuleType,
                                                             Dc,
-                                                            reffe::LagragianOrNedelec)
+                                                            reffe)
     cell_polytope = Dc == 2 ? QUAD : HEX
     basis, reffe_args, reffe_kwargs = reffe
     cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
@@ -328,29 +377,6 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule::PXestUniformRefineme
     end 
     face_subface_ldof_to_cell_ldof
 end 
-
-function _build_constraint_coefficients_matrix_in_ref_space(::PXestUniformRefinementRuleType,
-                                                            Dc,
-                                                            reffe::Tuple{<:RaviartThomas,Any,Any})
-    cell_polytope = Dc == 2 ? QUAD : HEX
-    basis, reffe_args, reffe_kwargs = reffe
-    cell_reffe = ReferenceFE(cell_polytope, basis, reffe_args...; reffe_kwargs...)
-    
-    modelH= _generate_unit_hypercube_model(Dc)
-    modelh=refine(modelH,2)
-
-    ref_constraints=_generate_ref_constraints(modelH,modelh,cell_reffe)
-    # We change the sign of the constraints coefficients here so that 
-    # the unit normal to hanging faces matches the unit normal 
-    # of the owner face. This way, we properly glue the global DoFs at 
-    # both sides of the interface of cells at different refinement level.
-    # We could have done this instead by adjusting the sign_flips for hanging
-    # faces in the FESpace constructor, although we decide it to do it here 
-    # because it is way simpler.
-    @. ref_constraints = -ref_constraints
-    ref_constraints
-end
-
 
 function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
     face_dofs,
@@ -934,7 +960,8 @@ function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc},
 end
 
 function Gridap.FESpaces.FESpace(model::OctreeDistributedDiscreteModel{Dc}, 
-                                 reffe::Tuple{Gridap.ReferenceFEs.RaviartThomas,Any,Any}; 
+                                 reffe::Tuple{<:Union{Gridap.ReferenceFEs.RaviartThomas,
+                                                      Gridap.ReferenceFEs.Nedelec},Any,Any}; 
                                  conformity=nothing,kwargs...) where {Dc}
 
     cell_reffes = map(local_views(model.dmodel)) do m
