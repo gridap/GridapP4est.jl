@@ -273,6 +273,24 @@ module PoissonAnisotropicOctreeModelsTests
     test_transfer_ops_and_redistribute(ranks,model,order,T)
   end
 
+  function test_uniform_refinement_one_quadrant_per_tree(ranks)
+    if length(ranks) == 1
+       coarse_model = CartesianDiscreteModel((0,1,0,1),(2,2))
+       model = AnisotropicallyAdapted3DDistributedDiscreteModel(ranks, coarse_model, 0, 0)
+       @assert num_cells(model) == 4
+       vertically_refined_model, _ = vertically_uniformly_refine(model)
+       @assert num_cells(vertically_refined_model.dmodel) == 8
+
+       num_local_cols=GridapP4est.num_locally_owned_columns(vertically_refined_model)
+       ref_coarse_flags=map(ranks,num_local_cols) do rank,num_local_cols
+          flags=zeros(Cint,num_local_cols)
+          flags.=refine_flag
+       end
+       uniformly_refined_model,_=GridapP4est.horizontally_adapt(vertically_refined_model,ref_coarse_flags);
+       @assert num_cells(uniformly_refined_model.dmodel) == 32
+    end
+  end
+
   
   function _field_type(::Val{Dc}, scalar_or_vector::Symbol) where Dc
     if scalar_or_vector==:scalar
@@ -288,6 +306,7 @@ module PoissonAnisotropicOctreeModelsTests
     ranks = distribute(LinearIndices((MPI.Comm_size(MPI.COMM_WORLD),)))
     test_no_interior(ranks,2,2,Float64)
     test_no_interior(ranks,3,3,VectorValue{3,Float64})
+    test_uniform_refinement_one_quadrant_per_tree(ranks)
     for perm=1:4, order=1:4, scalar_or_vector in (:scalar,)
       test(ranks,perm,order,_field_type(Val{3}(),scalar_or_vector))
     end
