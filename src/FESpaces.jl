@@ -134,6 +134,7 @@ function _fill_face_subface_ldof_to_cell_ldof!(face_subface_ldof_to_cell_ldof,
                                                face_dofs,
                                                cells_dof_ids,
                                                first_face)
+    @debug "cell_dof_ids: $(cells_dof_ids) face_dofs: $(face_dofs)"
     for coarse_face_id=1:num_faces 
         for (subface,child_id) in enumerate(coarse_faces_to_child_ids[coarse_face_id,:])
             @debug "coarse_face_id: $(coarse_face_id), subface: $(subface), child_id: $(child_id)"
@@ -441,23 +442,10 @@ function _restrict_face_dofs_to_face_dim(cell_reffe,Df)
     face_own_dofs=get_face_own_dofs(cell_reffe)
     first_face_faces = Gridap.ReferenceFEs.get_faces(polytope)[first_face]
     face_dofs_to_face_dim = Vector{Vector{Int}}()
+    current=0
     for face in first_face_faces
-        push!(face_dofs_to_face_dim,copy(face_own_dofs[face])) 
-    end
-    touched=Dict{Int,Int}()
-    dofs=Int64[]
-    current=1
-    for (i,face_dofs) in enumerate(face_dofs_to_face_dim)
-        for (j,dof) in enumerate(face_dofs)
-            push!(dofs,dof)
-        end
-    end
-    sort!(dofs)
-    touched = Dict( dofs[i]=>i for i=1:length(dofs))
-    for (i,face_dofs) in enumerate(face_dofs_to_face_dim)
-        for (j,dof) in enumerate(face_dofs)
-            face_dofs[j]=touched[dof]
-        end
+        push!(face_dofs_to_face_dim,[current+i for i in 1:length(face_own_dofs[face])])
+        current += length(face_own_dofs[face])
     end
     face_dofs_to_face_dim
 end 
