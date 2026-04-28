@@ -965,6 +965,7 @@ end
 
 function _add_constraints(model,
                           trian,
+                          cell_gids,
                           cell_reffe,
                           spaces_wo_constraints;
                           split_own_and_ghost=false, 
@@ -978,7 +979,6 @@ function _add_constraints(model,
                                                              kwargs...)
 
     nldofs = map(num_free_dofs,spaces_w_constraints)
-    cell_gids = get_cell_gids(model)
     gids = GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
     map(partition(gids)) do indices 
          @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
@@ -1004,6 +1004,7 @@ function GridapDistributed.DistributedSingleFieldFESpace(
     end
     return _add_constraints(model, 
                             trian,
+                            cell_gids,
                             Gridap.Arrays.testitem(cell_reffe.item_ref[]), 
                             spaces_wo_constraints; 
                             split_own_and_ghost=split_own_and_ghost, 
@@ -1037,6 +1038,7 @@ function GridapDistributed.DistributedSingleFieldFESpace(
   end
   return _add_constraints(model, 
                           trian,
+                          cell_gids,
                           Gridap.Arrays.testitem(cell_reffe.item_ref[]), 
                           spaces_wo_constraints; 
                           split_own_and_ghost=split_own_and_ghost, 
