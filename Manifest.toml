@@ -481,7 +481,7 @@ version = "0.20.5"
 
 [[deps.GridapDistributed]]
 deps = ["BlockArrays", "CircularArrays", "FillArrays", "ForwardDiff", "Gridap", "LinearAlgebra", "MPI", "PartitionedArrays", "SparseArrays", "SparseMatricesCSR", "WriteVTK"]
-git-tree-sha1 = "6173ed4b7b8b60506a19f26081c1803869787354"
+git-tree-sha1 = "5ae12ec663c385e706f7e811771f302f05b4d03b"
 repo-rev = "bug_fix_compute_facet_owners"
 repo-url = "https://github.com/gridap/GridapDistributed.jl/"
 uuid = "f9701e48-63b3-45aa-9a63-9bc6c271f355"
