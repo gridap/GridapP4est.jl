@@ -83,7 +83,7 @@ jobs:
       - run: julia --project=. --color=yes -e 'using Pkg; Pkg.instantiate()'
       #- run: cd test/MPIPETScTests/compile; ./compile.sh
       - run: julia --project=. --color=yes --check-bounds=yes test/runtests.jl #-i test/MPIPETScTests/compile/GridapDistributed.so
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
           file: lcov.info
           verbose: true
