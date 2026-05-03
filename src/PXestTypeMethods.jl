@@ -436,7 +436,7 @@ function p6est_vertically_adapt_reset_callbacks()
   current_quadrant_index_within_tree  = Cint(0)
   current_layer_within_column         = Cint(0)
   current_layer                       = Cint(0)
-  previous_quadrant                   = Ref{p4est_quadrant_t}()
+  previous_tree                       = Cint(-1)
   
 
   function init_fn_callback(forest_ptr::Ptr{p6est_t},
@@ -450,10 +450,8 @@ function p6est_vertically_adapt_reset_callbacks()
     quadrant = column_ptr[]
     layer = layer_ptr[]
   
-    if (current_quadrant_index_among_trees==-1 || 
-          p4est_quadrant_compare(previous_quadrant,column_ptr) != 0)
-  
-      previous_quadrant = column_ptr
+    if (current_quadrant_index_among_trees==-1 || which_tree != previous_tree)
+      previous_tree = which_tree
       current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
       current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
       q = p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
@@ -499,8 +497,7 @@ function p6est_horizontally_adapt_reset_callbacks()
   current_quadrant_index_within_tree  = Cint(0)
   current_layer_within_column         = Cint(0)
   current_layer                       = Cint(0)
-  previous_quadrant                   = Ref{p4est_quadrant_t}()
-  
+  previous_tree                       = Cint(-1)
 
   function init_fn_callback(forest_ptr::Ptr{p6est_t},
     which_tree::p4est_topidx_t,
@@ -513,10 +510,8 @@ function p6est_horizontally_adapt_reset_callbacks()
     quadrant = column_ptr[]
     layer = layer_ptr[]
   
-    if (current_quadrant_index_among_trees==-1 || 
-          p4est_quadrant_compare(previous_quadrant,column_ptr) != 0)
-  
-      previous_quadrant = column_ptr
+    if (current_quadrant_index_among_trees==-1 || which_tree != previous_tree)
+      previous_tree = which_tree
       current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
       current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
       q = p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
@@ -532,10 +527,10 @@ function p6est_horizontally_adapt_reset_callbacks()
        # to decide whether we refine the column or not   
        q2_ptr=p2est_quadrant_array_index(forest.layers[], f)
        @assert p2est_quadrant_is_equal(q2_ptr,layer_ptr)
-        
+
        unsafe_store!(Ptr{Cint}(q2_ptr[].p.user_data), user_data, 1)
     end
-  
+
     current_layer_within_column=current_layer_within_column+1
     current_layer=current_layer+1                          
         
