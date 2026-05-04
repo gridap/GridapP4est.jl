@@ -955,26 +955,6 @@ function _generate_face_subface_ldof_to_cell_ldof(ref_rule, Dc, reffe)
     face_subface_ldof_to_cell_ldof
 end
 
-# ISOLATED PIECE OF CODE AFTER MERGING CONFLICT
-#function _add_constraints(dtrian,
-#                          dtrian_cell_gids,
-#                          spaces_wo_constraints,
-#                          sDOF_to_dof,
-#                          sDOF_to_dofs,
-#                          sDOF_to_coeffs)
-                             
-#    spaces_w_constraints = map(spaces_wo_constraints,
-#        sDOF_to_dof,
-#        sDOF_to_dofs,
-#        sDOF_to_coeffs) do V, sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs
-#        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_wo_constraints_cell_dof_ids=$(get_cell_dof_ids(V))"
-#        Vc = FESpaceWithLinearConstraints(sDOF_to_dof, sDOF_to_dofs, sDOF_to_coeffs, V)
-#    end
-#    local_cell_dof_ids = map(spaces_w_constraints,sDOF_to_dof) do Vc,sDOF_to_dof
-#        result = fe_space_with_linear_constraints_cell_dof_ids(Vc,sDOF_to_dof)
-#        @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: fe_space_with_linear_constraints_cell_dof_ids=$(result)"
-#        result
-
 function _generate_local_cell_dof_ids_and_spaces_w_constraints(pXest_refinement_rule_type,
                                                                models::AbstractVector{<:DiscreteModel{Dc}},
                                                                non_conforming_glue,
