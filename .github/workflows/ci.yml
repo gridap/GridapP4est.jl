@@ -32,7 +32,7 @@ jobs:
            ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-
            ${{ runner.os }}-build-
            ${{ runner.os }}-
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
@@ -83,7 +83,7 @@ jobs:
       - run: julia --project=. --color=yes -e 'using Pkg; Pkg.instantiate()'
       #- run: cd test/MPIPETScTests/compile; ./compile.sh
       - run: julia --project=. --color=yes --check-bounds=yes test/runtests.jl #-i test/MPIPETScTests/compile/GridapDistributed.so
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
           file: lcov.info
           verbose: true
