@@ -5,8 +5,3 @@ function Base.map(::typeof(Gridap.Arrays.testitem),
   a1.=zero(Gridap.Arrays.testitem(a1))
   (a1,a2)
 end
-
-function Gridap.Arrays.return_value(k::Gridap.Fields.LinearCombinationMap{<:Integer},v::AbstractArray,fx::AbstractVector)
-  T = Gridap.Fields.linear_combination_eltype(v,fx)
-  return zero(T)
-end
