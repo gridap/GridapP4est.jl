@@ -386,6 +386,7 @@ end
 
 function Gridap.Arrays.evaluate!(cache,f::SubfaceRefCoordsMap,gface::Integer)
   poly_vertices,cell_coordinates,cache_cell_coordinates=cache
+  isempty(f.face_is_owner) && return empty(poly_vertices)
   if (f.face_is_owner[gface])
     subface=f.face_to_subface[gface]
     getindex!(cache_cell_coordinates,cell_coordinates,subface)
