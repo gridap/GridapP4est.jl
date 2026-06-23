@@ -40,8 +40,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
                                           ptr_pXest,
                                           pXest_type,
                                           PXestHorizontalRefinementRuleType(),
-                                          connectivity_ref,
-                                          nothing)
+                                          connectivity_ref)
 end
 
 function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
@@ -123,8 +122,7 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             model.connectivity_ref,
-                                             model)
+                                             model.connectivity_ref)
   return ref_model, adaptivity_glue
 end
 
@@ -197,8 +195,7 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              model.pXest_refinement_rule_type,
-                                             model.connectivity_ref,
-                                             model)
+                                             model.connectivity_ref)
   return ref_model, adaptivity_glue
 end
 
@@ -733,8 +730,7 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             model.connectivity_ref,
-                                             model)
+                                             model.connectivity_ref)
   return ref_model, adaptivity_glue
 end
 
