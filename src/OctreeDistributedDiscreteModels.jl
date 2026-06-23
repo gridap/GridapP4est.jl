@@ -281,6 +281,37 @@ function _generate_hanging_faces_to_cell_and_lface(num_regular_faces,
   hanging_faces_to_cell, hanging_faces_to_lface
 end
 
+# Explicit reference-counted wrapper for a p4est connectivity pointer.
+#
+# Julia does NOT guarantee that if A (finalizable) references B (also finalizable),
+# A's finalizer runs before B's finalizer when both become unreachable simultaneously.
+# Therefore we cannot rely on a Julia finalizer on this object to free the connectivity
+# after all p4est objects that share it are destroyed.
+#
+# Instead we use an explicit reference count (no Julia finalizer on this struct).
+# Each OctreeDistributedDiscreteModel that shares the connectivity calls retain!
+# when it is constructed and release! when it is finalized/freed.  release! frees
+# the connectivity only when the count reaches zero, which happens after the last
+# pXest_destroy call that reads connectivity->num_trees has already returned.
+mutable struct PXestConnectivityRef
+  pXest_type :: PXestType
+  ptr        :: Any  # raw ptr_pXest_connectivity, set to nothing after freeing
+  count      :: Int  # number of live models holding this ref
+  PXestConnectivityRef(pXest_type::PXestType, ptr) = new(pXest_type, ptr, 0)
+end
+
+function retain!(ref::PXestConnectivityRef)
+  ref.count += 1
+end
+
+function release!(ref::PXestConnectivityRef)
+  ref.count -= 1
+  if ref.count == 0 && !isnothing(ref.ptr)
+    pXest_connectivity_destroy(ref.pXest_type, ref.ptr)
+    ref.ptr = nothing
+  end
+end
+
 mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistributed.DistributedDiscreteModel{Dc,Dp}
   parts                       :: A
   dmodel                      :: B
@@ -291,14 +322,11 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
   pXest_type                  :: PXestType
   pXest_refinement_rule_type  :: Union{Nothing,PXestRefinementRuleType}
 
-  # The model for which this variable is true, is the one
-  # ultimately responsible for deallocating the pXest_connectivity
-  # info
-  owns_ptr_pXest_connectivity :: Bool
-
-  # Might be optionally be used, e.g., to enforce that this
-  # model is GCed after another existing model
-  gc_ref                      :: Any
+  # Shared reference-counted ownership of ptr_pXest_connectivity.
+  # All models sharing a connectivity hold a reference to the same
+  # PXestConnectivityRef; the connectivity is freed only when the last
+  # one is collected, regardless of GC finalization order.
+  connectivity_ref            :: Any  # PXestConnectivityRef or Nothing
 
   # Number of ghost layers 
   num_ghost_layers             :: Int
@@ -314,8 +342,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
     ptr_pXest,
     pXest_type::PXestType,
     pXest_refinement_rule_type::PXestRefinementRuleType,
-    owns_ptr_pXest_connectivity::Bool,
-    gc_ref;
+    connectivity_ref;
     num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS)
 
     @assert num_ghost_layers >= 1
@@ -339,8 +366,7 @@ mutable struct OctreeDistributedDiscreteModel{Dc,Dp,A,B,C,D,E,F} <: GridapDistri
                                    ptr_pXest,
                                    pXest_type,
                                    pXest_refinement_rule_type,
-                                   owns_ptr_pXest_connectivity,
-                                   gc_ref,
+                                   connectivity_ref,
                                    num_ghost_layers)
     Init(model)
     return model
@@ -356,8 +382,7 @@ function OctreeDistributedDiscreteModel(
   ptr_pXest,
   pXest_type,
   pXest_refinement_rule_type,
-  owns_ptr_pXest_connectivity,
-  gc_ref;
+  connectivity_ref;
   num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS) where {Dc,Dp}
 
   return OctreeDistributedDiscreteModel(Dc,
@@ -370,8 +395,7 @@ function OctreeDistributedDiscreteModel(
                                         ptr_pXest,
                                         pXest_type,
                                         pXest_refinement_rule_type,
-                                        owns_ptr_pXest_connectivity,
-                                        gc_ref,
+                                        connectivity_ref;
                                         num_ghost_layers=num_ghost_layers)
 end
 
@@ -409,6 +433,7 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
 
     non_conforming_glue = _create_conforming_model_non_conforming_glue(dmodel)
 
+    connectivity_ref = PXestConnectivityRef(pXest_type, ptr_pXest_connectivity)
     return OctreeDistributedDiscreteModel(Dc,
                                           Dp,
                                           parts,
@@ -419,8 +444,7 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
                                           ptr_pXest,
                                           pXest_type,
                                           PXestUniformRefinementRuleType(),
-                                          true,
-                                          nothing;
+                                          connectivity_ref;
                                           num_ghost_layers=num_ghost_layers)
   else
     ## HUGE WARNING: Shouldn't we provide here the complementary of parts
@@ -443,7 +467,9 @@ const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscret
 function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},
                                             parts,
                                             pXest_refinement_rule_type::PXestRefinementRuleType) where {Dc,Dp}
+  pXest_type = _dim_to_pXest_type(Dc)
   ptr_pXest_connectivity = setup_pXest_connectivity(coarse_model)
+  connectivity_ref = PXestConnectivityRef(pXest_type, ptr_pXest_connectivity)
   OctreeDistributedDiscreteModel(Dc,
                                  Dp,
                                  parts,
@@ -452,10 +478,9 @@ function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},
                                  coarse_model,
                                  ptr_pXest_connectivity,
                                  nothing,
-                                 _dim_to_pXest_type(Dc),
+                                 pXest_type,
                                  pXest_refinement_rule_type,
-                                 true,
-                                 nothing)
+                                 connectivity_ref)
 end
 
 function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
@@ -469,8 +494,7 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
                                  nothing,
                                  _dim_to_pXest_type(Dc),
                                  model.pXest_refinement_rule_type,
-                                 false,
-                                 model)
+                                 model.connectivity_ref)
 end
 
 # DistributedDiscreteModel API implementation
@@ -483,9 +507,8 @@ GridapDistributed.get_face_gids(model::OctreeDistributedDiscreteModel,dim::Integ
 # Garbage collection
 
 function octree_distributed_discrete_model_free!(model::VoidOctreeDistributedDiscreteModel{Dc}) where Dc
-  if (model.owns_ptr_pXest_connectivity)
-    pXest_connectivity_destroy(model.pXest_type,model.ptr_pXest_connectivity)
-  end
+  # ptr_pXest is Nothing for Void models; nothing to destroy.
+  # ptr_pXest_connectivity lifetime is managed by connectivity_ref.
   return nothing
 end
 
@@ -493,9 +516,8 @@ function octree_distributed_discrete_model_free!(model::OctreeDistributedDiscret
   if !isa(model.ptr_pXest,Nothing)
     pXest_destroy(model.pXest_type,model.ptr_pXest)
   end
-  if (model.owns_ptr_pXest_connectivity)
-    pXest_connectivity_destroy(model.pXest_type,model.ptr_pXest_connectivity)
-  end
+  # ptr_pXest_connectivity lifetime is managed by connectivity_ref's finalizer,
+  # which runs only after every model sharing that connectivity is collected.
   return nothing
 end
 
@@ -1580,8 +1602,7 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
                                      ptr_new_pXest,
                                      pXest_type,
                                      PXestUniformRefinementRuleType(),
-                                     false,
-                                     model)
+                                     model.connectivity_ref)
 
       return ref_model, dglue
    else
@@ -1671,8 +1692,7 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             false,
-                                             model)
+                                             model.connectivity_ref)
   return ref_model, adaptivity_glue
 end
 
@@ -1720,8 +1740,7 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                     ptr_new_pXest,
                                     pXest_type,
                                     PXestUniformRefinementRuleType(),
-                                    false,
-                                    model)
+                                    model.connectivity_ref)
      return c_octree_model, dglue
   else
      return VoidOctreeDistributedDiscreteModel(model,model.parts), nothing
@@ -1950,8 +1969,7 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
                                              ptr_pXest_new,
                                              model.pXest_type,
                                              model.pXest_refinement_rule_type,
-                                             false,
-                                             model)
+                                             model.connectivity_ref)
   return red_model, glue
 end
 
@@ -2046,8 +2064,7 @@ function _redistribute_parts_supset_parts_redistributed(
                                                ptr_pXest_new,
                                                pXest_type,
                                                model.pXest_refinement_rule_type,
-                                               false,
-                                               model)
+                                               model.connectivity_ref)
     return red_model, glue
   else
     return VoidOctreeDistributedDiscreteModel(model,parts_redistributed_model), nothing

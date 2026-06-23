@@ -29,6 +29,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
     pXest_lnodes_destroy(pXest_type,ptr_pXest_lnodes)
     pXest_ghost_destroy(pXest_type,ptr_pXest_ghost)
 
+    connectivity_ref = PXestConnectivityRef(pXest_type, ptr_pXest_connectivity)
     return OctreeDistributedDiscreteModel(3,
                                           3,
                                           parts,
@@ -39,7 +40,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
                                           ptr_pXest,
                                           pXest_type,
                                           PXestHorizontalRefinementRuleType(),
-                                          true,
+                                          connectivity_ref,
                                           nothing)
 end
 
@@ -122,7 +123,7 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             false,
+                                             model.connectivity_ref,
                                              model)
   return ref_model, adaptivity_glue
 end
@@ -196,7 +197,7 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              model.pXest_refinement_rule_type,
-                                             false,
+                                             model.connectivity_ref,
                                              model)
   return ref_model, adaptivity_glue
 end
@@ -732,7 +733,7 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             false,
+                                             model.connectivity_ref,
                                              model)
   return ref_model, adaptivity_glue
 end
