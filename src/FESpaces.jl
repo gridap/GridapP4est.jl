@@ -422,7 +422,8 @@ end
 function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
     face_dofs,
     hanging_faces_glue,
-    cell_dof_ids)
+    cell_dof_ids,
+    fake_master_dof_id)
 
     cache = array_cache(cell_dof_ids)
     ptrs = Vector{Int}(undef, num_hanging_faces + 1)
@@ -449,8 +450,12 @@ function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
             data_owner_face_dofs[s+j-1] = current_cell_dof_ids[ldof]
           end
         else 
+          # This scenario corresponds to the case of a hanging face in the global mesh such that its
+          # owner face is not in the local portion of the processor. We need such a dof to be constrained
+          # but the question is by which dof. The fake_master_dof_id provides the dof that satisfies all 
+          # the required preconditions of FESpaceWithLinearConstraints
           s = ptrs[fid_hanging]
-          data_owner_face_dofs[s] = 1
+          data_owner_face_dofs[s] = fake_master_dof_id
         end
     end
     Gridap.Arrays.Table(data_owner_face_dofs, ptrs)
@@ -690,6 +695,16 @@ function get_face_dofs_permutations(
     end
 end 
 
+function _determine_fake_master_dof_id(V::SingleFieldFESpace)
+    if (num_dirichlet_dofs(V) > 0)
+        return -1
+    else
+        @assert num_free_dofs(V) > 0
+        return 1
+    end
+
+end 
+
 function generate_constraints(dmodel::GridapDistributed.DistributedDiscreteModel{Dc},
     spaces_wo_constraints,
     cell_reffe,
@@ -748,24 +763,29 @@ function generate_constraints(dmodel::GridapDistributed.DistributedDiscreteModel
         face_own_dofs = Gridap.ReferenceFEs.get_face_own_dofs(cell_reffe)
         face_dofs = Gridap.ReferenceFEs.get_face_dofs(cell_reffe)
 
+        fake_master_dof_id = _determine_fake_master_dof_id(V)
+
         hanging_faces_owner_face_dofs = Vector{Vector{Vector{Int}}}(undef, Dc)
 
         hanging_faces_owner_face_dofs[1] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[1],
             face_dofs,
             hanging_faces_glue[1],
-            cell_dof_ids)
+            cell_dof_ids,
+            fake_master_dof_id)
 
         if (Dc == 3)
             hanging_faces_owner_face_dofs[2] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[2],
                 face_dofs,
                 hanging_faces_glue[2],
-                cell_dof_ids)
+                cell_dof_ids,
+                fake_master_dof_id)
         end
 
         hanging_faces_owner_face_dofs[Dc] = _generate_hanging_faces_owner_face_dofs(num_hanging_faces[Dc],
             face_dofs,
             hanging_faces_glue[Dc],
-            cell_dof_ids)
+            cell_dof_ids,
+            fake_master_dof_id)
 
         sDOF_to_dof = Int[]
         sDOF_to_dofs = Vector{Int}[]
@@ -979,10 +999,17 @@ function _add_constraints(model,
                                                              kwargs...)
 
     nldofs = map(num_free_dofs,spaces_w_constraints)
+    map(nldofs) do nldof
+         @debug "[$(MPI.Comm_rank(MPI.COMM_WORLD))]: nldof=$(nldof)"
+    end
+    map(partition(cell_gids)) do indices 
+         @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
+         @debug "[$(part_id(indices))]: l2o_cell_owner=$(local_to_owner(indices))"
+    end
     gids = GridapDistributed.generate_gids(cell_gids,local_cell_dof_ids,nldofs)
     map(partition(gids)) do indices 
-         @debug "[$(part_id(indices))]: l2g_cell_gids=$(local_to_global(indices))"
-         @debug "[$(part_id(indices))]: l2o_owner=$(local_to_owner(indices))"
+         @debug "[$(part_id(indices))]: l2g_dof_gids=$(local_to_global(indices))"
+         @debug "[$(part_id(indices))]: l2o_dof_owner=$(local_to_owner(indices))"
     end
     vector_type = GridapDistributed._find_vector_type(spaces_w_constraints,gids; split_own_and_ghost=split_own_and_ghost)
     space = GridapDistributed.DistributedSingleFieldFESpace(spaces_w_constraints,gids,trian,vector_type)
