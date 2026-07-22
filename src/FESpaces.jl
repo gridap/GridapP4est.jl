@@ -660,6 +660,10 @@ function get_face_dofs_permutations(reffe::ReferenceFE,d::Integer)
     get_face_dofs_permutations(reffe)[range]
 end
 
+function get_face_dofs_permutations(reffe::GenericLagrangianRefFE{L2Conformity})
+    get_face_own_dofs_permutations(reffe,L2Conformity())
+end
+
 function get_face_dofs_permutations(
          reffe::Gridap.ReferenceFEs.GenericRefFE{<:Gridap.ReferenceFEs.RaviartThomas, Dc},Df::Integer) where Dc
     first_face = get_offset(get_polytope(reffe),Df)
