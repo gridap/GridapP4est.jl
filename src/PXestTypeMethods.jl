@@ -432,57 +432,18 @@ function p2est_quadrant_is_ancestor(a,b)
 end
 
 function p6est_vertically_adapt_reset_callbacks()
-  current_quadrant_index_among_trees  = Cint(-1)
-  current_quadrant_index_within_tree  = Cint(0)
-  current_layer_within_column         = Cint(0)
-  current_layer                       = Cint(0)
-  previous_tree                       = Cint(-1)
-  
-
+  current_layer = Cint(0)
   function init_fn_callback(forest_ptr::Ptr{p6est_t},
     which_tree::p4est_topidx_t,
     column_ptr::Ptr{p4est_quadrant_t},
     layer_ptr::Ptr{p2est_quadrant_t})
-
     forest = forest_ptr[]
-    columns = forest.columns[]
-    tree = p4est_tree_array_index(columns.trees, which_tree)[]
-    quadrant = column_ptr[]
     layer = layer_ptr[]
-  
-    if (current_quadrant_index_among_trees==-1 || which_tree != previous_tree)
-      previous_tree = which_tree
-      current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-      current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-      q = p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-      #@assert p4est_quadrant_compare(q,column_ptr) == 0
-      current_layer_within_column = 0
-    end
-  
-    q = p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-    #@assert p4est_quadrant_compare(q,column_ptr) == 0
-
-
-    user_data  = unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer), current_layer+1)[current_layer+1]
-
-  
-    f,l=P6EST_COLUMN_GET_RANGE(column_ptr[])
-    q2_ptr=p2est_quadrant_array_index(forest.layers[], f+current_layer_within_column)
-    @assert p2est_quadrant_is_equal(q2_ptr,layer_ptr)
-
-    unsafe_store!(Ptr{Cint}(q2_ptr[].p.user_data), user_data, 1)
-  
-  
-    current_layer_within_column=current_layer_within_column+1
+    user_data  = unsafe_wrap(Array, 
+                             Ptr{Cint}(forest.user_pointer), 
+                             current_layer+1)[current_layer+1]
+    unsafe_store!(Ptr{Cint}(layer.p.user_data), user_data, 1)
     current_layer=current_layer+1                          
-        
-    if ((which_tree+1)==columns.connectivity[].num_trees && 
-        current_quadrant_index_within_tree==tree.quadrants.elem_count && 
-        current_layer_within_column==l-f)
-      current_quadrant_index_among_trees = Cint(-1)
-      current_layer=Cint(0)
-    end 
-  
     return nothing
   end
 
@@ -493,33 +454,19 @@ end
 
 
 function p6est_horizontally_adapt_reset_callbacks()
-  current_quadrant_index_among_trees  = Cint(-1)
-  current_quadrant_index_within_tree  = Cint(0)
-  current_layer_within_column         = Cint(0)
-  current_layer                       = Cint(0)
-  previous_tree                       = Cint(-1)
-
+  previous_f = Cint(-1)
+  current_quadrant_index_among_trees = Cint(0)
   function init_fn_callback(forest_ptr::Ptr{p6est_t},
     which_tree::p4est_topidx_t,
     column_ptr::Ptr{p4est_quadrant_t},
     layer_ptr::Ptr{p2est_quadrant_t})
 
     forest = forest_ptr[]
-    columns = forest.columns[]
-    tree = p4est_tree_array_index(columns.trees, which_tree)[]
-    quadrant = column_ptr[]
-    layer = layer_ptr[]
   
-    if (current_quadrant_index_among_trees==-1 || which_tree != previous_tree)
-      previous_tree = which_tree
-      current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-      current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-      q = p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-      current_layer_within_column = 0
-    end
     
     f,l=P6EST_COLUMN_GET_RANGE(column_ptr[])
-    if (current_layer_within_column==0)
+    if (f!=previous_f)
+       previous_f=f   
        user_data = 
           unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer), 
              current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
@@ -527,20 +474,9 @@ function p6est_horizontally_adapt_reset_callbacks()
        # to decide whether we refine the column or not   
        q2_ptr=p2est_quadrant_array_index(forest.layers[], f)
        @assert p2est_quadrant_is_equal(q2_ptr,layer_ptr)
-
        unsafe_store!(Ptr{Cint}(q2_ptr[].p.user_data), user_data, 1)
+       current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
     end
-
-    current_layer_within_column=current_layer_within_column+1
-    current_layer=current_layer+1                          
-        
-    if ((which_tree+1)==columns.connectivity[].num_trees && 
-        current_quadrant_index_within_tree==tree.quadrants.elem_count && 
-        current_layer_within_column==l-f)
-      current_quadrant_index_among_trees = Cint(-1)
-      current_layer=Cint(0)
-      current_quadrant_index_within_tree = Cint(0)
-    end 
     return nothing
   end
   @cfunction($init_fn_callback, Cvoid, 

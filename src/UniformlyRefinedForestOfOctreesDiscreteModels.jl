@@ -621,6 +621,230 @@ end
 const ITERATOR_RESTRICT_TO_BOUNDARY=Cint(100)
 const ITERATOR_RESTRICT_TO_INTERIOR=Cint(101)
 
+# ---------------------------------------------------------------
+# State struct for face-labeling callbacks.
+#
+# The four p4est iterator callbacks (corner/edge/face/cell) each
+# need access to per-rank topology arrays and coarse-mesh labeling
+# data that were previously captured through Julia closures.  On
+# ARM64 (Apple Silicon) the JIT cannot create thunk-based closure
+# C function pointers (@cfunction($f,...)), so we bundle all
+# captured state here and thread it through the user_data pointer
+# that p4est passes to every callback invocation.  The module-level
+# callback functions below recover the struct with
+# unsafe_pointer_to_objref and are registered as *static*
+# (@cfunction without $) C-callable functions, which work on all
+# platforms including ARM64.
+# ---------------------------------------------------------------
+mutable struct FaceLabelingCallbackData
+  Dc                   :: Int
+  pXest_lnq            :: Int        # pXest.local_num_quadrants
+  owned_trees_offset   :: Vector{Int}
+  cell_vertices        :: Any        # topology faces(Dc,0)
+  vertex_to_entity     :: Vector{Int}
+  cell_edgets          :: Any        # topology faces(Dc,1)
+  edget_to_entity      :: Vector{Int}
+  cell_facets          :: Any        # topology faces(Dc,Dc-1)
+  facet_to_entity      :: Vector{Int}
+  cell_to_entity       :: Vector{Int}
+  coarse_cell_vertices :: Any
+  coarse_cell_edgets   :: Any        # nothing for Dc==2
+  coarse_cell_facets   :: Any
+  coarse_grid_labeling :: Any
+  iterator_mode        :: Cint
+end
+
+function _jcorner_callback_impl(pinfo::Ptr{p8est_iter_corner_info_t},
+                                 user_data::Ptr{Cvoid})
+  d  = unsafe_pointer_to_objref(user_data)::FaceLabelingCallbackData
+  Dc = d.Dc
+  info = pinfo[]
+  if Dc == 2
+    sides         = Ptr{p4est_iter_corner_side_t}(info.sides.array)
+    CONNECT_CORNER = P4est_wrapper.P4EST_CONNECT_CORNER
+  else
+    sides         = Ptr{p8est_iter_corner_side_t}(info.sides.array)
+    CONNECT_CORNER = P4est_wrapper.P8EST_CONNECT_CORNER
+  end
+  tree  = sides[1].treeid + 1
+  side  = sides[1]
+  ref_cell = if side.is_ghost == 1
+    d.pXest_lnq + side.quadid + 1
+  else
+    d.owned_trees_offset[tree] + side.quadid + 1
+  end
+  corner = sides[1].corner + 1
+  ref_cornergid = d.cell_vertices[ref_cell][corner]
+  if info.tree_boundary != 0 && info.tree_boundary == CONNECT_CORNER
+    coarse_cornergid = d.coarse_cell_vertices[tree][corner]
+    d.vertex_to_entity[ref_cornergid] =
+      d.coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid]
+    @debug "[GLOBAL CORNER] vertex_to_entity[$(ref_cornergid)]=$(d.coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid])"
+  else
+    if d.vertex_to_entity[ref_cornergid] == 0
+      d.vertex_to_entity[ref_cornergid] =
+        d.coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
+      @debug "[INTERIOR CORNER] vertex_to_entity[$(ref_cornergid)]=$(d.coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree])"
+    end
+  end
+  nothing
+end
+
+function _jedge_callback_impl(pinfo::Ptr{p8est_iter_edge_info_t},
+                               user_data::Ptr{Cvoid})
+  d    = unsafe_pointer_to_objref(user_data)::FaceLabelingCallbackData
+  info = pinfo[]
+  sides = Ptr{p8est_iter_edge_side_t}(info.sides.array)
+
+  function process_edget(tree, edge, ref_cell, info)
+    polytope       = HEX
+    poly_faces     = Gridap.ReferenceFEs.get_faces(polytope)
+    poly_edget_range = Gridap.ReferenceFEs.get_dimrange(polytope, 1)
+    poly_first_edget = first(poly_edget_range)
+    poly_facet     = poly_first_edget + edge - 1
+    if info.tree_boundary != 0 && info.tree_boundary == P4est_wrapper.P8EST_CONNECT_EDGE
+      coarse_edgetgid        = d.coarse_cell_edgets[tree][edge]
+      coarse_edgetgid_entity = d.coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
+      for poly_incident_face in poly_faces[poly_facet]
+        if poly_incident_face == poly_facet
+          ref_edgetgid = d.cell_edgets[ref_cell][edge]
+          d.edget_to_entity[ref_edgetgid] = coarse_edgetgid_entity
+        else
+          ref_cornergid = d.cell_vertices[ref_cell][poly_incident_face]
+          d.vertex_to_entity[ref_cornergid] = coarse_edgetgid_entity
+        end
+      end
+    else
+      ref_edgetgid = d.cell_edgets[ref_cell][edge]
+      if d.edget_to_entity[ref_edgetgid] == 0
+        d.edget_to_entity[ref_edgetgid] =
+          d.coarse_grid_labeling.d_to_dface_to_entity[3+1][tree]
+      end
+    end
+  end
+
+  nsides = info.sides.elem_count
+  for iside in 1:nsides
+    edge = sides[iside].edge + 1
+    tree = sides[iside].treeid + 1
+    if sides[iside].is_hanging == 0
+      sdata = sides[iside].is.full
+      ref_cell = if sdata.is_ghost == 1
+        d.pXest_lnq + sdata.quadid + 1
+      else
+        d.owned_trees_offset[tree] + sdata.quadid + 1
+      end
+      process_edget(tree, edge, ref_cell, info)
+    else
+      for i in 1:length(sides[iside].is.hanging.quadid)
+        quadid = sides[iside].is.hanging.quadid[i]
+        ref_cell = if sides[iside].is.hanging.is_ghost[i] == 1
+          d.pXest_lnq + quadid + 1
+        else
+          d.owned_trees_offset[tree] + quadid + 1
+        end
+        process_edget(tree, edge, ref_cell, info)
+      end
+    end
+  end
+  nothing
+end
+
+function _jface_callback_impl(pinfo::Ptr{p8est_iter_face_info_t},
+                               user_data::Ptr{Cvoid})
+  d    = unsafe_pointer_to_objref(user_data)::FaceLabelingCallbackData
+  Dc   = d.Dc
+  info = pinfo[]
+  if Dc == 2
+    sides = Ptr{p4est_iter_face_side_t}(info.sides.array)
+  else
+    sides = Ptr{p8est_iter_face_side_t}(info.sides.array)
+  end
+  if d.iterator_mode == ITERATOR_RESTRICT_TO_BOUNDARY
+    info.tree_boundary == 0 && return nothing
+  else
+    info.tree_boundary != 0 && return nothing
+  end
+
+  function process_facet(tree, face, ref_cell, info)
+    gridap_facet = Dc == 2 ? P4EST_2_GRIDAP_FACET_2D[face] :
+                              P4EST_2_GRIDAP_FACET_3D[face]
+    polytope         = Dc == 2 ? QUAD : HEX
+    poly_faces       = Gridap.ReferenceFEs.get_faces(polytope)
+    poly_facet_range = Gridap.ReferenceFEs.get_dimrange(polytope, Dc-1)
+    poly_first_facet = first(poly_facet_range)
+    poly_facet       = poly_first_facet + gridap_facet - 1
+    if info.tree_boundary != 0
+      coarse_facetgid        = d.coarse_cell_facets[tree][gridap_facet]
+      coarse_facetgid_entity = d.coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
+    else
+      coarse_facetgid_entity = d.coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
+    end
+    for poly_incident_face in poly_faces[poly_facet]
+      if poly_incident_face == poly_facet
+        ref_facetgid = d.cell_facets[ref_cell][gridap_facet]
+        d.facet_to_entity[ref_facetgid] = coarse_facetgid_entity
+        @debug "[FACE] info.tree_boundary=$(info.tree_boundary) facet_to_entity[$(ref_facetgid)]=$(coarse_facetgid_entity)"
+      elseif Dc == 3 && poly_incident_face in Gridap.ReferenceFEs.get_dimrange(polytope, 1)
+        poly_first_edget = first(Gridap.ReferenceFEs.get_dimrange(polytope, 1))
+        edget            = poly_incident_face - poly_first_edget + 1
+        ref_edgetgid     = d.cell_edgets[ref_cell][edget]
+        if d.edget_to_entity[ref_edgetgid] == 0
+          d.edget_to_entity[ref_edgetgid] = coarse_facetgid_entity
+          @debug "[EDGE] info.tree_boundary=$(info.tree_boundary) edget_to_entity[$(ref_edgetgid)]=$(coarse_facetgid_entity)"
+        end
+      else
+        ref_cornergid = d.cell_vertices[ref_cell][poly_incident_face]
+        if d.vertex_to_entity[ref_cornergid] == 0
+          @debug "[CORNER ON FACE] info.tree_boundary=$(info.tree_boundary) vertex_to_entity[$(ref_cornergid)]=$(coarse_facetgid_entity)"
+          d.vertex_to_entity[ref_cornergid] = coarse_facetgid_entity
+        end
+      end
+    end
+  end
+
+  nsides = info.sides.elem_count
+  for iside in 1:nsides
+    if iside == 2 && sides[iside].is_hanging == 0 && sides[1].is_hanging == 0
+      break
+    end
+    face = sides[iside].face + 1
+    tree = sides[iside].treeid + 1
+    if sides[iside].is_hanging == 0
+      sdata = sides[iside].is.full
+      ref_cell = if sdata.is_ghost == 1
+        d.pXest_lnq + sdata.quadid + 1
+      else
+        d.owned_trees_offset[tree] + sdata.quadid + 1
+      end
+      @debug "nsides=$(nsides) sides[$(iside)].is_hanging == $(sides[iside].is_hanging) process_facet(tree=$(tree),face=$(face),ref_cell=$(ref_cell))"
+      process_facet(tree, face, ref_cell, info)
+    else
+      for i in 1:length(sides[iside].is.hanging.quadid)
+        quadid = sides[iside].is.hanging.quadid[i]
+        ref_cell = if sides[iside].is.hanging.is_ghost[i] == 1
+          d.pXest_lnq + quadid + 1
+        else
+          d.owned_trees_offset[tree] + quadid + 1
+        end
+        @debug "nsides=$(nsides) sides[$(iside)].is_hanging == $(sides[iside].is_hanging) process_facet(tree=$(tree),face=$(face),ref_cell=$(ref_cell))"
+        process_facet(tree, face, ref_cell, info)
+      end
+    end
+  end
+  nothing
+end
+
+function _jcell_callback_impl(pinfo::Ptr{p8est_iter_volume_info_t},
+                               user_data::Ptr{Cvoid})
+  d    = unsafe_pointer_to_objref(user_data)::FaceLabelingCallbackData
+  info = pinfo[]
+  tree = info.treeid + 1
+  cell = d.owned_trees_offset[tree] + info.quadid + 1
+  d.cell_to_entity[cell] = d.coarse_grid_labeling.d_to_dface_to_entity[d.Dc+1][tree]
+  nothing
+end
+
 function generate_face_labeling(pXest_type::P4P8estType,
                                 parts,
                                 cell_prange,
@@ -651,269 +875,71 @@ function generate_face_labeling(pXest_type::P4P8estType,
     owned_trees_offset[itree+1]=owned_trees_offset[itree]+tree.quadrants.elem_count
   end
 
- faces_to_entity=map(topology) do topology
-     # Iterate over corners
-     num_vertices=Gridap.Geometry.num_faces(topology,0)
-     vertex_to_entity=zeros(Int,num_vertices)
-     cell_vertices=Gridap.Geometry.get_faces(topology,Dc,0)
+  faces_to_entity = map(topology) do topology
+    num_vertices     = Gridap.Geometry.num_faces(topology, 0)
+    vertex_to_entity = zeros(Int, num_vertices)
+    cell_vertices    = Gridap.Geometry.get_faces(topology, Dc, 0)
 
-     # Corner iterator callback
-     function jcorner_callback(pinfo     :: Ptr{p8est_iter_corner_info_t},
-                               user_data :: Ptr{Cvoid})
-        info=pinfo[]
-        if (Dc==2)
-          sides=Ptr{p4est_iter_corner_side_t}(info.sides.array)
-          CONNECT_CORNER=P4est_wrapper.P4EST_CONNECT_CORNER
-        else
-          sides=Ptr{p8est_iter_corner_side_t}(info.sides.array)
-          CONNECT_CORNER=P4est_wrapper.P8EST_CONNECT_CORNER
-        end
-        nsides=info.sides.elem_count
-        tree=sides[1].treeid+1
-        data=sides[1]
-        if data.is_ghost==1
-           ref_cell=pXest.local_num_quadrants+data.quadid+1
-        else
-           ref_cell=owned_trees_offset[tree]+data.quadid+1
-        end
-        corner=sides[1].corner+1
-        ref_cornergid=cell_vertices[ref_cell][corner]
-        if (info.tree_boundary!=0 && info.tree_boundary==CONNECT_CORNER)
-              # The current corner is also a corner of the coarse mesh
-              coarse_cornergid=coarse_cell_vertices[tree][corner]
-              vertex_to_entity[ref_cornergid]=
-                 coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid]
-              @debug "[GLOBAL CORNER] vertex_to_entity[$(ref_cornergid)]=$(coarse_grid_labeling.d_to_dface_to_entity[1][coarse_cornergid])"
-        else
-          if vertex_to_entity[ref_cornergid]==0
-            # We are on the interior of a tree (if we did not touch it yet)
-            vertex_to_entity[ref_cornergid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
-            @debug "[INTERIOR CORNER] vertex_to_entity[$(ref_cornergid)]=$(coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree])"
-          end
-        end
-        nothing
-     end
+    cell_edgets      = Gridap.Geometry.get_faces(topology, Dc, 1)
+    num_edgets       = Gridap.Geometry.num_faces(topology, 1)
+    edget_to_entity  = zeros(Int, num_edgets)
 
-     #  C-callable face callback
-     ccorner_callback = @cfunction($jcorner_callback,
-                                   Cvoid,
-                                   (Ptr{p8est_iter_corner_info_t},Ptr{Cvoid}))
+    num_facets_      = Gridap.Geometry.num_faces(topology, Dc-1)
+    facet_to_entity  = zeros(Int, num_facets_)
+    cell_facets      = Gridap.Geometry.get_faces(topology, Dc, Dc-1)
 
-     cell_edgets=Gridap.Geometry.get_faces(topology,Dc,1)
-     num_edgets=Gridap.Geometry.num_faces(topology,1)
-     edget_to_entity=zeros(Int,num_edgets)
-    if (Dc==3)
-      # Edge iterator callback
-      function jedge_callback(pinfo     :: Ptr{p8est_iter_edge_info_t},
-                               user_data :: Ptr{Cvoid})
-        info=pinfo[]
-        sides=Ptr{p8est_iter_edge_side_t}(info.sides.array)
-        function process_edget(tree,edge,ref_cell,info)
-           polytope=HEX
-           poly_faces=Gridap.ReferenceFEs.get_faces(polytope)
-           poly_edget_range=Gridap.ReferenceFEs.get_dimrange(polytope,1)
-           poly_first_edget=first(poly_edget_range)
-           poly_facet=poly_first_edget+edge-1
-           if (info.tree_boundary!=0 && info.tree_boundary==P4est_wrapper.P8EST_CONNECT_EDGE)
-             coarse_edgetgid=coarse_cell_edgets[tree][edge]
-             coarse_edgetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[2][coarse_edgetgid]
-             # We are on the boundary of coarse mesh or inter-octree boundary
-             for poly_incident_face in poly_faces[poly_facet]
-               if poly_incident_face == poly_facet
-                 ref_edgetgid=cell_edgets[ref_cell][edge]
-                 edget_to_entity[ref_edgetgid]=coarse_edgetgid_entity
-               else
-                 ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
-                 vertex_to_entity[ref_cornergid]=coarse_edgetgid_entity
-               end
-             end
-           else
-             # We are on the interior of the domain if we did not touch the edge yet
-             ref_edgetgid=cell_edgets[ref_cell][edge]
-             if (edget_to_entity[ref_edgetgid]==0)
-               edget_to_entity[ref_edgetgid]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
-             end
-           end
-        end 
-  
-        nsides=info.sides.elem_count
-        for iside=1:nsides
-         edge=sides[iside].edge+1
-         tree=sides[iside].treeid+1
-         if (sides[iside].is_hanging == 0)
-           data=sides[iside].is.full
-           if data.is_ghost==1
-             ref_cell=pXest.local_num_quadrants+data.quadid+1
-           else
-             ref_cell=owned_trees_offset[tree]+data.quadid+1
-           end 
-           process_edget(tree,edge,ref_cell,info)
-         else 
-           for i=1:length(sides[iside].is.hanging.quadid)
-             quadid=sides[iside].is.hanging.quadid[i]
-             if (sides[iside].is.hanging.is_ghost[i]==1)
-               ref_cell=pXest.local_num_quadrants+quadid+1
-             else 
-               ref_cell=owned_trees_offset[tree]+quadid+1
-             end 
-             process_edget(tree,edge,ref_cell,info)
-           end 
-         end 
-        end
-        nothing
+    num_cells        = Gridap.Geometry.num_faces(topology, Dc)
+    cell_to_entity   = zeros(Int, num_cells)
+
+    d = FaceLabelingCallbackData(
+      Dc,
+      Int(pXest.local_num_quadrants),
+      owned_trees_offset,
+      cell_vertices,
+      vertex_to_entity,
+      cell_edgets,
+      edget_to_entity,
+      cell_facets,
+      facet_to_entity,
+      cell_to_entity,
+      coarse_cell_vertices,
+      Dc == 3 ? coarse_cell_edgets : nothing,
+      coarse_cell_facets,
+      coarse_grid_labeling,
+      ITERATOR_RESTRICT_TO_BOUNDARY,
+    )
+
+    ccorner_callback = @cfunction(_jcorner_callback_impl, Cvoid,
+                                  (Ptr{p8est_iter_corner_info_t}, Ptr{Cvoid}))
+    cface_callback   = @cfunction(_jface_callback_impl,   Cvoid,
+                                  (Ptr{p8est_iter_face_info_t},   Ptr{Cvoid}))
+    ccell_callback   = @cfunction(_jcell_callback_impl,   Cvoid,
+                                  (Ptr{p8est_iter_volume_info_t}, Ptr{Cvoid}))
+    if Dc == 3
+      cedge_callback = @cfunction(_jedge_callback_impl,   Cvoid,
+                                  (Ptr{p8est_iter_edge_info_t},   Ptr{Cvoid}))
+    end
+
+    GC.@preserve d begin
+      ud = pointer_from_objref(d)
+      if Dc == 2
+        p4est_iterate(ptr_pXest, ptr_pXest_ghost, ud, C_NULL, cface_callback, C_NULL)
+        p4est_iterate(ptr_pXest, ptr_pXest_ghost, ud, ccell_callback, C_NULL, ccorner_callback)
+        d.iterator_mode = ITERATOR_RESTRICT_TO_INTERIOR
+        p4est_iterate(ptr_pXest, ptr_pXest_ghost, ud, C_NULL, cface_callback, C_NULL)
+      else
+        p8est_iterate(ptr_pXest, ptr_pXest_ghost, ud, C_NULL, cface_callback, C_NULL, C_NULL)
+        p8est_iterate(ptr_pXest, ptr_pXest_ghost, ud, C_NULL, C_NULL, cedge_callback, C_NULL)
+        p8est_iterate(ptr_pXest, ptr_pXest_ghost, ud, ccell_callback, C_NULL, C_NULL, ccorner_callback)
+        d.iterator_mode = ITERATOR_RESTRICT_TO_INTERIOR
+        p8est_iterate(ptr_pXest, ptr_pXest_ghost, ud, C_NULL, cface_callback, C_NULL, C_NULL)
       end
-
-      # C-callable edge callback
-      cedge_callback = @cfunction($jedge_callback,
-                                   Cvoid,
-                                   (Ptr{p8est_iter_edge_info_t},Ptr{Cvoid}))
     end
 
-    # Iterate over faces
-    num_faces=Gridap.Geometry.num_faces(topology,Dc-1)
-    facet_to_entity=zeros(Int,num_faces)
-    cell_facets=Gridap.Geometry.get_faces(topology,Dc,Dc-1)
-
-     # Face iterator callback
-     function jface_callback(pinfo     :: Ptr{p8est_iter_face_info_t},
-                             user_data :: Ptr{Cvoid})
-        info=pinfo[]
-        if Dc==2
-          sides=Ptr{p4est_iter_face_side_t}(info.sides.array)
-        else
-          sides=Ptr{p8est_iter_face_side_t}(info.sides.array)
-        end
-        ptr_user_data=Ptr{Cint}(user_data)
-        iterator_mode=unsafe_wrap(Array, ptr_user_data, 1)
-        if (iterator_mode[1]==ITERATOR_RESTRICT_TO_BOUNDARY)
-          # If current face is NOT in the boundary
-          if (info.tree_boundary==0)
-            return nothing
-          end
-        else
-          # If current face is in the boundary 
-          if (info.tree_boundary!=0)
-            return nothing
-          end
-        end
-
-        function process_facet(tree,face,ref_cell,info)
-          if Dc==2
-            gridap_facet=P4EST_2_GRIDAP_FACET_2D[face]
-          else
-            gridap_facet=P4EST_2_GRIDAP_FACET_3D[face]
-          end
-
-          polytope= Dc==2 ? QUAD : HEX
-          poly_faces=Gridap.ReferenceFEs.get_faces(polytope)
-          poly_facet_range=Gridap.ReferenceFEs.get_dimrange(polytope,Dc-1)
-          poly_first_facet=first(poly_facet_range)
-          poly_facet=poly_first_facet+gridap_facet-1
-
-          if (info.tree_boundary!=0)
-            # We are on the boundary of coarse mesh or inter-octree boundary
-            coarse_facetgid=coarse_cell_facets[tree][gridap_facet]
-            coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc][coarse_facetgid]
-          else
-            coarse_facetgid_entity=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
-          end 
-
-          for poly_incident_face in poly_faces[poly_facet]
-            if poly_incident_face == poly_facet
-              ref_facetgid=cell_facets[ref_cell][gridap_facet]
-              facet_to_entity[ref_facetgid]=coarse_facetgid_entity
-              @debug "[FACE] info.tree_boundary=$(info.tree_boundary) facet_to_entity[$(ref_facetgid)]=$(coarse_facetgid_entity)"
-            elseif (Dc==3 && poly_incident_face in Gridap.ReferenceFEs.get_dimrange(polytope,1))
-              poly_first_edget=first(Gridap.ReferenceFEs.get_dimrange(polytope,1))
-              edget=poly_incident_face-poly_first_edget+1
-              ref_edgetgid=cell_edgets[ref_cell][edget]
-              if (edget_to_entity[ref_edgetgid]==0)
-                edget_to_entity[ref_edgetgid]=coarse_facetgid_entity
-                @debug "[EDGE] info.tree_boundary=$(info.tree_boundary) edget_to_entity[$(ref_edgetgid)]=$(coarse_facetgid_entity)"
-              end
-            else
-              ref_cornergid=cell_vertices[ref_cell][poly_incident_face]
-              if (vertex_to_entity[ref_cornergid]==0)
-                @debug "[CORNER ON FACE] info.tree_boundary=$(info.tree_boundary) vertex_to_entity[$(ref_cornergid)]=$(coarse_facetgid_entity)"
-                vertex_to_entity[ref_cornergid]=coarse_facetgid_entity
-              end
-            end
-          end
-        end 
-
-        nsides=info.sides.elem_count
-        for iside=1:nsides
-          if (iside==2 && 
-            sides[iside].is_hanging == 0 &&
-            sides[1].is_hanging == 0)
-            break
-          end
-          face=sides[iside].face+1
-          tree=sides[iside].treeid+1
-          if (sides[iside].is_hanging == 0)
-            data=sides[iside].is.full
-            if data.is_ghost==1
-              ref_cell=pXest.local_num_quadrants+data.quadid+1
-            else
-              ref_cell=owned_trees_offset[tree]+data.quadid+1
-            end 
-            @debug "nsides=$(nsides) sides[$(iside)].is_hanging == $(sides[iside].is_hanging) process_facet(tree=$(tree),face=$(face),ref_cell=$(ref_cell))"
-            process_facet(tree,face,ref_cell,info)
-          else 
-            for i=1:length(sides[iside].is.hanging.quadid)
-              quadid=sides[iside].is.hanging.quadid[i]
-              if (sides[iside].is.hanging.is_ghost[i]==1)
-                ref_cell=pXest.local_num_quadrants+quadid+1
-              else 
-                ref_cell=owned_trees_offset[tree]+quadid+1
-              end
-              @debug "nsides=$(nsides) sides[$(iside)].is_hanging == $(sides[iside].is_hanging) process_facet(tree=$(tree),face=$(face),ref_cell=$(ref_cell))"
-              process_facet(tree,face,ref_cell,info)
-            end
-          end
-        end 
-        nothing
-    end
-
-    #  C-callable face callback
-    cface_callback = @cfunction($jface_callback,
-                                 Cvoid,
-                                 (Ptr{p8est_iter_face_info_t},Ptr{Cvoid}))
-
-    # Iterate over cells
-    num_cells=Gridap.Geometry.num_faces(topology,Dc)
-    cell_to_entity=zeros(Int,num_cells)
-
-    # Cell iterator callback
-    function jcell_callback(pinfo     :: Ptr{p8est_iter_volume_info_t},
-                            user_data :: Ptr{Cvoid})
-      info=pinfo[]
-      tree=info.treeid+1
-      cell=owned_trees_offset[tree]+info.quadid+1
-      cell_to_entity[cell]=coarse_grid_labeling.d_to_dface_to_entity[Dc+1][tree]
-      nothing
-    end
-    ccell_callback = @cfunction($jcell_callback,
-                                 Cvoid,
-                                 (Ptr{p8est_iter_volume_info_t},Ptr{Cvoid}))
-
-    iterator_mode=Ref{Int}(ITERATOR_RESTRICT_TO_BOUNDARY)
-    if (Dc==2)
-       p4est_iterate(ptr_pXest,ptr_pXest_ghost,iterator_mode,C_NULL,cface_callback,C_NULL)
-       p4est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,ccell_callback,C_NULL,ccorner_callback)
-       iterator_mode[]=ITERATOR_RESTRICT_TO_INTERIOR
-       p4est_iterate(ptr_pXest,ptr_pXest_ghost,iterator_mode,C_NULL,cface_callback,C_NULL)
+    if Dc == 2
+      d.vertex_to_entity, d.facet_to_entity, d.cell_to_entity
     else
-       p8est_iterate(ptr_pXest,ptr_pXest_ghost,iterator_mode,C_NULL,cface_callback,C_NULL,C_NULL)
-       p8est_iterate(ptr_pXest,ptr_pXest_ghost,iterator_mode,C_NULL,C_NULL,cedge_callback,C_NULL)
-       p8est_iterate(ptr_pXest,ptr_pXest_ghost,C_NULL,ccell_callback,C_NULL,C_NULL,ccorner_callback)
-       iterator_mode[]=ITERATOR_RESTRICT_TO_INTERIOR
-       p8est_iterate(ptr_pXest,ptr_pXest_ghost,iterator_mode,C_NULL,cface_callback,C_NULL,C_NULL)
-    end
-    if (Dc==2)
-      vertex_to_entity, facet_to_entity, cell_to_entity
-    else
-      vertex_to_entity, edget_to_entity, facet_to_entity, cell_to_entity
+      d.vertex_to_entity, d.edget_to_entity, d.facet_to_entity, d.cell_to_entity
     end
   end
 

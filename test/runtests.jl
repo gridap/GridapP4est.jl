@@ -51,7 +51,7 @@ function run_tests(testdir)
           np = [1,2,4]
           extra_args = ""
         elseif f in ["PoissonAnisotropicOctreeModelsTests.jl"] 
-          np = [1,4]
+          np = [1,2,4]
           extra_args = ""
         elseif f in ["PeriodicModels.jl"]
           np = [1]
