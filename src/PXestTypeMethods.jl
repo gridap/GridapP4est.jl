@@ -2207,7 +2207,8 @@ function generate_grid_and_topology(pXest_type::P6estType,
                                             cell_vertex_lids_gridap,
                                             cell_reffes,
                                             cell_types,
-                                            Gridap.Geometry.NonOriented())
+                                            Gridap.Geometry.NonOriented(),
+                                            has_affine_map=true)
 
     topology = Gridap.Geometry.UnstructuredGridTopology(node_coordinates,
                                       cell_vertex_lids_gridap,

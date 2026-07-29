@@ -51,7 +51,8 @@
                                             cell_vertex_lids,
                                             cell_reffes,
                                             cell_types,
-                                            Gridap.Geometry.NonOriented())
+                                            Gridap.Geometry.NonOriented(),
+                                            has_affine_map=true)
     m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
     labels = get_face_labeling(m)
     labels.d_to_dface_to_entity[1].=2
@@ -105,7 +106,8 @@
                                                 cell_vertex_lids,
                                                 cell_reffes,
                                                 cell_types,
-                                                Gridap.Geometry.NonOriented())
+                                                Gridap.Geometry.NonOriented(),
+                                                has_affine_map=true)
         m=Gridap.Geometry.UnstructuredDiscreteModel(grid)
         labels = get_face_labeling(m)
         if !all_entities_on_boundary          

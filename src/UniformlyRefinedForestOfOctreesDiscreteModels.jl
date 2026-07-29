@@ -609,7 +609,7 @@ function generate_grid_and_topology(pXest_type::P4P8estType,
     cell_types = fill(1,length(cell_vertex_lids))
 
     grid = Gridap.Geometry.UnstructuredGrid(
-      vertex_coords,cell_vertex_lids,[reffe],cell_types,Gridap.Geometry.NonOriented()
+      vertex_coords,cell_vertex_lids,[reffe],cell_types,Gridap.Geometry.NonOriented(),has_affine_map=true
     )
     topology = Gridap.Geometry.UnstructuredGridTopology(
       corner_coords,cell_corner_lids,cell_types,[poly],Gridap.Geometry.NonOriented()
