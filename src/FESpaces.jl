@@ -703,9 +703,10 @@ end
 function _determine_fake_master_dof_id(V::SingleFieldFESpace)
   if (num_dirichlet_dofs(V) > 0)
       return -1
-  else
-      @assert num_free_dofs(V) > 0
+  elseif (num_free_dofs(V) > 0)
       return 1
+  else # num_dirichlet_dofs(V) == 0 && num_free_dofs(V) == 0
+      return -1
   end
 end 
 
