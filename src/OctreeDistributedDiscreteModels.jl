@@ -2549,7 +2549,7 @@ function _generate_face_labeling_triangulation(trian,
                                            cell_to_faces(topology_new,Dcm,0))
     if Dcm==3
        edge_to_entity = map(face_labeling_new) do face_labeling_new
-         face_labeling_new.d_to_dface_to_entity[1]
+         face_labeling_new.d_to_dface_to_entity[2]
        end
        update_face_to_entity_with_ghost_data!(edge_to_entity,
                                               trian_cell_gids,
@@ -2642,7 +2642,7 @@ function _generate_active_models_and_non_conforming_glue(
         end
 
         if (Dcm==3)
-            map(topology_new,cell_faces_new) do topology,cell_edges
+            map(topology_new,cell_faces_new) do topology,cell_faces
               topology.n_m_to_nface_to_mfaces[Dcm+1,Dcm-1] = cell_faces[Dcm-1]
               topology.n_m_to_nface_to_mfaces[Dcm-1,Dcm+1] = Gridap.Geometry.generate_cells_around(cell_faces[Dcm-1])
             end
