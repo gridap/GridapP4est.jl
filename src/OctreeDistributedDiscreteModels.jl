@@ -2679,31 +2679,18 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                    old2new[face_id_in_mface] = num_regular_faces_new
                 end
             else
-                # It is a hanging face 
-                # Owner cell is in the triangulation?
-                fid_hanging = face_id_in_mface - num_regular_faces_old  
-                ocell, _, _ = hanging_faces_glue_old[fid_hanging]
-                if ocell >=1 # ocell can be negative in the case of a hanging face
-                             # with owner cell in another processor 
-                    if mface_to_tface[ocell]>0
-                      if !(face_id_in_mface in keys(old2new))
-                         num_hanging_faces_new += 1
-                         old2new[face_id_in_mface] = -num_hanging_faces_new
-                      end                
-                    else
-                      if !(face_id_in_mface in keys(old2new))
-                         num_regular_faces_new += 1
-                         old2new[face_id_in_mface] = num_regular_faces_new
-                      end
-                    end
-                else
-                    # We arbitrarily decide that this hanging face remains hanging
-                    # although we are not certain. In any case, this should not affect
-                    # the consistency of the algorithm 
-                    if !(face_id_in_mface in keys(old2new))
-                         num_hanging_faces_new += 1
-                         old2new[face_id_in_mface] = -num_hanging_faces_new
-                    end
+                # A face that was hanging in the full local portion must remain hanging
+                # here too. Demoting it to regular whenever this rank's own restricted
+                # trian happens to exclude the owner cell is NOT safe: another rank
+                # sharing the same (ghost) cell may still see the owner cell and keep
+                # it hanging, which would make the two ranks disagree on whether the
+                # corresponding DoF is free or constrained (breaks GridapDistributed's
+                # generate_gids invariant and corrupts the PRange). The owner cell is
+                # resolved to a local index below, when possible; otherwise it is
+                # treated the same as an owner cell on another processor (glue = -1).
+                if !(face_id_in_mface in keys(old2new))
+                   num_hanging_faces_new += 1
+                   old2new[face_id_in_mface] = -num_hanging_faces_new
                 end
             end
         end
@@ -2719,12 +2706,12 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
              fid_hanging_new = old2new[fid_old]
              if fid_hanging_new<0
                 mocell, lface, subface = hanging_faces_glue_old[fid_hanging_old]
-                if mocell<0
-                  # Owner cell is not in this processor
-                  hanging_faces_glue_new[-fid_hanging_new] = (mocell, lface, subface) 
+                # Owner cell not in this processor, or excluded from the restricted
+                # trian: mark as unresolvable (same sentinel as the remote-owner case).
+                if mocell<0 || mface_to_tface[mocell]<=0
+                  hanging_faces_glue_new[-fid_hanging_new] = (-1, lface, subface)
                 else     
                   tocell = mface_to_tface[mocell]
-                  @assert tocell>0
                   hanging_faces_glue_new[-fid_hanging_new] = (tocell, lface, subface)
                 end
              end
