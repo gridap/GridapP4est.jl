@@ -984,6 +984,7 @@ function _generate_local_cell_dof_ids_and_spaces_w_constraints(pXest_refinement_
                                                                models::AbstractVector{<:DiscreteModel{Dc}},
                                                                non_conforming_glue,
                                                                cell_reffe,
+                                                               cell_gids,
                                                                spaces_wo_constraints;
                                                                conformity=nothing,
                                                                kwargs...) where Dc
@@ -1043,6 +1044,7 @@ function _add_constraints(pXest_refinement_rule_type,
                                                              models,
                                                              non_conforming_glue,
                                                              cell_reffe,
+                                                             cell_gids,
                                                              spaces_wo_constraints;
                                                              kwargs...)
 

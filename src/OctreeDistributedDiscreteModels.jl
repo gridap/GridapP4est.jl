@@ -2395,7 +2395,8 @@ function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, tri
                                               num_cell_vertices,
                                               num_cell_edges,
                                               num_cell_faces,
-                                              Dcm)
+                                              Dcm,
+                                              pXest_refinement_rule)
 
             # Locate for each hanging facet a cell to which it belongs 
             # and local position within that cell 
@@ -2698,6 +2699,18 @@ function _face_lid_within_dim(num_vertices,num_edges,num_faces,face_lid)
   end
 end
 
+# Inverse of _face_lid_within_dim: given a face dimension and its local id
+# within that dimension, returns the combined (vertex+edge+face) local id.
+function _face_lid_from_dim_and_lid_within_dim(num_vertices,num_edges,num_faces,dim,lid_within_dim)
+  if dim==0
+    return lid_within_dim
+  elseif dim==1
+    return num_vertices+lid_within_dim
+  else
+    return num_vertices+num_edges+lid_within_dim
+  end
+end
+
 function _generate_new_cell_faces_and_glue(cell_faces_old,
                                            topology_old,
                                            num_regular_faces_old,
@@ -2708,7 +2721,8 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                                            num_cell_vertices,
                                            num_cell_edges,
                                            num_cell_faces,
-                                           D)
+                                           D,
+                                           pXest_refinement_rule_type)
      num_regular_faces_new = 0
      num_hanging_faces_new = 0
      old2new = Dict{Int,Int}()
@@ -2724,7 +2738,7 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                 # It is a hanging face 
                 # Owner cell is in the triangulation?
                 fid_hanging = face_id_in_mface - num_regular_faces_old  
-                ocell, ocell_lface, _ = hanging_faces_glue_old[fid_hanging]
+                ocell, ocell_lface, subface = hanging_faces_glue_old[fid_hanging]
                 if ocell >=1 # ocell can be negative in the case of a hanging face
                              # with owner cell in another processor 
                     if mface_to_tface[ocell]>0
@@ -2746,15 +2760,46 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                       owner_face = cell_to_faces[ocell][ocell_lface_within_dim]
                       faces_to_cells = get_faces(topology_old,lface_dim,D)
                       face_to_cells = faces_to_cells[owner_face]
+                      cell_vertices_old = get_faces(topology_old,D,0)
+                      lface_to_cvertices_ofdim =
+                        Gridap.ReferenceFEs.get_faces(D==2 ? QUAD : HEX, lface_dim, 0)
                       active_cell_found = false
                       for cell in face_to_cells
                         if mface_to_tface[cell]>0
                           if !(face_id_in_mface in keys(old2new))
+                            active_cell_found = true
                             num_hanging_faces_new += 1
                             old2new[face_id_in_mface] = -num_hanging_faces_new
-                            # [TODO] How to find cell_lface and cell_lface_subface for the new owner cell?
+                            # Local id (within cell) of owner_face from the perspective of the new owner cell
+                            cell_lface_within_dim =
+                              findfirst(isequal(owner_face), cell_to_faces[cell])
+                            cell_lface =
+                              _face_lid_from_dim_and_lid_within_dim(
+                                num_cell_vertices,
+                                num_cell_edges,
+                                num_cell_faces,
+                                lface_dim,
+                                cell_lface_within_dim
+                              )
+                            # subface identifies a subset of owner_face's corners w.r.t. ocell's
+                            # local vertex numbering of owner_face. As cell may see owner_face's
+                            # corners in a different local order, build the corner-to-corner
+                            # correspondence (matching by global vertex id) and use it to
+                            # re-express subface w.r.t. cell's local vertex numbering.
+                            ocell_corners_gids =
+                              [cell_vertices_old[ocell][v] for v in lface_to_cvertices_ofdim[ocell_lface_within_dim]]
+                            cell_corners_gids =
+                              [cell_vertices_old[cell][v] for v in lface_to_cvertices_ofdim[cell_lface_within_dim]]
+                            ocell_to_cell_corner = indexin(ocell_corners_gids, cell_corners_gids)
+                            @assert !any(isnothing,ocell_to_cell_corner) "Could not match owner_face corners between ocell and cell"
+                            ocell_subface_corners =
+                              Set(ocell_to_cell_corner[c] for c in _subface_to_face_corners(pXest_refinement_rule_type,subface))
+                            max_subface = length(lface_to_cvertices_ofdim[cell_lface_within_dim])
+                            cell_lface_subface =
+                              findfirst(sf->Set(_subface_to_face_corners(pXest_refinement_rule_type,sf))==ocell_subface_corners,
+                                       1:max_subface)
+                            @assert !isnothing(cell_lface_subface) "Could not find subface of owner_face w.r.t. new owner cell"
                             ocell_new[face_id_in_mface] = (cell, cell_lface, cell_lface_subface)
-                            active_cell_found = true
                             break
                           end
                         end
@@ -2794,7 +2839,8 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                   hanging_faces_glue_new[-fid_hanging_new] = (mocell, lface, subface) 
                 elseif haskey(ocell_new,fid_old)
                   cell, cell_lface, cell_lface_subface = ocell_new[fid_old]
-                  hanging_faces_glue_new[-fid_hanging_new] = (cell, cell_lface, cell_lface_subface)
+                  tocell = mface_to_tface[cell]
+                  hanging_faces_glue_new[-fid_hanging_new] = (tocell, cell_lface, cell_lface_subface)
                 else
                   tocell = mface_to_tface[mocell]
                   @assert tocell>0
