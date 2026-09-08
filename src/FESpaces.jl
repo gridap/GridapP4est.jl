@@ -461,26 +461,6 @@ function _generate_hanging_faces_owner_face_dofs(num_hanging_faces,
     Gridap.Arrays.Table(data_owner_face_dofs, ptrs)
 end
 
-function face_dim(num_vertices, num_edges, num_faces, face_lid)
-    if (face_lid <= num_vertices)
-        return 0
-    elseif (face_lid <= num_vertices + num_edges)
-        return 1
-    elseif (face_lid <= num_vertices + num_edges + num_faces)
-        return (num_edges==0 ? 1 : 2)
-    end
-end
-
-function face_lid_within_dim(num_vertices, num_edges, num_faces, face_lid)
-    if (face_lid <= num_vertices)
-        return face_lid
-    elseif (face_lid <= num_vertices + num_edges)
-        return face_lid - num_vertices
-    elseif (face_lid <= num_vertices + num_edges + num_faces)
-        return face_lid - num_vertices - num_edges
-    end
-end
-
 function _restrict_face_dofs_to_face_dim(cell_reffe,Df)
     polytope = get_polytope(cell_reffe)
     first_face = Gridap.ReferenceFEs.get_offset(polytope,Df)+1
@@ -983,7 +963,6 @@ function _generate_local_cell_dof_ids_and_spaces_w_constraints(pXest_refinement_
                                                                models::AbstractVector{<:DiscreteModel{Dc}},
                                                                non_conforming_glue,
                                                                cell_reffe,
-                                                               cell_gids,
                                                                spaces_wo_constraints;
                                                                conformity=nothing,
                                                                kwargs...) where Dc
@@ -1043,7 +1022,6 @@ function _add_constraints(pXest_refinement_rule_type,
                                                              models,
                                                              non_conforming_glue,
                                                              cell_reffe,
-                                                             cell_gids,
                                                              spaces_wo_constraints;
                                                              kwargs...)
 

@@ -2345,21 +2345,15 @@ end
 
 ### Machinery required to build a FESpace out of a triangulation ###
 
-function _get_num_cell_vertices_edges_faces(model,D::Int)
-  cell_reffe = first(Gridap.Geometry.get_reffes(model))
-  num_cell_vertices = Gridap.ReferenceFEs.num_faces(cell_reffe,0)
-  num_cell_edges    = D==3 ? Gridap.ReferenceFEs.num_faces(cell_reffe,1) : 0
-  num_cell_faces    = Gridap.ReferenceFEs.num_faces(cell_reffe,D-1)
-  num_cell_vertices, num_cell_edges, num_cell_faces
-end
-
 function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, trian, non_conforming_glue_old)
     non_conforming_glue_new, cell_faces_new = 
       map(local_views(trian), non_conforming_glue_old) do trian, non_conforming_glue_old
         model = get_background_model(trian)
         Dcm = num_cell_dims(model)
-        num_cell_vertices, num_cell_edges, num_cell_faces =
-          _get_num_cell_vertices_edges_faces(model,Dcm)
+        cell_reffe = first(Gridap.Geometry.get_reffes(model))
+        num_cell_vertices = Gridap.ReferenceFEs.num_faces(cell_reffe,0)
+        num_cell_edges    = Dcm==3 ? Gridap.ReferenceFEs.num_faces(cell_reffe,1) : 0
+        num_cell_faces    = Gridap.ReferenceFEs.num_faces(cell_reffe,Dcm-1)
         topology_old = get_grid_topology(model)
         tglue=get_glue(trian, Val{Dcm}())
         tface_to_mface = tglue.tface_to_mface
@@ -2679,36 +2673,40 @@ function _generate_active_models_and_non_conforming_glue(
     end 
 end
 
-function _face_dim(num_vertices,num_edges,num_faces,face_lid)
-  if (face_lid <= num_vertices)
-    return 0
-  elseif (face_lid <= num_vertices + num_edges)
-    return 1
-  elseif (face_lid <= num_vertices + num_edges + num_faces)
-    return (num_edges == 0 ? 1 : 2)
-  end
+function face_dim(num_vertices, num_edges, num_faces, face_lid)
+    if (face_lid <= num_vertices)
+        return 0
+    elseif (face_lid <= num_vertices + num_edges)
+        return 1
+    elseif (face_lid <= num_vertices + num_edges + num_faces)
+        return (num_edges==0 ? 1 : 2)
+    end
 end
 
-function _face_lid_within_dim(num_vertices,num_edges,num_faces,face_lid)
-  if (face_lid <= num_vertices)
-    return face_lid
-  elseif (face_lid <= num_vertices + num_edges)
-    return face_lid - num_vertices
-  elseif (face_lid <= num_vertices + num_edges + num_faces)
-    return face_lid - num_vertices - num_edges
-  end
+function face_lid_within_dim(num_vertices, num_edges, num_faces, face_lid)
+    if (face_lid <= num_vertices)
+        return face_lid
+    elseif (face_lid <= num_vertices + num_edges)
+        return face_lid - num_vertices
+    elseif (face_lid <= num_vertices + num_edges + num_faces)
+        return face_lid - num_vertices - num_edges
+    end
 end
 
-# Inverse of _face_lid_within_dim: given a face dimension and its local id
+# Inverse of face_lid_within_dim: given a face dimension and its local id
 # within that dimension, returns the combined (vertex+edge+face) local id.
-function _face_lid_from_dim_and_lid_within_dim(num_vertices,num_edges,num_faces,dim,lid_within_dim)
-  if dim==0
-    return lid_within_dim
-  elseif dim==1
-    return num_vertices+lid_within_dim
-  else
-    return num_vertices+num_edges+lid_within_dim
-  end
+function face_lid_from_dim_and_lid_within_dim(num_vertices, 
+                                              num_edges, 
+                                              num_faces, 
+                                              dim, 
+                                              lid_within_dim)
+    if dim==0
+        return lid_within_dim
+    elseif dim==1
+        return num_vertices+lid_within_dim
+    else
+        return num_vertices+num_edges+lid_within_dim
+    end
 end
 
 function _generate_new_cell_faces_and_glue(cell_faces_old,
@@ -2747,15 +2745,15 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                          old2new[face_id_in_mface] = -num_hanging_faces_new
                       end                
                     else
-                      lface_dim = _face_dim(num_cell_vertices,
+                      lface_dim = face_dim(num_cell_vertices,
+                                           num_cell_edges,
+                                           num_cell_faces,
+                                           ocell_lface)
+                      ocell_lface_within_dim = 
+                        face_lid_within_dim(num_cell_vertices,
                                             num_cell_edges,
                                             num_cell_faces,
                                             ocell_lface)
-                      ocell_lface_within_dim = 
-                        _face_lid_within_dim(num_cell_vertices,
-                                             num_cell_edges,
-                                             num_cell_faces,
-                                             ocell_lface)
                       cell_to_faces = get_faces(topology_old,D,lface_dim)
                       owner_face = cell_to_faces[ocell][ocell_lface_within_dim]
                       faces_to_cells = get_faces(topology_old,lface_dim,D)
@@ -2774,7 +2772,7 @@ function _generate_new_cell_faces_and_glue(cell_faces_old,
                             cell_lface_within_dim =
                               findfirst(isequal(owner_face), cell_to_faces[cell])
                             cell_lface =
-                              _face_lid_from_dim_and_lid_within_dim(
+                              face_lid_from_dim_and_lid_within_dim(
                                 num_cell_vertices,
                                 num_cell_edges,
                                 num_cell_faces,
