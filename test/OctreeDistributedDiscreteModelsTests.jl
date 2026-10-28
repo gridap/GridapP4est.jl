@@ -123,18 +123,19 @@ module OctreeDistributedDiscreteModelsTests
   # and redistribute (and across repeated applications of them).
   # A 4x1 strip of coarse cells on 4 ranks, s.t. rank p owns tree p.
   # With each tree refined into n x n cells and g <= n ghost layers,
-  # each face-neighbouring tree contributes g*n ghost cells.
+  # each face-neighbouring tree contributes g*n ghost cells (g*n*nl in the
+  # anisotropic 3D case, with nl cell layers per column).
   # Ranks 1 and 4 have one neighbouring tree, ranks 2 and 3 have two.
   function test_num_ghost_layers_preserved(ranks)
     @assert length(ranks) == 4
     coarse_model = CartesianDiscreteModel((0,4,0,1),(4,1))
     g = 2
 
-    function test_ghosts(label,model,n)
+    function test_ghosts(label,model,n,nl=1)
       @testset "$label" begin
         @test model.num_ghost_layers == g
         map(ranks,partition(get_cell_gids(model))) do rank, indices
-          @test ghost_length(indices) == (rank in (1,4) ? 1 : 2)*g*n
+          @test ghost_length(indices) == (rank in (1,4) ? 1 : 2)*g*n*nl
         end
       end
     end
@@ -189,6 +190,31 @@ module OctreeDistributedDiscreteModelsTests
       r4, _ = refine(m2;parts=ranks)
       @test r4.num_ghost_layers == g
       r4b, _ = redistribute(r4); test_ghosts("redistribute(refine(m2;parts=ranks))",r4b,4)
+    end
+
+    @testset "num_ghost_layers preserved by anisotropic 3D models" begin
+      # Columns of 2x2 per tree, nl cell layers per column
+      m0 = GridapP4est.AnisotropicallyAdapted3DDistributedDiscreteModel(ranks,coarse_model,1,1;
+                                                                       num_ghost_layers=g)
+      test_ghosts("m0",m0,2,2)
+
+      col_nothing_flags(model) = map(GridapP4est.num_locally_owned_columns(model)) do num_cols
+        fill(nothing_flag,num_cols)
+      end
+
+      # adapt with all nothing flags (ghost cells do not change)
+      h1, _ = horizontally_adapt(m0,col_nothing_flags(m0)); test_ghosts("horizontally_adapt(m0)",h1,2,2)
+      h2, _ = horizontally_adapt(h1,col_nothing_flags(h1)); test_ghosts("horizontally_adapt(h1)",h2,2,2)
+      v1, _ = vertically_adapt(m0,nothing_flags(m0)); test_ghosts("vertically_adapt(m0)",v1,2,2)
+      v2, _ = vertically_adapt(v1,nothing_flags(v1)); test_ghosts("vertically_adapt(v1)",v2,2,2)
+
+      # vertical uniform refinement (nl doubles at each step)
+      r1, _ = vertically_uniformly_refine(m0); test_ghosts("vertically_uniformly_refine(m0)",r1,2,4)
+      r2, _ = vertically_uniformly_refine(r1); test_ghosts("vertically_uniformly_refine(r1)",r2,2,8)
+
+      # redistribution of an already balanced mesh (ghost cells do not change)
+      d1, _ = redistribute(m0); test_ghosts("redistribute(m0)",d1,2,2)
+      d2, _ = redistribute(d1); test_ghosts("redistribute(d1)",d2,2,2)
     end
     nothing
   end
