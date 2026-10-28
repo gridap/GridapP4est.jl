@@ -1602,7 +1602,8 @@ function Gridap.Adaptivity.refine(model::OctreeDistributedDiscreteModel{Dc,Dp}; 
                                      ptr_new_pXest,
                                      pXest_type,
                                      PXestUniformRefinementRuleType(),
-                                     model.connectivity_ref)
+                                     model.connectivity_ref;
+                                     num_ghost_layers=model.num_ghost_layers)
 
       return ref_model, dglue
    else
@@ -1693,7 +1694,8 @@ function Gridap.Adaptivity.adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             model.connectivity_ref)
+                                             model.connectivity_ref;
+                                             num_ghost_layers=model.num_ghost_layers)
   return ref_model, adaptivity_glue
 end
 
@@ -1741,7 +1743,8 @@ function Gridap.Adaptivity.coarsen(model::OctreeDistributedDiscreteModel{Dc,Dp})
                                     ptr_new_pXest,
                                     pXest_type,
                                     PXestUniformRefinementRuleType(),
-                                    model.connectivity_ref)
+                                    model.connectivity_ref;
+                                    num_ghost_layers=model.num_ghost_layers)
      return c_octree_model, dglue
   else
      return VoidOctreeDistributedDiscreteModel(model,model.parts), nothing
@@ -1970,7 +1973,8 @@ function _redistribute_parts_subseteq_parts_redistributed(model::OctreeDistribut
                                              ptr_pXest_new,
                                              model.pXest_type,
                                              model.pXest_refinement_rule_type,
-                                             model.connectivity_ref)
+                                             model.connectivity_ref;
+                                             num_ghost_layers=model.num_ghost_layers)
   return red_model, glue
 end
 
@@ -2065,7 +2069,8 @@ function _redistribute_parts_supset_parts_redistributed(
                                                ptr_pXest_new,
                                                pXest_type,
                                                model.pXest_refinement_rule_type,
-                                               model.connectivity_ref)
+                                               model.connectivity_ref;
+                                               num_ghost_layers=model.num_ghost_layers)
     return red_model, glue
   else
     return VoidOctreeDistributedDiscreteModel(model,parts_redistributed_model), nothing
