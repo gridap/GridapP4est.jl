@@ -450,7 +450,8 @@ function OctreeDistributedDiscreteModel(parts::AbstractVector{<:Integer},
     ## HUGE WARNING: Shouldn't we provide here the complementary of parts
     ##               instead of parts? Otherwise, when calling _free!(...)
     ##               we cannot trust on parts.
-    return VoidOctreeDistributedDiscreteModel(coarse_model,parts,PXestUniformRefinementRuleType())
+    return VoidOctreeDistributedDiscreteModel(coarse_model,parts,PXestUniformRefinementRuleType();
+                                              num_ghost_layers=num_ghost_layers)
   end
 end
 
@@ -466,7 +467,8 @@ const VoidOctreeDistributedDiscreteModel{Dc,Dp,A,C,D} = OctreeDistributedDiscret
 
 function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},
                                             parts,
-                                            pXest_refinement_rule_type::PXestRefinementRuleType) where {Dc,Dp}
+                                            pXest_refinement_rule_type::PXestRefinementRuleType;
+                                            num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS) where {Dc,Dp}
   pXest_type = _dim_to_pXest_type(Dc)
   ptr_pXest_connectivity = setup_pXest_connectivity(coarse_model)
   connectivity_ref = PXestConnectivityRef(pXest_type, ptr_pXest_connectivity)
@@ -480,7 +482,8 @@ function VoidOctreeDistributedDiscreteModel(coarse_model::DiscreteModel{Dc,Dp},
                                  nothing,
                                  pXest_type,
                                  pXest_refinement_rule_type,
-                                 connectivity_ref)
+                                 connectivity_ref;
+                                 num_ghost_layers=num_ghost_layers)
 end
 
 function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteModel{Dc,Dp},parts) where {Dc,Dp}
@@ -494,7 +497,8 @@ function VoidOctreeDistributedDiscreteModel(model::OctreeDistributedDiscreteMode
                                  nothing,
                                  _dim_to_pXest_type(Dc),
                                  model.pXest_refinement_rule_type,
-                                 model.connectivity_ref)
+                                 model.connectivity_ref;
+                                 num_ghost_layers=model.num_ghost_layers)
 end
 
 # DistributedDiscreteModel API implementation
