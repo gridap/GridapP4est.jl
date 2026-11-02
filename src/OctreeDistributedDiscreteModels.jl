@@ -2372,7 +2372,6 @@ function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, tri
 
         for d=0:Dcm-1 
             cell_faces_old = get_faces(topology_old, Dcm, d)
-            face_cells_old = get_faces(topology_old, d, Dcm)
             num_regular_faces_old  = non_conforming_glue_old.num_regular_faces[d+1]
             num_hanging_faces_old  = non_conforming_glue_old.num_hanging_faces[d+1]
             hanging_faces_glue_old = non_conforming_glue_old.hanging_faces_glue[d+1]
@@ -2676,22 +2675,26 @@ function _generate_active_models_and_non_conforming_glue(
 end
 
 function face_dim(num_vertices, num_edges, num_faces, face_lid)
-    if (face_lid <= num_vertices)
+    if face_lid <= num_vertices
         return 0
-    elseif (face_lid <= num_vertices + num_edges)
+    elseif face_lid <= num_vertices + num_edges
         return 1
-    elseif (face_lid <= num_vertices + num_edges + num_faces)
+    elseif face_lid <= num_vertices + num_edges + num_faces
         return (num_edges==0 ? 1 : 2)
+    else
+        throw(ArgumentError("face_lid=$face_lid out of bounds (expected 1:$(num_vertices+num_edges+num_faces))"))
     end
 end
 
 function face_lid_within_dim(num_vertices, num_edges, num_faces, face_lid)
-    if (face_lid <= num_vertices)
+    if face_lid <= num_vertices
         return face_lid
-    elseif (face_lid <= num_vertices + num_edges)
+    elseif face_lid <= num_vertices + num_edges
         return face_lid - num_vertices
-    elseif (face_lid <= num_vertices + num_edges + num_faces)
+    elseif face_lid <= num_vertices + num_edges + num_faces
         return face_lid - num_vertices - num_edges
+    else
+        throw(ArgumentError("face_lid=$face_lid out of bounds (expected 1:$(num_vertices+num_edges+num_faces))"))
     end
 end
 
