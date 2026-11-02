@@ -1,7 +1,8 @@
 
+module Issue108Tests
+
 using MPI
 using PartitionedArrays
-
 using Gridap
 using Gridap.Adaptivity
 using Gridap.Arrays
@@ -14,13 +15,12 @@ using GridapP4est
 using GridapP4est: OctreeDistributedDiscreteModel, refine_flag, nothing_flag
 using P4est_wrapper
 
-Gridap.Geometry.Triangulation(t::Gridap.Adaptivity.AdaptedTriangulation,
-                              mask::AbstractArray{<:Bool}) =
+trian_with_mask(t::Gridap.Adaptivity.AdaptedTriangulation,
+                mask::AbstractArray{<:Bool}) =
     Gridap.Geometry.Triangulation(t.trian, mask)
 
 function mwe_sphere_3d_hanging_glue_on_portion(distribute, nparts::Int, n::Int)
     ranks = distribute(LinearIndices((nparts,)))
-    rank  = MPI.Comm_rank(MPI.COMM_WORLD)
 
     GridapP4est.with(ranks; p4est_verbosity_level=P4est_wrapper.SC_LP_ERROR) do
 
@@ -30,9 +30,10 @@ function mwe_sphere_3d_hanging_glue_on_portion(distribute, nparts::Int, n::Int)
     domain = (0.5, 1.0, 0.5, 1.0, 0.5, 1.0)
     cells  = (n, n, n)
 
-    outdir = joinpath(@__DIR__, "mwe_sphere_out_no_embedded")
-    rank == 0 && mkpath(outdir)
-    MPI.Barrier(MPI.COMM_WORLD)
+    # rank  = MPI.Comm_rank(MPI.COMM_WORLD)
+    # outdir = joinpath(@__DIR__, "mwe_sphere_out_no_embedded")
+    # rank == 0 && mkpath(outdir)
+    # MPI.Barrier(MPI.COMM_WORLD)
 
     coarse_model = CartesianDiscreteModel(domain, cells)
     model = OctreeDistributedDiscreteModel(ranks, coarse_model, 0)
@@ -63,7 +64,7 @@ function mwe_sphere_3d_hanging_glue_on_portion(distribute, nparts::Int, n::Int)
     end
 
     Ω1_trians = map(local_views(Ωh), cell_active) do trian, mask
-        Triangulation(trian, mask)
+        trian_with_mask(trian, mask)
     end
     Ω1 = DistributedTriangulation(Ω1_trians, fmodel)
     dΩ1 = Measure(Ω1, 2*order)
@@ -167,7 +168,9 @@ function mwe_sphere_3d_hanging_glue_on_portion(distribute, nparts::Int, n::Int)
 end
 
 
-with_mpi() do distribute
+function run(distribute)
     mwe_sphere_3d_hanging_glue_on_portion(distribute,3,3)
     println("finished")
+end
+
 end
