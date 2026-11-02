@@ -110,7 +110,8 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
-      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+      parent = isa(model,AdaptedDiscreteModel) ? model.model : model
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,parent,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
   ref_model = OctreeDistributedDiscreteModel(3,3,
@@ -183,7 +184,8 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
-      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+      parent = isa(model,AdaptedDiscreteModel) ? model.model : model
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,parent,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
   ref_model = OctreeDistributedDiscreteModel(3,3,
@@ -718,7 +720,8 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
-      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+      parent = isa(model,AdaptedDiscreteModel) ? model.model : model
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,parent,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
   ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
