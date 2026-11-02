@@ -2350,7 +2350,9 @@ function _generate_non_conforming_glue_and_cell_faces(pXest_refinement_rule, tri
       map(local_views(trian), non_conforming_glue_old) do trian, non_conforming_glue_old
         model = get_background_model(trian)
         Dcm = num_cell_dims(model)
-        cell_reffe = first(Gridap.Geometry.get_reffes(model))
+        cell_reffes = Gridap.Geometry.get_reffes(model)
+        @assert length(cell_reffes) == 1
+        cell_reffe = first(cell_reffes)
         num_cell_vertices = Gridap.ReferenceFEs.num_faces(cell_reffe,0)
         num_cell_edges    = Dcm==3 ? Gridap.ReferenceFEs.num_faces(cell_reffe,1) : 0
         num_cell_faces    = Gridap.ReferenceFEs.num_faces(cell_reffe,Dcm-1)
