@@ -36,6 +36,9 @@ function run_tests(testdir)
         if f in ["PoissonUniformlyRefinedOctreeModelsTests.jl"]
           np = [4]
           extra_args = "-c 2 2 -r 2 -g 2"
+        elseif f in ["issue_108.jl"]
+          np = [3]
+          extra_args = ""
         elseif f in ["OctreeDistributedDiscreteModelsTests.jl",
                      "OctreeDistributedDiscreteModelsNoEnvTests.jl",
                      "AdaptivityFlagsMarkingStrategiesTests.jl"]
