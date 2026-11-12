@@ -3,7 +3,8 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
     coarse_model::DiscreteModel{2,2},
     num_horizontal_uniform_refinements,
     num_vertical_uniform_refinements;
-    extrusion_vector::Vector{Float64}=[0.0,0.0,1.0])
+    extrusion_vector::Vector{Float64}=[0.0,0.0,1.0],
+    num_ghost_layers::Int=DEFAULT_NUM_GHOST_LAYERS)
 
     pXest_type=P6estType()
     ptr_pXest_connectivity=setup_pXest_connectivity(pXest_type,coarse_model,extrusion_vector)
@@ -14,7 +15,7 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
                           num_vertical_uniform_refinements)
 
 
-    ptr_pXest_ghost=setup_pXest_ghost(pXest_type,ptr_pXest)
+    ptr_pXest_ghost=setup_pXest_ghost(pXest_type,ptr_pXest,num_ghost_layers)
     ptr_pXest_lnodes=setup_pXest_lnodes_nonconforming(pXest_type, ptr_pXest, ptr_pXest_ghost)
 
     dmodel,non_conforming_glue  = setup_non_conforming_distributed_discrete_model(pXest_type,
@@ -40,7 +41,8 @@ function AnisotropicallyAdapted3DDistributedDiscreteModel(
                                           ptr_pXest,
                                           pXest_type,
                                           PXestHorizontalRefinementRuleType(),
-                                          connectivity_ref)
+                                          connectivity_ref;
+                                          num_ghost_layers=num_ghost_layers)
 end
 
 function _vertically_refine_coarsen_balance!(model::OctreeDistributedDiscreteModel{Dc,Dp}, 
@@ -83,7 +85,7 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
   ptr_new_pXest = _vertically_refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -110,7 +112,8 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
-      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+      parent = isa(model,AdaptedDiscreteModel) ? model.model : model
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,parent,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
   ref_model = OctreeDistributedDiscreteModel(3,3,
@@ -122,7 +125,8 @@ function vertically_adapt(model::OctreeDistributedDiscreteModel{3,3},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             model.connectivity_ref)
+                                             model.connectivity_ref;
+                                             num_ghost_layers=model.num_ghost_layers)
   return ref_model, adaptivity_glue
 end
 
@@ -150,7 +154,7 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
   ptr_new_pXest = _vertically_uniformly_refine!(model)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -183,7 +187,8 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
-      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+      parent = isa(model,AdaptedDiscreteModel) ? model.model : model
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,parent,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
   ref_model = OctreeDistributedDiscreteModel(3,3,
@@ -195,7 +200,8 @@ function vertically_uniformly_refine(model::OctreeDistributedDiscreteModel)
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              model.pXest_refinement_rule_type,
-                                             model.connectivity_ref)
+                                             model.connectivity_ref;
+                                             num_ghost_layers=model.num_ghost_layers)
   return ref_model, adaptivity_glue
 end
 
@@ -675,7 +681,7 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   ptr_new_pXest = _horizontally_refine_coarsen_balance!(model, _refinement_and_coarsening_flags)
 
   # Extract ghost and lnodes
-  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest)
+  ptr_pXest_ghost  = setup_pXest_ghost(model.pXest_type, ptr_new_pXest, model.num_ghost_layers)
   ptr_pXest_lnodes = setup_pXest_lnodes_nonconforming(model.pXest_type, ptr_new_pXest, ptr_pXest_ghost)
 
   # Build fine-grid mesh
@@ -718,7 +724,8 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
   adaptive_models = map(local_views(model),
                         local_views(fmodel),
                         adaptivity_glue) do model, fmodel, glue 
-      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,model,glue)
+      parent = isa(model,AdaptedDiscreteModel) ? model.model : model
+      Gridap.Adaptivity.AdaptedDiscreteModel(fmodel,parent,glue)
   end
   fmodel = GridapDistributed.GenericDistributedDiscreteModel(adaptive_models,get_cell_gids(fmodel))
   ref_model = OctreeDistributedDiscreteModel(Dc,Dp,
@@ -730,7 +737,8 @@ function horizontally_adapt(model::OctreeDistributedDiscreteModel{Dc,Dp},
                                              ptr_new_pXest,
                                              model.pXest_type,
                                              pXest_refinement_rule_type,
-                                             model.connectivity_ref)
+                                             model.connectivity_ref;
+                                             num_ghost_layers=model.num_ghost_layers)
   return ref_model, adaptivity_glue
 end
 

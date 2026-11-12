@@ -27,11 +27,9 @@ jobs:
         uses: actions/cache@v6
         with:
          path: ${{env.P4EST_ROOT_DIR}}
-         key: ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-
+         key: ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-blas-lapack-v1-
          restore-keys: |
-           ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-
-           ${{ runner.os }}-build-
-           ${{ runner.os }}-
+           ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-blas-lapack-v1-
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
@@ -40,6 +38,7 @@ jobs:
         run: |
            sudo apt-get update 
            sudo apt-get install -y wget gfortran g++ openmpi-bin libopenmpi-dev 
+           sudo apt-get install -y libblas-dev liblapack-dev 
       - name: Install p4est
         if: steps.cache-p4est.outputs.cache-hit != 'true'
         run: |
@@ -58,7 +57,7 @@ jobs:
           mkdir -p $SOURCES_DIR
           tar xzf $ROOT_DIR/$TAR_FILE -C $SOURCES_DIR --strip-components=1
           cd $SOURCES_DIR
-          ./configure --prefix=$P4EST_INSTALL --without-blas --without-lapack --enable-mpi -disable-dependency-tracking
+          ./configure --prefix=$P4EST_INSTALL --enable-mpi -disable-dependency-tracking
           make --quiet
           make --quiet install
           rm -rf $ROOT_DIR/$TAR_FILE $SOURCES_DIR
