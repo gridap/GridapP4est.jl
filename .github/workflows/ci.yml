@@ -27,11 +27,9 @@ jobs:
         uses: actions/cache@v6
         with:
          path: ${{env.P4EST_ROOT_DIR}}
-         key: ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-
+         key: ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-blas-lapack-v1-
          restore-keys: |
-           ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-
-           ${{ runner.os }}-build-
-           ${{ runner.os }}-
+           ${{ runner.os }}-build-${{ env.P4EST_ROOT_DIR }}-blas-lapack-v1-
       - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
