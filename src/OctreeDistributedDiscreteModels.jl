@@ -1,4 +1,3 @@
-
 const nothing_flag  = Cint(0)
 const refine_flag   = Cint(1)
 const coarsen_flag  = Cint(2)
@@ -1199,8 +1198,9 @@ function _compute_fine_to_coarse_model_glue(
   coarsen_array = map(partition(cgids),refinement_and_coarsening_flags) do cpartition,flags
     _check_if_coarsen(pXest_type,pXest_refinement_rule_type,cpartition,flags,stride) 
   end
-  or_func(a,b)=a || b
-  coarsen = PArrays.getany(reduction(or_func,coarsen_array;destination=:all,init=false))
+  # `|` on Bool maps to the built-in MPI_LOR; a user-defined operator would
+  # need a closure cfunction, which MPI.jl does not support on aarch64.
+  coarsen = PArrays.getany(reduction(|,coarsen_array;destination=:all,init=false))
 
   # Fill data for owned (from coarse cells owned by the processor)
   fgids = get_cell_gids(fmodel)
@@ -2294,6 +2294,4 @@ function _set_hanging_labels!(face_labeling,non_conforming_glue,coarse_face_labe
   map(face_labeling) do face_labeling 
     add_tag!(face_labeling,"hanging",collect(keys(hanging_entitity_ids)))
   end
-end 
-
-
+end

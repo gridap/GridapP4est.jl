@@ -357,62 +357,75 @@ function pXest_partition!(pXest_type::P8estType, ptr_pXest; weights_set=false)
 end 
 
 
-function pXest_reset_callbacks(::P4estType)
-  # Variables which are updated accross calls to init_fn_callback
-  current_quadrant_index_within_tree = Cint(0)
-  current_quadrant_index_among_trees = Cint(0)
+# ---------------------------------------------------------------------------
+# Static (non-closure) C callbacks for the refine / coarsen / partition path.
+#
+# `@cfunction($f, ...)` on a closure needs LLVM trampoline support, which
+# Julia does not provide on aarch64 (Apple Silicon); such calls fail with
+# "cfunction: closures are not supported on this platform".  The callbacks
+# below capture no state except the reset-data init callback, whose two
+# running counters live in a module-level mutable struct that is reset
+# before each use (p4est invokes callbacks sequentially within a process).
+# Same approach as FaceLabelingCallbackData in
+# UniformlyRefinedForestOfOctreesDiscreteModels.jl.
+# ---------------------------------------------------------------------------
+mutable struct ResetDataCounters
+  within_tree :: Cint
+  among_trees :: Cint
+end
+const _reset_data_counters = ResetDataCounters(Cint(0), Cint(0))
 
-  # This C callback function is called once per quadtree quadrant. Here we are assuming
-  # that p4est->user_pointer has been set prior to the first call to this call
-  # back function to an array of ints with as many entries as forest quadrants. This call back function
-  # initializes the quadrant->p.user_data void * pointer of all quadrants such that it
-  # points to the corresponding entry in the global array mentioned in the previous sentence
-  function init_fn_callback(forest_ptr::Ptr{p4est_t},
-    which_tree::p4est_topidx_t,
-    quadrant_ptr::Ptr{p4est_quadrant_t})
-    # Extract a reference to the tree which_tree
-    forest = forest_ptr[]
-    tree = p4est_tree_array_index(forest.trees, which_tree)[]
-    quadrant = quadrant_ptr[]
-    q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-    @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
-    user_data = unsafe_wrap(Array, 
-                            Ptr{Cint}(forest.user_pointer), 
-                            current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-    unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-    current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-    current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-    return nothing
-  end
-  @cfunction($init_fn_callback, 
-             Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+# This C callback function is called once per quadrant. Here we are assuming
+# that p4est->user_pointer has been set prior to the first call to this call
+# back function to an array of ints with as many entries as forest quadrants.
+# This call back function initializes the quadrant->p.user_data void * pointer
+# of all quadrants such that it points to the corresponding entry in the
+# global array mentioned in the previous sentence.
+function _init_fn_callback_2d(forest_ptr::Ptr{p4est_t},
+                              which_tree::p4est_topidx_t,
+                              quadrant_ptr::Ptr{p4est_quadrant_t})
+  c = _reset_data_counters
+  forest = forest_ptr[]
+  tree = p4est_tree_array_index(forest.trees, which_tree)[]
+  quadrant = quadrant_ptr[]
+  q = P4est_wrapper.p4est_quadrant_array_index(tree.quadrants, c.within_tree)
+  @assert p4est_quadrant_compare(q, quadrant_ptr) == 0
+  user_data = unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer),
+                          c.among_trees+1)[c.among_trees+1]
+  unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+  c.within_tree = Cint((c.within_tree + 1) % tree.quadrants.elem_count)
+  c.among_trees = c.among_trees + Cint(1)
+  return nothing
+end
+
+function _init_fn_callback_3d(forest_ptr::Ptr{p8est_t},
+                              which_tree::p4est_topidx_t,
+                              quadrant_ptr::Ptr{p8est_quadrant_t})
+  c = _reset_data_counters
+  forest = forest_ptr[]
+  tree = p8est_tree_array_index(forest.trees, which_tree)[]
+  quadrant = quadrant_ptr[]
+  q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, c.within_tree)
+  @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
+  user_data = unsafe_wrap(Array, Ptr{Cint}(forest.user_pointer),
+                          c.among_trees+1)[c.among_trees+1]
+  unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
+  c.within_tree = Cint((c.within_tree + 1) % tree.quadrants.elem_count)
+  c.among_trees = c.among_trees + Cint(1)
+  return nothing
+end
+
+function pXest_reset_callbacks(::P4estType)
+  _reset_data_counters.within_tree = Cint(0)
+  _reset_data_counters.among_trees = Cint(0)
+  @cfunction(_init_fn_callback_2d, Cvoid, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
 end
 
 function pXest_reset_callbacks(::P8estType)
-  # Variables which are updated accross calls to init_fn_callback
-  current_quadrant_index_within_tree = Cint(0)
-  current_quadrant_index_among_trees = Cint(0)
-
-  function init_fn_callback(forest_ptr::Ptr{p8est_t},
-    which_tree::p4est_topidx_t,
-    quadrant_ptr::Ptr{p8est_quadrant_t})
-    # Extract a reference to the tree which_tree
-    forest = forest_ptr[]
-    tree = p8est_tree_array_index(forest.trees, which_tree)[]
-    quadrant = quadrant_ptr[]
-    q = P4est_wrapper.p8est_quadrant_array_index(tree.quadrants, current_quadrant_index_within_tree)
-    @assert p8est_quadrant_compare(q, quadrant_ptr) == 0
-    user_data = unsafe_wrap(Array, 
-                            Ptr{Cint}(forest.user_pointer), 
-                            current_quadrant_index_among_trees+1)[current_quadrant_index_among_trees+1]
-    unsafe_store!(Ptr{Cint}(quadrant.p.user_data), user_data, 1)
-    current_quadrant_index_within_tree = (current_quadrant_index_within_tree + 1) % (tree.quadrants.elem_count)
-    current_quadrant_index_among_trees = current_quadrant_index_among_trees+1
-    return nothing
-  end
-  init_fn_callback_c = @cfunction($init_fn_callback, 
-                                  Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
-end 
+  _reset_data_counters.within_tree = Cint(0)
+  _reset_data_counters.among_trees = Cint(0)
+  @cfunction(_init_fn_callback_3d, Cvoid, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+end
 
 
 function p2est_quadrant_is_equal(a,b)
@@ -638,162 +651,143 @@ function p6est_horizontally_coarsen_callbacks()
 end 
 
 
-function pXest_coarsen_callbacks(::P4estType)
-  function coarsen_callback(forest_ptr::Ptr{p4est_t},
-                            which_tree::p4est_topidx_t,
-                            quadrant_ptr::Ptr{Ptr{p4est_quadrant_t}})
-
-    num_children=get_num_children(Val{2})
-    quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
-    coarsen=Cint(1)
-    for quadrant_index=1:num_children
-      quadrant = quadrants[quadrant_index][]
-      # I have noticed that new quadrants created as by-product
-      # of the refininement process have quadrant.p.user_data == C_NULL
-      # Not sure why ... The following if-end takes care of this.
-      if (quadrant.p.user_data) == C_NULL
-        return Cint(0)
-      end
-      is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
-      if (!is_coarsen_flag) 
-        return Cint(0)
-      end
-    end  
-    return coarsen
-  end 
-  coarsen_fn_callback_c = @cfunction($coarsen_callback, 
-                                     Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
-end 
-
-function pXest_coarsen_callbacks(::P8estType)
-  function coarsen_callback(forest_ptr::Ptr{p8est_t},
-                               which_tree::p4est_topidx_t,
-                               quadrant_ptr::Ptr{Ptr{p8est_quadrant_t}})
-
-    num_children=get_num_children(Val{3})
-    quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
-    coarsen=Cint(1)
-    for quadrant_index=1:num_children
-      quadrant = quadrants[quadrant_index][]
-      # I have noticed that new quadrants created as by-product
-      # of the refininement process have quadrant.p.user_data == C_NULL
-      # Not sure why ... The following if-end takes care of this.
-      if (quadrant.p.user_data) == C_NULL
-        return Cint(0)
-      end
-      is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
-      if (!is_coarsen_flag) 
-        return Cint(0)
-      end
-    end  
-    return coarsen
-  end 
-  coarsen_fn_callback_c = @cfunction($coarsen_callback, 
-                                    Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
-end 
-
-
-function pXest_refine_callbacks(::P4estType)
-  function refine_callback(::Ptr{p4est_t},
-    which_tree::p4est_topidx_t,
-    quadrant_ptr::Ptr{p4est_quadrant_t})
-    quadrant = quadrant_ptr[]
-    return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
-  end
-  refine_callback_c = @cfunction($refine_callback, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
-
-  function refine_replace_callback(::Ptr{p4est_t},
-                                    which_tree::p4est_topidx_t,
-                                    num_outgoing::Cint,
-                                    outgoing_ptr::Ptr{Ptr{p4est_quadrant_t}},
-                                    num_incoming::Cint,
-                                    incoming_ptr::Ptr{Ptr{p4est_quadrant_t}})
-    num_children=get_num_children(Val{2}) 
-    @assert num_outgoing==1 
-    @assert num_incoming==num_children
-    outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
-    quadrant = outgoing[1][]
-    incoming=unsafe_wrap(Array, incoming_ptr, num_children)
-    for quadrant_index=1:num_children
-      quadrant = incoming[quadrant_index][]
-      if (quadrant.p.user_data) != C_NULL
-          unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
-      end
+function _coarsen_callback_2d(forest_ptr::Ptr{p4est_t},
+                              which_tree::p4est_topidx_t,
+                              quadrant_ptr::Ptr{Ptr{p4est_quadrant_t}})
+  num_children=get_num_children(Val{2})
+  quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
+  for quadrant_index=1:num_children
+    quadrant = quadrants[quadrant_index][]
+    # New quadrants created as a by-product of refinement may have
+    # quadrant.p.user_data == C_NULL; never coarsen those.
+    if (quadrant.p.user_data) == C_NULL
+      return Cint(0)
+    end
+    is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+    if (!is_coarsen_flag)
+      return Cint(0)
     end
   end
-  refine_replace_callback_c = 
-    @cfunction($refine_replace_callback, Cvoid, (Ptr{p4est_t}, 
-                                                    p4est_topidx_t, 
-                                                    Cint, 
-                                                    Ptr{Ptr{p4est_quadrant_t}}, 
-                                                    Cint, 
-                                                    Ptr{Ptr{p4est_quadrant_t}}))
+  return Cint(1)
+end
+
+function _coarsen_callback_3d(forest_ptr::Ptr{p8est_t},
+                              which_tree::p4est_topidx_t,
+                              quadrant_ptr::Ptr{Ptr{p8est_quadrant_t}})
+  num_children=get_num_children(Val{3})
+  quadrants=unsafe_wrap(Array, quadrant_ptr, num_children)
+  for quadrant_index=1:num_children
+    quadrant = quadrants[quadrant_index][]
+    if (quadrant.p.user_data) == C_NULL
+      return Cint(0)
+    end
+    is_coarsen_flag=(unsafe_wrap(Array,Ptr{Cint}(quadrant.p.user_data),1)[])==coarsen_flag
+    if (!is_coarsen_flag)
+      return Cint(0)
+    end
+  end
+  return Cint(1)
+end
+
+function pXest_coarsen_callbacks(::P4estType)
+  @cfunction(_coarsen_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
+end
+
+function pXest_coarsen_callbacks(::P8estType)
+  @cfunction(_coarsen_callback_3d, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
+end
+
+
+function _refine_callback_2d(::Ptr{p4est_t}, which_tree::p4est_topidx_t, quadrant_ptr::Ptr{p4est_quadrant_t})
+  quadrant = quadrant_ptr[]
+  return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
+end
+
+function _refine_callback_3d(::Ptr{p8est_t}, which_tree::p4est_topidx_t, quadrant_ptr::Ptr{p8est_quadrant_t})
+  quadrant = quadrant_ptr[]
+  return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
+end
+
+function _refine_replace_callback_2d(::Ptr{p4est_t},
+                                     which_tree::p4est_topidx_t,
+                                     num_outgoing::Cint,
+                                     outgoing_ptr::Ptr{Ptr{p4est_quadrant_t}},
+                                     num_incoming::Cint,
+                                     incoming_ptr::Ptr{Ptr{p4est_quadrant_t}})
+  num_children=get_num_children(Val{2})
+  @assert num_outgoing==1
+  @assert num_incoming==num_children
+  incoming=unsafe_wrap(Array, incoming_ptr, num_children)
+  for quadrant_index=1:num_children
+    quadrant = incoming[quadrant_index][]
+    if (quadrant.p.user_data) != C_NULL
+      unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
+    end
+  end
+  return nothing
+end
+
+function _refine_replace_callback_3d(::Ptr{p8est_t},
+                                     which_tree::p4est_topidx_t,
+                                     num_outgoing::Cint,
+                                     outgoing_ptr::Ptr{Ptr{p8est_quadrant_t}},
+                                     num_incoming::Cint,
+                                     incoming_ptr::Ptr{Ptr{p8est_quadrant_t}})
+  num_children=get_num_children(Val{3})
+  @assert num_outgoing==1
+  @assert num_incoming==num_children
+  incoming=unsafe_wrap(Array, incoming_ptr, num_children)
+  for quadrant_index=1:num_children
+    quadrant = incoming[quadrant_index][]
+    if (quadrant.p.user_data) != C_NULL
+      unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
+    end
+  end
+  return nothing
+end
+
+function pXest_refine_callbacks(::P4estType)
+  refine_callback_c = @cfunction(_refine_callback_2d, Cint,
+                                 (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+  refine_replace_callback_c = @cfunction(_refine_replace_callback_2d, Cvoid,
+                                 (Ptr{p4est_t}, p4est_topidx_t, Cint,
+                                  Ptr{Ptr{p4est_quadrant_t}}, Cint, Ptr{Ptr{p4est_quadrant_t}}))
   refine_callback_c, refine_replace_callback_c
 end
 
 function pXest_refine_callbacks(::P8estType)
-  function refine_callback(::Ptr{p8est_t},
-    which_tree::p4est_topidx_t,
-    quadrant_ptr::Ptr{p8est_quadrant_t})
-    quadrant = quadrant_ptr[]
-    return Cint(unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[] == refine_flag)
-  end
-  refine_callback_c = @cfunction($refine_callback, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
-
-  function refine_replace_callback(::Ptr{p8est_t},
-                                  which_tree::p4est_topidx_t,
-                                  num_outgoing::Cint,
-                                  outgoing_ptr::Ptr{Ptr{p8est_quadrant_t}},
-                                  num_incoming::Cint,
-                                  incoming_ptr::Ptr{Ptr{p8est_quadrant_t}})
-    num_children=get_num_children(Val{3}) 
-    @assert num_outgoing==1 
-    @assert num_incoming==num_children
-    outgoing=unsafe_wrap(Array, outgoing_ptr, 1)
-    quadrant = outgoing[1][]
-    incoming=unsafe_wrap(Array, incoming_ptr, num_children)
-    for quadrant_index=1:num_children
-      quadrant = incoming[quadrant_index][]
-      if (quadrant.p.user_data) != C_NULL
-          unsafe_store!(Ptr{Cint}(quadrant.p.user_data), nothing_flag, 1)
-      end
-    end
-  end
-
-  refine_replace_callback_c = 
-    @cfunction($refine_replace_callback, Cvoid, (Ptr{p8est_t}, 
-                                                  p4est_topidx_t, 
-                                                  Cint, 
-                                                  Ptr{Ptr{p8est_quadrant_t}}, 
-                                                  Cint, 
-                                                  Ptr{Ptr{p8est_quadrant_t}}))
-
+  refine_callback_c = @cfunction(_refine_callback_3d, Cint,
+                                 (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+  refine_replace_callback_c = @cfunction(_refine_replace_callback_3d, Cvoid,
+                                 (Ptr{p8est_t}, p4est_topidx_t, Cint,
+                                  Ptr{Ptr{p8est_quadrant_t}}, Cint, Ptr{Ptr{p8est_quadrant_t}}))
   refine_callback_c, refine_replace_callback_c
-end 
+end
+
+
+function _weight_callback_2d(::Ptr{p4est_t}, which_tree::p4est_topidx_t, quadrant_ptr::Ptr{p4est_quadrant_t})
+  quadrant = quadrant_ptr[]
+  return unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]
+end
+
+function _weight_callback_3d(::Ptr{p8est_t}, which_tree::p4est_topidx_t, quadrant_ptr::Ptr{p8est_quadrant_t})
+  quadrant = quadrant_ptr[]
+  return unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]
+end
 
 function pXest_weight_callback(::P4estType)
-  function weight_callback(::Ptr{p4est_t},
-    which_tree::p4est_topidx_t,
-    quadrant_ptr::Ptr{p4est_quadrant_t})
-    quadrant = quadrant_ptr[]
-    return unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]
-  end
-  @cfunction($weight_callback, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+  @cfunction(_weight_callback_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
 end
+
 
 function pXest_weight_callback(::P6estType)
   Gridap.Helpers.@notimplemented
 end 
 
 function pXest_weight_callback(::P8estType)
-  function weight_callback(::Ptr{p8est_t},
-    which_tree::p4est_topidx_t,
-    quadrant_ptr::Ptr{p8est_quadrant_t})
-    quadrant = quadrant_ptr[]
-    return unsafe_wrap(Array, Ptr{Cint}(quadrant.p.user_data), 1)[]
-  end
-  @cfunction($weight_callback, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
-end 
+  @cfunction(_weight_callback_3d, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+end
+
 
 function _unwrap_ghost_quadrants(::P4estType, pXest_ghost)
   Ptr{p4est_quadrant_t}(pXest_ghost.ghosts.array)
@@ -2473,40 +2467,34 @@ function pXest_stride_among_children(pXest_type::P6estType,
  return 0
 end
 
+_refine_all_2d(::Ptr{p4est_t}, ::p4est_topidx_t, ::Ptr{p4est_quadrant_t}) = Cint(1)
+_refine_all_3d(::Ptr{p8est_t}, ::p4est_topidx_t, ::Ptr{p8est_quadrant_t}) = Cint(1)
+_coarsen_all_2d(::Ptr{p4est_t}, ::p4est_topidx_t, ::Ptr{Ptr{p4est_quadrant_t}}) = Cint(1)
+_coarsen_all_3d(::Ptr{p8est_t}, ::p4est_topidx_t, ::Ptr{Ptr{p8est_quadrant_t}}) = Cint(1)
+
 function pXest_uniformly_refine!(::P4estType, ptr_pXest)
-  # Refine callbacks
-  function refine_fn_2d(::Ptr{p4est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p4est_quadrant_t})
-    return Cint(1)
-  end
-  refine_fn_c = @cfunction($refine_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
+  refine_fn_c = @cfunction(_refine_all_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{p4est_quadrant_t}))
   p4est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
 end
 
+
 function pXest_uniformly_refine!(::P8estType, ptr_pXest)
-  # Refine callbacks
-  function refine_fn_3d(::Ptr{p8est_t},which_tree::p4est_topidx_t,quadrant::Ptr{p8est_quadrant_t})
-    return Cint(1)
-  end
-  # C-callable refine callback 3D
-  refine_fn_c = @cfunction($refine_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
+  refine_fn_c = @cfunction(_refine_all_3d, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{p8est_quadrant_t}))
   p8est_refine(ptr_pXest, Cint(0), refine_fn_c, C_NULL)
 end
 
+
 function pXest_uniformly_coarsen!(::P4estType, ptr_pXest)
-  function coarsen_fn_2d(::Ptr{p4est_t},::p4est_topidx_t,::Ptr{Ptr{p4est_quadrant_t}})
-    return Cint(1)
-  end
-  coarsen_fn_c=@cfunction($coarsen_fn_2d,Cint,(Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
+  coarsen_fn_c = @cfunction(_coarsen_all_2d, Cint, (Ptr{p4est_t}, p4est_topidx_t, Ptr{Ptr{p4est_quadrant_t}}))
   p4est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
 end
 
+
 function pXest_uniformly_coarsen!(::P8estType, ptr_pXest)
-  function coarsen_fn_3d(::Ptr{p8est_t},::p4est_topidx_t,::Ptr{Ptr{p8est_quadrant_t}})
-    return Cint(1)
-  end
-  coarsen_fn_c=@cfunction($coarsen_fn_3d,Cint,(Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
+  coarsen_fn_c = @cfunction(_coarsen_all_3d, Cint, (Ptr{p8est_t}, p4est_topidx_t, Ptr{Ptr{p8est_quadrant_t}}))
   p8est_coarsen(ptr_pXest, Cint(0), coarsen_fn_c, C_NULL)
 end
+
 
 function pXest_partition_given!(::P4estType, ptr_pXest, new_num_cells_per_part)
   p4est_partition_given(ptr_pXest, new_num_cells_per_part)
