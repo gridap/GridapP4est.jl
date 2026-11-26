@@ -1,41 +1,9 @@
 
-const LagragianOrNedelec = 
+const LagragianOrNedelec =
     Union{Tuple{Gridap.ReferenceFEs.Lagrangian,Any,Any},Tuple{Gridap.ReferenceFEs.Nedelec,Any,Any}}
 
 function adjust_constraints!(ref_constraints, Vh, cell_reffe)
-end 
-
-function adjust_constraints!(ref_constraints, Vh, cell_reffe::GenericRefFE{<:Nedelec})
-    model = get_background_model(get_triangulation(Vh))
-    Dc = num_cell_dims(model)
-    if (Dc==3)
-        # We change the sign of the constraints coefficients here so that 
-        # the unit normal to hanging faces matches the unit normal 
-        # of the owner face. This is only required for Nedelec facet DoFs. 
-        # This way, we properly glue the global DoFs at 
-        # both sides of the interface of cells at different refinement level.
-        # We could have done this instead by adjusting the sign_flips for hanging
-        # faces in the FESpace constructor, although we decide it to do it here 
-        # because it is way simpler.
-        face_own_dofs   = get_face_own_dofs(cell_reffe)
-        offset          = get_offsets(get_polytope(cell_reffe))[Dc]
-        num_faces = Gridap.ReferenceFEs.num_faces(get_polytope(cell_reffe),Dc-1)
-        touched=Set{Int}()
-        cell_dof_ids = get_cell_dof_ids(Vh)
-        for cell=1:length(cell_dof_ids)
-            current_cell_dof_ids=cell_dof_ids[cell]  
-            for face=1:num_faces
-               for ldof in face_own_dofs[offset+face]
-                  dof = current_cell_dof_ids[ldof]
-                  if !(dof in touched)
-                     push!(touched, dof)
-                     ref_constraints[dof,:] = -ref_constraints[dof,:]
-                  end
-               end
-            end
-        end
-    end
-end 
+end
 
 function adjust_constraints!(ref_constraints, Vh, cell_reffe::GenericRefFE{<:RaviartThomas})
     # We change the sign of the constraints coefficients here so that 
@@ -1024,45 +992,25 @@ function GridapDistributed.DistributedSingleFieldFESpace(
   cell_reffe::AbstractArray; 
   split_own_and_ghost=false, 
   constraint=nothing,
+  conformity=nothing,
   kwargs...
 )
-    spaces_wo_constraints = map(local_views(model),local_views(trian),cell_reffe) do model, trian, cell_reffe
-        FESpace(model,cell_reffe;trian,kwargs...)
-    end
-    return _add_constraints(model, 
-                            trian,
-                            cell_gids,
-                            Gridap.Arrays.testitem(cell_reffe.item_ref[]), 
-                            spaces_wo_constraints; 
-                            split_own_and_ghost=split_own_and_ghost, 
-                            constraint=constraint, 
-                            kwargs...)
-end
-
-function GridapDistributed.DistributedSingleFieldFESpace(
-  model::OctreeDistributedDiscreteModel, # Active model, not bg model
-  trian::GridapDistributed.DistributedTriangulation,
-  cell_gids::PRange, 
-  cell_reffe::AbstractArray{<:AbstractArray{T}};
-  labels = get_face_labeling(model), 
-  split_own_and_ghost=false, 
-  constraint=nothing,
-  conformity=nothing,
-  scale_dof=false,
-  global_meshsize=nothing,
-  kwargs...
-) where T <: GridapDistributed.PullbackReffes
-  # Construct a globally conforming CellFE
   conf = map(cell_reffe) do cell_reffe
     Conformity(Gridap.Arrays.testitem(cell_reffe),conformity)
   end |> PArrays.getany
-  cell_fe = Gridap.FESpaces.CellFE(model, cell_reffe, conf; scale_dof, global_meshsize)
 
-  spaces_wo_constraints = map(
-    local_views(model),local_views(trian),local_views(labels), cell_fe
-  ) do model, trian, labels, cell_fe
-    FESpace(model,cell_fe;trian,labels,kwargs...)
-  end
+  # Same split as GridapDistributed: a reference FE whose change of basis needs
+  # more than a rank-local view has it computed for the whole distributed model,
+  # any other one is built from the local view alone.
+  spaces_wo_constraints = 
+    if GridapDistributed.needs_distributed_cell_bases_changes(cell_reffe,conf)
+      GridapDistributed._nonlocal_spaces(model,trian,cell_reffe,conf;kwargs...)
+    else
+      map(local_views(model),local_views(trian),cell_reffe) do model, trian, cell_reffe
+        FESpace(model,cell_reffe;trian,conformity=conf,kwargs...)
+      end
+    end
+
   return _add_constraints(model, 
                           trian,
                           cell_gids,
@@ -1070,6 +1018,7 @@ function GridapDistributed.DistributedSingleFieldFESpace(
                           spaces_wo_constraints; 
                           split_own_and_ghost=split_own_and_ghost, 
                           constraint=constraint, 
+                          conformity=conformity,
                           kwargs...)
 end
 
