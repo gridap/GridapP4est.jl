@@ -58,7 +58,8 @@ jobs:
           mkdir -p $SOURCES_DIR
           tar xzf $ROOT_DIR/$TAR_FILE -C $SOURCES_DIR --strip-components=1
           cd $SOURCES_DIR
-          ./configure --prefix=$P4EST_INSTALL --without-blas --without-lapack --enable-mpi -disable-dependency-tracking
+          # libsc 2.3.6 relies on pre-C23 semantics for empty parameter lists.
+          CFLAGS="-g -O2 -std=gnu17" ./configure --prefix=$P4EST_INSTALL --without-blas --without-lapack --enable-mpi -disable-dependency-tracking
           make --quiet
           make --quiet install
           rm -rf $ROOT_DIR/$TAR_FILE $SOURCES_DIR
